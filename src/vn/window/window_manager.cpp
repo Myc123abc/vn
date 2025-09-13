@@ -1,5 +1,5 @@
 #include "window_manager.hpp"
-#include "../renderer/renderer.hpp"
+#include "../renderer/renderer_message_queue.hpp"
 #include "../util.hpp"
 
 namespace vn {
@@ -8,9 +8,20 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 {
   switch (msg)
   {
-    case WM_DESTROY:
-      WindowManager::instance()->_window_count.fetch_sub(1, std::memory_order_relaxed);
-      return 0;
+  case WM_CLOSE:
+    // TODO: how to resize window in different thread with renderer
+    ShowWindow(handle, SW_HIDE);
+    EnableWindow(handle, FALSE);
+    WindowManager::instance()->_window_count.fetch_sub(1, std::memory_order_relaxed);
+    renderer::RendererMessageQueue::instance()->push(renderer::WindowCloseInfo{ handle });
+    return 0;
+
+  case WM_SIZE:
+    if (w_param == SIZE_MINIMIZED)
+      renderer::RendererMessageQueue::instance()->push(renderer::WindowMinimizedInfo{ handle, true });
+    else if (w_param == SIZE_RESTORED)
+      renderer::RendererMessageQueue::instance()->push(renderer::WindowMinimizedInfo{ handle, false });
+    return 0;
   }
   return DefWindowProcW(handle, msg, w_param, l_param);
 }
@@ -28,7 +39,7 @@ void WindowManager::init() noexcept
   // enable window manager thread
   _thread = std::thread{[this] {
     _thread_id = GetCurrentThreadId();
-    PeekMessage(nullptr, nullptr, 0, 0, PM_NOREMOVE);
+    PeekMessageW(nullptr, nullptr, 0, 0, PM_NOREMOVE);
     _wait_post_thread_message_valid.count_down();
 
     MSG msg{};
@@ -36,13 +47,8 @@ void WindowManager::init() noexcept
     {
       while (GetMessageW(&msg, nullptr, 0, 0))
       {
-        if (msg.message == WM_CREATE_WINDOW)
-        {
-          create_window();
-          continue;
-        }
-        else if (msg.message == WM_EXIT)
-          return;
+        if (message_process(msg)) return;
+
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
       }
@@ -52,7 +58,7 @@ void WindowManager::init() noexcept
 
 void WindowManager::destroy() noexcept
 {
-  PostThreadMessageW(_thread_id, WM_EXIT, 0, 0);
+  PostThreadMessageW(_thread_id, Message_Exit, 0, 0);
   _thread.join();
   exit_if(!UnregisterClassW(Class_Name, GetModuleHandleW(nullptr)), "failed unregister class");
 }
@@ -67,7 +73,7 @@ void WindowManager::create_window() noexcept
   exit_if(!_window_create_info.handle, "failed to create window");
 
   // init renderer resource
-  Renderer::instance()->create_window_resources(_window_create_info.handle);
+  renderer::RendererMessageQueue::instance()->push(renderer::WindowCreateInfo{ _window_create_info.handle }).wait();
 
   // show window
   ShowWindow(_window_create_info.handle, SW_SHOW);
@@ -91,10 +97,33 @@ void WindowManager::create_window(uint32_t x, uint32_t y, uint32_t width, uint32
   _wait_post_thread_message_valid.wait();
 
   // post create message
-  exit_if(!PostThreadMessageW(_thread_id, WM_CREATE_WINDOW, 0, 0), "failed to post message");
+  exit_if(!PostThreadMessageW(_thread_id, Message_Create_Window, 0, 0), "failed to post message");
 
   // wait create finish
   _window_create_info.finish.acquire();
+}
+
+void WindowManager::destroy_window(HWND handle) const noexcept
+{
+  PostThreadMessageW(_thread_id, Message_Destroy_Window, reinterpret_cast<WPARAM>(handle), 0);
+}
+
+auto WindowManager::message_process(MSG const& msg) noexcept -> bool
+{
+  switch (msg.message)
+  {
+  case Message_Exit:
+    return true;
+
+  case Message_Create_Window:
+    create_window();
+    break;
+  
+  case Message_Destroy_Window:
+    exit_if(!DestroyWindow(reinterpret_cast<HWND>(msg.wParam)), "failed to destroy window");    
+    break;
+  }
+  return false;
 }
 
 }

@@ -6,4 +6,6 @@ void init() noexcept;
 
 void destroy() noexcept;
 
+void render() noexcept;
+
 }

@@ -12,8 +12,11 @@ file(GLOB_RECURSE SRC src/*.cpp)
 add_executable(test ${SRC})
 target_compile_definitions(test PRIVATE
   WIN32_LEAN_AND_MEAN
+  NOMINMAX
 )
 target_link_libraries(test PRIVATE
   d3d12 dxgi d3dcompiler
   DirectX-Headers
 )
+
+file(COPY assets DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

@@ -37,6 +37,8 @@ public:
   // thread unsafe
   void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
 
+  void destroy_window(HWND handle) const noexcept;
+
   auto window_count() const noexcept { return _window_count.load(std::memory_order_relaxed); }
 
 private:
@@ -45,10 +47,14 @@ private:
 
   void create_window() noexcept;
 
+  auto message_process(MSG const& msg) noexcept -> bool;
+
 private:
-  static constexpr auto WM_CREATE_WINDOW = WM_APP;
-  static constexpr auto WM_EXIT          = WM_APP + 1;
-  static constexpr auto Class_Name       = L"WindowManager";
+  static constexpr auto Message_Create_Window  = WM_APP;
+  static constexpr auto Message_Exit           = WM_APP + 1;
+  static constexpr auto Message_Destroy_Window = WM_APP + 2;
+
+  static constexpr auto Class_Name = L"WindowManager";
 
   std::thread          _thread;
   DWORD                _thread_id{};

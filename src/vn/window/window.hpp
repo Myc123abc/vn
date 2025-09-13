@@ -10,15 +10,15 @@ class Window
 {
   friend class WindowManager;
 
-private:
-  Window(HWND handle) noexcept
-    : _handle(handle) {}
-
 public:
-  Window(Window const&)            = delete;
+  Window()                         = default;
+  ~Window()                        = default;
+  Window(Window const&)            = default;
   Window(Window&&)                 = delete;
-  Window& operator=(Window const&) = delete;
+  Window& operator=(Window const&) = default;
   Window& operator=(Window&&)      = delete;
+
+  void init(HWND handle) noexcept { _handle = handle; }
   
   auto handle() const noexcept { return _handle; }
 
@@ -30,7 +30,7 @@ public:
   auto size() const noexcept -> Size;
 
 private:
-  HWND _handle{};
+  HWND       _handle{};
 };
 
 }
