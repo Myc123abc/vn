@@ -87,26 +87,20 @@ private:
 private:
   static constexpr auto Frame_Count = 2;
 
-  struct FrameResource
-  {
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> command_allocator;
-  };
-
   // TODO: use global buffer
   // |            frame 0            |            frame 1            |
   // | window 0 data | window 1 data | window 0 data | window 1 data |
   // window datas is compact data sets
   struct WindowResource
   {
-    bool                                         is_minimized{};
-	  Window                                       window;
-    Microsoft::WRL::ComPtr<IDXGISwapChain4>      swapchain;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap; // TODO: make single dynamic descriptor heap
-    Microsoft::WRL::ComPtr<ID3D12Resource>       rtvs[Frame_Count];
-    CD3DX12_VIEWPORT                             viewport;
-    CD3DX12_RECT                                 scissor;
-
-    FrameResource                                frames[Frame_Count];
+    bool                                           is_minimized{};
+	  Window                                         window;
+    Microsoft::WRL::ComPtr<IDXGISwapChain4>        swapchain;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   rtv_heap; // TODO: make single dynamic descriptor heap
+    Microsoft::WRL::ComPtr<ID3D12Resource>         rtvs[Frame_Count];
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> command_allocators[Frame_Count];
+    CD3DX12_VIEWPORT                               viewport;
+    CD3DX12_RECT                                   scissor;
 
     void render(
       ID3D12CommandQueue*        command_queue,

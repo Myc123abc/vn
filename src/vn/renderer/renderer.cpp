@@ -190,13 +190,13 @@ void Renderer::create_window_resources(HWND handle) noexcept
   for (auto i = 0; i < Frame_Count; ++i)
   {
     // create command allocator
-    exit_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&window_resource.frames[i].command_allocator)),
+    exit_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&window_resource.command_allocators[i])),
             "failed to create command allocator");
   }
   // create command list
   if (!_command_list)
   {
-    exit_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.frames[_frame_index].command_allocator.Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
+    exit_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.command_allocators[_frame_index].Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
             "failed to create command list");
     _command_list->Close();
   }
@@ -280,8 +280,8 @@ void Renderer::WindowResource::render(
   uint32_t                   frame_index) noexcept
 {
   // reset command allocator and command list
-  exit_if(frames[frame_index].command_allocator->Reset() == E_FAIL, "failed to reset command allocator");
-  exit_if(command_list->Reset(frames[frame_index].command_allocator.Get(), pipeline_state), "failed to reset command list");
+  exit_if(command_allocators[frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
+  exit_if(command_list->Reset(command_allocators[frame_index].Get(), pipeline_state), "failed to reset command list");
 
   // set root signature
   command_list->SetGraphicsRootSignature(root_signature);
