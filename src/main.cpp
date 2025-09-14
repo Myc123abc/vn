@@ -1,6 +1,5 @@
 #include "vn/vn.hpp"
 #include "vn/window/window_manager.hpp"
-#include "vn/util.hpp"
 
 #include <chrono>
 
@@ -19,7 +18,6 @@ int main()
   {
     vn::render();
   
-    static uint32_t count{};
     static bool ok{};
     auto now = std::chrono::high_resolution_clock::now();
     auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(now - beg).count();
@@ -27,10 +25,7 @@ int main()
     {
       ok = true;
       WindowManager::instance()->create_window(150, 150, 200, 200);
-      debug("{}", count);
     }
-    ++count;
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
   vn::destroy();

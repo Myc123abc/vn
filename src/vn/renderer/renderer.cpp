@@ -6,6 +6,7 @@
 #include <d3dcompiler.h>
 
 #include <algorithm>
+#include <chrono>
 
 using namespace Microsoft::WRL;
 
@@ -237,6 +238,8 @@ void Renderer::wait_gpu_complete() noexcept
 void Renderer::run() noexcept
 {
   _thread = std::thread{[this] {
+    auto beg = std::chrono::high_resolution_clock::now();
+    uint32_t count{};
     while (true)
     {
       // wait render acquire
@@ -249,6 +252,16 @@ void Renderer::run() noexcept
 
       // render
       render();
+
+      ++count;
+      auto now = std::chrono::high_resolution_clock::now();
+      auto dur = std::chrono::duration<float>(now - beg).count();
+      if (dur >= 1.f)
+      {
+        info("[fps] {}", count / dur);
+        count = 0;
+        beg = now;
+      }
     }
   }};
 }
