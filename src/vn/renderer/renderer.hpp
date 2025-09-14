@@ -51,6 +51,10 @@ private:
 
   void run() noexcept;
 
+  void render() noexcept;
+
+  void wait_gpu_complete() noexcept;
+  
   void acquire_render() noexcept { _render_acquire.release(); }
 
 private:
@@ -86,7 +90,6 @@ private:
   struct FrameResource
   {
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> command_allocator;
-    uint64_t                                       fence_value{};
   };
 
   // TODO: use global buffer
@@ -104,8 +107,6 @@ private:
     CD3DX12_RECT                                 scissor;
 
     FrameResource                                frames[Frame_Count];
-    uint32_t                                     frame_index{};
-    Microsoft::WRL::ComPtr<ID3D12Fence>          fence;
 
     void render(
       ID3D12CommandQueue*        command_queue,
@@ -113,13 +114,14 @@ private:
       ID3D12PipelineState*       pipeline_state,
       ID3D12RootSignature*       root_signature,
       D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
-      HANDLE                     fence_event) noexcept;
-
-    void wait_gpu_complete(ID3D12CommandQueue* command_queue, HANDLE fence_event) noexcept;
+      uint32_t                   frame_index) noexcept;
   };
   std::vector<WindowResource> _window_resources;
 
-  HANDLE                                            _fence_event;
+  uint64_t                            _fence_values[Frame_Count]{};
+  uint32_t                            _frame_index{};
+  Microsoft::WRL::ComPtr<ID3D12Fence> _fence;
+  HANDLE                              _fence_event;
 
   struct Vertex
   {

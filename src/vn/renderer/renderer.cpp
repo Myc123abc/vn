@@ -45,6 +45,12 @@ void Renderer::init() noexcept
   // get render target view descriptor size
   Render_Target_View_Descriptor_Size = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
+  // create fence resources
+  exit_if(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)),
+          "failed to create fence");
+  _fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+  exit_if(!_fence_event, "failed to create fence event");
+
   // create root signature
   CD3DX12_ROOT_SIGNATURE_DESC signature_desc{};
   signature_desc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
@@ -130,8 +136,7 @@ void Renderer::destroy() noexcept
   _exit.store(true, std::memory_order_release);
   _render_acquire.release();
   _thread.join();
-  for (auto& window_resource : _window_resources)
-    window_resource.wait_gpu_complete(_command_queue.Get(), _fence_event);
+  wait_gpu_complete();
   CloseHandle(_fence_event);
 }
 
@@ -191,35 +196,28 @@ void Renderer::create_window_resources(HWND handle) noexcept
   // create command list
   if (!_command_list)
   {
-    exit_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.frames[window_resource.frame_index].command_allocator.Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
+    exit_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.frames[_frame_index].command_allocator.Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
             "failed to create command list");
     _command_list->Close();
   }
-
-  // create fence resources
-  exit_if(_device->CreateFence(window_resource.frames[window_resource.frame_index].fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&window_resource.fence)),
-          "failed to create fence");
-  ++window_resource.frames[window_resource.frame_index].fence_value;
-  _fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-  exit_if(!_fence_event, "failed to create fence event");
 
   // add window resources
   _window_resources.emplace_back(std::move(window_resource));
 }
 
-void Renderer::WindowResource::wait_gpu_complete(ID3D12CommandQueue* command_queue, HANDLE fence_event) noexcept
+void Renderer::wait_gpu_complete() noexcept
 {
   // signal fence
-  exit_if(command_queue->Signal(fence.Get(), frames[frame_index].fence_value),
+  exit_if(_command_queue->Signal(_fence.Get(), _fence_values[_frame_index]),
           "failed to signal fence");
 
   // wait until frame is finished
-  exit_if(fence->SetEventOnCompletion(frames[frame_index].fence_value, fence_event),
+  exit_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
           "failed to set event on completion");
-  WaitForSingleObjectEx(fence_event, INFINITE, FALSE);
+  WaitForSingleObjectEx(_fence_event, INFINITE, FALSE);
 
   // update fence value
-  ++frames[frame_index].fence_value;
+  ++_fence_values[_frame_index];
 }
 
 void Renderer::run() noexcept
@@ -236,15 +234,41 @@ void Renderer::run() noexcept
       RendererMessageQueue::instance()->pop_all();
 
       // render
-      for (auto& window_resource : _window_resources)
-      {
-        if (!window_resource.is_minimized) [[unlikely]]
-        {
-          window_resource.render(_command_queue.Get(), _command_list.Get(), _pipeline_state.Get(), _root_signature.Get(), _vertex_buffer_view, _fence_event);
-        }
-      }
+      render();
     }
   }};
+}
+
+void Renderer::render() noexcept
+{
+  for (auto& window_resource : _window_resources)
+  {
+    if (!window_resource.is_minimized) [[unlikely]]
+    {
+      window_resource.render(_command_queue.Get(), _command_list.Get(), _pipeline_state.Get(), _root_signature.Get(), _vertex_buffer_view, _frame_index);
+    }
+  }
+
+  // get current fence value
+  auto current_fence_value = _fence_values[_frame_index];
+
+  // signal fence
+  exit_if(_command_queue->Signal(_fence.Get(), current_fence_value),
+          "failed to signal fence");
+      
+  // move to next frame
+  _frame_index = ++_frame_index % Frame_Count;
+
+  // wait if next fence not ready
+  if (_fence->GetCompletedValue() < _fence_values[_frame_index])
+  {
+    exit_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
+            "failed to set event on completion");
+    WaitForSingleObjectEx(_fence_event, INFINITE, FALSE);
+  }
+
+  // update fence value
+  _fence_values[_frame_index] = current_fence_value + 1;
 }
 
 void Renderer::WindowResource::render(
@@ -253,7 +277,7 @@ void Renderer::WindowResource::render(
   ID3D12PipelineState*       pipeline_state,
   ID3D12RootSignature*       root_signature,
   D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
-  HANDLE                     fence_event) noexcept
+  uint32_t                   frame_index) noexcept
 {
   // reset command allocator and command list
   exit_if(frames[frame_index].command_allocator->Reset() == E_FAIL, "failed to reset command allocator");
@@ -303,27 +327,6 @@ void Renderer::WindowResource::render(
 
   // present swapchain
   exit_if(swapchain->Present(1, 0), "failed to present swapchain");
-
-  // get current fence value
-  auto current_fence_value = frames[frame_index].fence_value;
-      
-  // signal fence
-  exit_if(command_queue->Signal(fence.Get(), current_fence_value),
-          "failed to signal fence");
-      
-  // move to next frame
-  frame_index = ++frame_index % Frame_Count;
-
-  // wait if next fence not ready
-  if (fence->GetCompletedValue() < frames[frame_index].fence_value)
-  {
-    exit_if(fence->SetEventOnCompletion(frames[frame_index].fence_value, fence_event),
-            "failed to set event on completion");
-    WaitForSingleObjectEx(fence_event, INFINITE, FALSE);
-  }
-
-  // update fence value
-  frames[frame_index].fence_value = current_fence_value + 1;
 }
 
 auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::function<bool()>
@@ -336,11 +339,11 @@ auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::functio
   exit_if(it == _window_resources.end(), "failed to find closed window");
 
   // add to old resource, wait gpu finish using then destroy
-  auto func = [window_resource = *it]
+  auto func = [window_resource = *it, this, last_fence_value = _fence_values[_frame_index]]
   {
-    auto fence_value = window_resource.fence->GetCompletedValue();
+    auto fence_value = _fence->GetCompletedValue();
     exit_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
-    return fence_value >= window_resource.frames[window_resource.frame_index].fence_value;
+    return fence_value >= last_fence_value;
   };
 
   // remove old one
