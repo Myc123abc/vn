@@ -34,7 +34,7 @@ void WindowManager::init() noexcept
   wnd_class.cbSize        = sizeof(wnd_class);
   wnd_class.hInstance     = GetModuleHandleW(nullptr);
   wnd_class.lpfnWndProc   = wnd_proc;
-  exit_if(!RegisterClassExW(&wnd_class), "failed register class");
+  err_if(!RegisterClassExW(&wnd_class), "failed register class");
 
   // enable window manager thread
   _thread = std::thread{[this] {
@@ -60,7 +60,7 @@ void WindowManager::destroy() noexcept
 {
   PostThreadMessageW(_thread_id, Message_Exit, 0, 0);
   _thread.join();
-  exit_if(!UnregisterClassW(Class_Name, GetModuleHandleW(nullptr)), "failed unregister class");
+  err_if(!UnregisterClassW(Class_Name, GetModuleHandleW(nullptr)), "failed unregister class");
 }
 
 void WindowManager::create_window() noexcept
@@ -70,7 +70,7 @@ void WindowManager::create_window() noexcept
     0, Class_Name, nullptr, WS_OVERLAPPEDWINDOW,
     _window_create_info.x, _window_create_info.y, _window_create_info.width, _window_create_info.height,
     0, 0, GetModuleHandleW(nullptr), 0);
-  exit_if(!_window_create_info.handle, "failed to create window");
+  err_if(!_window_create_info.handle, "failed to create window");
 
   // init renderer resource
   renderer::RendererMessageQueue::instance()->push(renderer::WindowCreateInfo{ _window_create_info.handle }).wait();
@@ -97,7 +97,7 @@ void WindowManager::create_window(uint32_t x, uint32_t y, uint32_t width, uint32
   _wait_post_thread_message_valid.wait();
 
   // post create message
-  exit_if(!PostThreadMessageW(_thread_id, Message_Create_Window, 0, 0), "failed to post message");
+  err_if(!PostThreadMessageW(_thread_id, Message_Create_Window, 0, 0), "failed to post message");
 
   // wait create finish
   _window_create_info.finish.acquire();
@@ -120,7 +120,7 @@ auto WindowManager::message_process(MSG const& msg) noexcept -> bool
     break;
   
   case Message_Destroy_Window:
-    exit_if(!DestroyWindow(reinterpret_cast<HWND>(msg.wParam)), "failed to destroy window");
+    err_if(!DestroyWindow(reinterpret_cast<HWND>(msg.wParam)), "failed to destroy window");
     break;
   }
   return false;

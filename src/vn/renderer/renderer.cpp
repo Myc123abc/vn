@@ -16,49 +16,49 @@ void Renderer::init() noexcept
   // init debug controller
 #ifndef NDEBUG
   ComPtr<ID3D12Debug> debug_controller;
-  exit_if(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)),
+  err_if(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)),
           "failed to create d3d12 debug controller");
   debug_controller->EnableDebugLayer();
 #endif
 
   // create factory
 #ifndef NDEBUG
-  exit_if(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&_factory)),
+  err_if(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&_factory)),
           "failed to create dxgi factory");
 #else
-  exit_if(CreateDXGIFactory2(0, IID_PPV_ARGS(&_factory)),
+  err_if(CreateDXGIFactory2(0, IID_PPV_ARGS(&_factory)),
           "failed to create dxgi factory");
 #endif
 
   // create device
   ComPtr<IDXGIAdapter4> adapter;
-  exit_if(_factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter)),
+  err_if(_factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter)),
           "failed to enum dxgi adapter");
-  exit_if(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&_device)),
+  err_if(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&_device)),
           "failed to create d3d12 device");
 
   // create command queue
   D3D12_COMMAND_QUEUE_DESC queue_desc{};
-  exit_if(_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&_command_queue)),
+  err_if(_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&_command_queue)),
           "failed to create command queue");
 
   // get render target view descriptor size
   Render_Target_View_Descriptor_Size = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
   // create fence resources
-  exit_if(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)),
+  err_if(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)),
           "failed to create fence");
   _fence_event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-  exit_if(!_fence_event, "failed to create fence event");
+  err_if(!_fence_event, "failed to create fence event");
 
   // create root signature
   CD3DX12_ROOT_SIGNATURE_DESC signature_desc{};
   signature_desc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
   ComPtr<ID3DBlob> signature;
   ComPtr<ID3DBlob> error;
-  exit_if(D3D12SerializeRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
+  err_if(D3D12SerializeRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
           "failed to serialize root signature");
-  exit_if(_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
+  err_if(_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
           "failed to create root signature");
   
   // create shaders
@@ -69,8 +69,8 @@ void Renderer::init() noexcept
 #else
   auto compile_flag = 0;
 #endif
-  exit_if(D3DCompileFromFile(L"assets/shader.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compile_flag, 0, &vertex_shader, nullptr), "failed to compile vertex shader");
-  exit_if(D3DCompileFromFile(L"assets/shader.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", compile_flag, 0, &pixel_shader,  nullptr), "failed to compile pixel shader");
+  err_if(D3DCompileFromFile(L"assets/shader.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compile_flag, 0, &vertex_shader, nullptr), "failed to compile vertex shader");
+  err_if(D3DCompileFromFile(L"assets/shader.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", compile_flag, 0, &pixel_shader,  nullptr), "failed to compile pixel shader");
 
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
@@ -90,7 +90,7 @@ void Renderer::init() noexcept
   pipeline_state_desc.NumRenderTargets      = 1;
   pipeline_state_desc.RTVFormats[0]         = DXGI_FORMAT_R8G8B8A8_UNORM;
   pipeline_state_desc.SampleDesc.Count      = 1;
-  exit_if(_device->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
+  err_if(_device->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
           "failed to create pipeline state");
 
   // create vertices
@@ -106,7 +106,7 @@ void Renderer::init() noexcept
   // create vertex buffer
   auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
   auto resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices));
-  exit_if(_device->CreateCommittedResource(
+  err_if(_device->CreateCommittedResource(
     &heap_properties,
     D3D12_HEAP_FLAG_NONE,
     &resource_desc,
@@ -118,7 +118,7 @@ void Renderer::init() noexcept
   // copy data to vertex buffer
   uint8_t* p;
   auto range = CD3DX12_RANGE{};
-  exit_if(_vertex_buffer->Map(0, &range, reinterpret_cast<void**>(&p)),
+  err_if(_vertex_buffer->Map(0, &range, reinterpret_cast<void**>(&p)),
           "failed to map pointer from vertex buffer");
   memcpy(p, vertices, sizeof(vertices));
   _vertex_buffer->Unmap(0, nullptr);
@@ -161,26 +161,26 @@ void Renderer::create_window_resources(HWND handle) noexcept
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  exit_if(_factory->CreateSwapChainForHwnd(_command_queue.Get(), window_resource.window.handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
+  err_if(_factory->CreateSwapChainForHwnd(_command_queue.Get(), window_resource.window.handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
           "failed to create swapchain");
-  exit_if(swapchain.As(&window_resource.swapchain), "failed to get swapchain4");
+  err_if(swapchain.As(&window_resource.swapchain), "failed to get swapchain4");
 
   // disable some combination keys
-  exit_if(_factory->MakeWindowAssociation(window_resource.window.handle(), DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_PRINT_SCREEN),
+  err_if(_factory->MakeWindowAssociation(window_resource.window.handle(), DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_PRINT_SCREEN),
     "failed to set window association");
 
   // create descriptor heaps
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
   rtv_heap_desc.NumDescriptors = Frame_Count;
   rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-  exit_if(_device->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&window_resource.rtv_heap)),
+  err_if(_device->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&window_resource.rtv_heap)),
     "failed to create render target view descriptor heap");
 
   // create render target views
   CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ window_resource.rtv_heap->GetCPUDescriptorHandleForHeapStart() };
   for (auto i = 0; i <Frame_Count; ++i)
   {
-    exit_if(window_resource.swapchain->GetBuffer(i, IID_PPV_ARGS(&window_resource.rtvs[i])),
+    err_if(window_resource.swapchain->GetBuffer(i, IID_PPV_ARGS(&window_resource.rtvs[i])),
             "failed to get descriptor");
     _device->CreateRenderTargetView(window_resource.rtvs[i].Get(), nullptr, rtv_handle);
     rtv_handle.Offset(1, Render_Target_View_Descriptor_Size);
@@ -190,13 +190,13 @@ void Renderer::create_window_resources(HWND handle) noexcept
   for (auto i = 0; i < Frame_Count; ++i)
   {
     // create command allocator
-    exit_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&window_resource.command_allocators[i])),
+    err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&window_resource.command_allocators[i])),
             "failed to create command allocator");
   }
   // create command list
   if (!_command_list)
   {
-    exit_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.command_allocators[_frame_index].Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
+    err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.command_allocators[_frame_index].Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
             "failed to create command list");
     _command_list->Close();
   }
@@ -208,11 +208,11 @@ void Renderer::create_window_resources(HWND handle) noexcept
 void Renderer::wait_gpu_complete() noexcept
 {
   // signal fence
-  exit_if(_command_queue->Signal(_fence.Get(), _fence_values[_frame_index]),
+  err_if(_command_queue->Signal(_fence.Get(), _fence_values[_frame_index]),
           "failed to signal fence");
 
   // wait until frame is finished
-  exit_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
+  err_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
           "failed to set event on completion");
   WaitForSingleObjectEx(_fence_event, INFINITE, FALSE);
 
@@ -253,7 +253,7 @@ void Renderer::render() noexcept
   auto current_fence_value = _fence_values[_frame_index];
 
   // signal fence
-  exit_if(_command_queue->Signal(_fence.Get(), current_fence_value),
+  err_if(_command_queue->Signal(_fence.Get(), current_fence_value),
           "failed to signal fence");
       
   // move to next frame
@@ -262,7 +262,7 @@ void Renderer::render() noexcept
   // wait if next fence not ready
   if (_fence->GetCompletedValue() < _fence_values[_frame_index])
   {
-    exit_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
+    err_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
             "failed to set event on completion");
     WaitForSingleObjectEx(_fence_event, INFINITE, FALSE);
   }
@@ -280,8 +280,8 @@ void Renderer::WindowResource::render(
   uint32_t                   frame_index) noexcept
 {
   // reset command allocator and command list
-  exit_if(command_allocators[frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
-  exit_if(command_list->Reset(command_allocators[frame_index].Get(), pipeline_state), "failed to reset command list");
+  err_if(command_allocators[frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(command_list->Reset(command_allocators[frame_index].Get(), pipeline_state), "failed to reset command list");
 
   // set root signature
   command_list->SetGraphicsRootSignature(root_signature);
@@ -319,14 +319,14 @@ void Renderer::WindowResource::render(
   command_list->ResourceBarrier(1, &barrier_end);
 
   // close command list
-  exit_if(command_list->Close(), "failed to close command list");
+  err_if(command_list->Close(), "failed to close command list");
 
   // execute command list
   ID3D12CommandList* command_lists[] = { command_list };
   command_queue->ExecuteCommandLists(_countof(command_lists), command_lists);
 
   // present swapchain
-  exit_if(swapchain->Present(1, 0), "failed to present swapchain");
+  err_if(swapchain->Present(1, 0), "failed to present swapchain");
 }
 
 auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::function<bool()>
@@ -336,13 +336,13 @@ auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::functio
   {
     return handle == window_resource.window.handle();
   });
-  exit_if(it == _window_resources.end(), "failed to find closed window");
+  err_if(it == _window_resources.end(), "failed to find closed window");
 
   // add to old resource, wait gpu finish using then destroy
   auto func = [window_resource = *it, this, last_fence_value = _fence_values[_frame_index]]
   {
     auto fence_value = _fence->GetCompletedValue();
-    exit_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
+    err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
     return fence_value >= last_fence_value;
   };
 
@@ -361,7 +361,7 @@ void Renderer::set_window_minimized(HWND handle, bool is_minimized)
   {
     return handle == window_resource.window.handle();
   });
-  exit_if(it == _window_resources.end(), "failed to find window");
+  err_if(it == _window_resources.end(), "failed to find window");
   it->is_minimized = is_minimized;
 }
 

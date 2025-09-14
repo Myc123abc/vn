@@ -6,30 +6,51 @@
 
 namespace vn {
 
+#define ConsoleColor_Red(x)    "\033[31m" x "\033[0m"
+#define ConsoleColor_Green(x)  "\033[32m" x "\033[0m"
+#define ConsoleColor_Yellow(x) "\033[33m" x "\033[0m"
+#define ConsoleColor_Blue(x)   "\033[34m" x "\033[0m"
+
 template <typename... T>
-inline void exit_if(bool b, std::format_string<T...> const fmt, T&&... args)
+inline void error(std::format_string<T...> const fmt, T&&... args)
 {
-  if (b)
-  {
-    std::println(stderr, fmt, std::forward<T>(args)...);
-    exit(EXIT_FAILURE);
-  }
+  std::println(stderr, ConsoleColor_Red("[error] {}"), std::format(fmt, std::forward<T>(args)...));
 }
 
 template <typename... T>
-inline void exit_if(HRESULT hr, std::format_string<T...> const fmt, T&&... args)
+inline void info(std::format_string<T...> const fmt, T&&... args)
 {
-  exit_if(FAILED(hr), fmt, std::forward<T>(args)...);
+  std::println(stderr, ConsoleColor_Green("[info]  {}"), std::format(fmt, std::forward<T>(args)...));
 }
 
-#define ConsoleColor_Blue(x) "\033[34m" x "\033[0m"
+template <typename... T>
+inline void warn(std::format_string<T...> const fmt, T&&... args)
+{
+  std::println(stderr, ConsoleColor_Yellow("[warn]  {}"), std::format(fmt, std::forward<T>(args)...));
+}
 
 template <typename... T>
 inline void debug(std::format_string<T...> const fmt, T&&... args)
 {
 #ifndef NDEBUG
-  std::println(stderr, ConsoleColor_Blue("debug {}"), std::format(fmt, std::forward<T>(args)...));
+  std::println(stderr, ConsoleColor_Blue("[debug] {}"), std::format(fmt, std::forward<T>(args)...));
 #endif
+}
+
+template <typename... T>
+inline void err_if(bool b, std::format_string<T...> const fmt, T&&... args)
+{
+  if (b)
+  {
+    error(fmt, std::forward<T>(args)...);
+    exit(EXIT_FAILURE);
+  }
+}
+
+template <typename... T>
+inline void err_if(HRESULT hr, std::format_string<T...> const fmt, T&&... args)
+{
+  err_if(FAILED(hr), fmt, std::forward<T>(args)...);
 }
 
 }
