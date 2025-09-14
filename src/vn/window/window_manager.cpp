@@ -2,26 +2,108 @@
 #include "../renderer/renderer_message_queue.hpp"
 #include "../util.hpp"
 
+#include <windowsx.h>
+
 namespace vn {
 
 LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 {
+  static POINT dragging_mouse_pos{};
+  static RECT  dragging_window_rect{};
+  static bool  dragging{};
+
   switch (msg)
   {
   case WM_CLOSE:
-    // TODO: how to resize window in different thread with renderer
+  {
     ShowWindow(handle, SW_HIDE);
     EnableWindow(handle, FALSE);
     WindowManager::instance()->_window_count.fetch_sub(1, std::memory_order_relaxed);
     renderer::RendererMessageQueue::instance()->push(renderer::WindowCloseInfo{ handle });
-    return 0;
+  }
+  return 0;
 
   case WM_SIZE:
+  {
     if (w_param == SIZE_MINIMIZED)
-      renderer::RendererMessageQueue::instance()->push(renderer::WindowMinimizedInfo{ handle, true });
+      renderer::RendererMessageQueue::instance()->push(renderer::WindowMinimizedInfo{ handle });
     else if (w_param == SIZE_RESTORED)
-      renderer::RendererMessageQueue::instance()->push(renderer::WindowMinimizedInfo{ handle, false });
-    return 0;
+      renderer::RendererMessageQueue::instance()->push(renderer::WindowResizeInfo{ handle });
+  }
+  return 0;
+
+  case WM_LBUTTONDOWN:
+  {
+    GetCursorPos(&dragging_mouse_pos);
+    GetWindowRect(handle, &dragging_window_rect);
+    // TODO: customize move dragging area
+    //if (dragging_mouse_pos.y < 25 + dragging_window_rect.top)
+    {
+      dragging = true;
+      SetCapture(handle);
+    }
+  }
+  break;
+
+  case WM_LBUTTONUP:
+  {
+    if (dragging)
+    {
+      dragging = false;
+      ReleaseCapture();
+    }
+  }
+  break;
+
+  case WM_MOUSEMOVE:
+  {
+    if (dragging)
+    {
+      POINT pos;
+      GetCursorPos(&pos);
+      dragging_window_rect.left += pos.x - dragging_mouse_pos.x;
+      dragging_window_rect.top  += pos.y - dragging_mouse_pos.y;
+      dragging_mouse_pos = pos;
+      SetWindowPos(handle, nullptr,
+        dragging_window_rect.left, dragging_window_rect.top, 0, 0,
+        SWP_DEFERERASE | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOSENDCHANGING | SWP_NOSIZE | SWP_NOZORDER);
+    }
+  }
+  break;
+
+  // TODO: i find a "best" way to resolve, use a fullscreen transparent window as backup.
+  // when move or resize window, render the window content to the backup transparent fullscreen window as a virtual rendering window
+  // and in fullscreen rendering it will be sliky move or resize, and restore the window to the new size and position after move or resize operation.
+  case WM_NCHITTEST:
+  {
+    auto pos = POINT{ GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param) };
+
+    RECT wr;
+    GetWindowRect(handle, &wr);
+    int constexpr border = 10;
+
+    if (pos.x >= wr.left && pos.x < wr.left + border &&
+        pos.y >= wr.top  && pos.y < wr.top  + border)
+      return HTTOPLEFT;
+
+    if (pos.x >= wr.right - border && pos.x < wr.right        &&
+        pos.y >= wr.top            && pos.y < wr.top + border)
+      return HTTOPRIGHT;
+
+    if (pos.x >= wr.left            && pos.x < wr.left + border &&
+        pos.y >= wr.bottom - border && pos.y < wr.bottom)
+      return HTBOTTOMLEFT;
+
+    if (pos.x >= wr.right  - border && pos.x < wr.right  &&
+        pos.y >= wr.bottom - border && pos.y < wr.bottom)
+      return HTBOTTOMRIGHT;
+
+    if (pos.x >= wr.left            && pos.x < wr.left + border) return HTLEFT;
+    if (pos.x >= wr.right - border  && pos.x < wr.right)         return HTRIGHT;
+    if (pos.y >= wr.top             && pos.y < wr.top + border)  return HTTOP;
+    if (pos.y >= wr.bottom - border && pos.y < wr.bottom)        return HTBOTTOM;
+  }
+  return HTCLIENT;
   }
   return DefWindowProcW(handle, msg, w_param, l_param);
 }
@@ -67,7 +149,7 @@ void WindowManager::create_window() noexcept
 {
   // create window
   _window_create_info.handle = CreateWindowExW(
-    0, Class_Name, nullptr, WS_POPUP,
+    WS_EX_NOREDIRECTIONBITMAP, Class_Name, nullptr, WS_POPUP,
     _window_create_info.x, _window_create_info.y, _window_create_info.width, _window_create_info.height,
     0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!_window_create_info.handle, "failed to create window");

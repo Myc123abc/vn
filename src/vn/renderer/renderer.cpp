@@ -4,6 +4,7 @@
 #include "../window/window_manager.hpp"
 
 #include <d3dcompiler.h>
+#include <dcommon.h>
 
 #include <algorithm>
 #include <chrono>
@@ -164,7 +165,7 @@ void Renderer::create_window_resources(HWND handle) noexcept
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
   err_if(_factory->CreateSwapChainForComposition(_command_queue.Get(), &swapchain_desc, nullptr, &swapchain),
-          "failed to create swapchain for composition");          
+          "failed to create swapchain for composition");
   err_if(swapchain.As(&window_resource.swapchain), "failed to get swapchain4");
 
   // create composition
@@ -326,7 +327,7 @@ void Renderer::WindowResource::render(
   command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, nullptr);
 
   // clear color
-  float constexpr clear_color[4] = {};
+  float constexpr clear_color[4] = { 0.f, 0.f, 0.f, .5f };
   command_list->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
 
   // set primitive topology
@@ -379,14 +380,60 @@ auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::functio
   return func;
 }
 
-void Renderer::set_window_minimized(HWND handle, bool is_minimized)
+void Renderer::set_window_minimized(HWND handle) noexcept
 {
   auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
   {
     return handle == window_resource.window.handle();
   });
   if (it == _window_resources.end()) return;
-  it->is_minimized = is_minimized;
+  it->is_minimized = true;
+}
+
+void Renderer::window_resize(HWND handle) noexcept
+{
+  // create new window resource and add old resource wait destroy, so need return func
+  auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
+  {
+    return handle == window_resource.window.handle();
+  });
+  if (it == _window_resources.end()) return;
+
+  // reset minimized
+  it->is_minimized = false;
+
+  // set viewport and scissor rectangle
+  auto wnd_size = it->window.size();
+  it->viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(wnd_size.width), static_cast<float>(wnd_size.height) };
+  it->scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(wnd_size.width), static_cast<LONG>(wnd_size.height) };
+
+  // wait gpu finish
+  wait_gpu_complete();
+  
+  // reset swapchain relation resources
+  for (auto i = 0; i < Frame_Count; ++i)
+    it->rtvs[i].Reset();
+  it->comp_visual->SetContent(nullptr);
+
+  // resize swapchain
+  err_if(it->swapchain->ResizeBuffers(Frame_Count, wnd_size.width, wnd_size.height, DXGI_FORMAT_UNKNOWN, 0),
+          "failed to resize swapchain");
+
+  // rebind composition resources
+  err_if(it->comp_visual->SetContent(it->swapchain.Get()),
+          "failed to bind swapchain to composition visual");
+  err_if(it->comp_device->Commit(),
+          "failed to commit composition device");
+
+  // recreate render target views
+  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ it->rtv_heap->GetCPUDescriptorHandleForHeapStart() };
+  for (auto i = 0; i <Frame_Count; ++i)
+  {
+    err_if(it->swapchain->GetBuffer(i, IID_PPV_ARGS(&it->rtvs[i])),
+            "failed to get descriptor");
+    _device->CreateRenderTargetView(it->rtvs[i].Get(), nullptr, rtv_handle);
+    rtv_handle.Offset(1, Render_Target_View_Descriptor_Size);
+  }
 }
 
 }}

@@ -9,6 +9,7 @@
 #include <variant>
 #include <future>
 #include <functional>
+#include <algorithm>
 
 namespace vn { namespace renderer {
 
@@ -30,14 +31,19 @@ struct WindowResourceDestroyInfo
 struct WindowMinimizedInfo
 {
   HWND handle;
-  bool is_minimized{};
+};
+
+struct WindowResizeInfo
+{
+  HWND handle;
 };
 
 using MessageInfo = std::variant<
   WindowCreateInfo,
   WindowCloseInfo,
   WindowResourceDestroyInfo,
-  WindowMinimizedInfo
+  WindowMinimizedInfo,
+  WindowResizeInfo
 >;
 
 struct Message
@@ -68,12 +74,27 @@ public:
   {
     Message msg;
     msg.info = std::forward<T>(info);
-    auto fut = msg.done.get_future();
+
+    std::lock_guard lock(_mutex);
+
+    // if have existing resize of same handle, jump this message
+    if constexpr (std::is_same_v<T, WindowResizeInfo>)
     {
-      std::lock_guard lock(_mutex);
-      _messages.emplace_back(std::move(msg));
+      if (auto it = std::ranges::find_if(_messages, [&](auto const& msg)
+          {
+            return std::holds_alternative<WindowResizeInfo>(msg.info)         &&
+                   std::get<WindowResizeInfo>(msg.info).handle == info.handle;
+          });
+          it != _messages.end())
+        return msg.done.get_future();
     }
+
+    auto fut = msg.done.get_future();
+
+    _messages.emplace_back(std::move(msg));
+
     Renderer::instance()->acquire_render();
+
     return std::move(fut);
   }
 

@@ -33,7 +33,12 @@ void RendererMessageQueue::pop_all() noexcept
       }
       else if constexpr (std::is_same_v<T, WindowMinimizedInfo>)
       {
-        Renderer::instance()->set_window_minimized(info.handle, info.is_minimized);
+        Renderer::instance()->set_window_minimized(info.handle);
+        it = _messages.erase(it);
+      }
+      else if constexpr (std::is_same_v<T, WindowResizeInfo>)
+      {
+        Renderer::instance()->window_resize(info.handle);
         it = _messages.erase(it);
       }
       else

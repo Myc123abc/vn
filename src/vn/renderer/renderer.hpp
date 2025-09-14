@@ -64,9 +64,7 @@ private:
   Microsoft::WRL::ComPtr<IDXGIFactory6>             _factory;
   Microsoft::WRL::ComPtr<ID3D12Device>              _device;
   Microsoft::WRL::ComPtr<ID3D12CommandQueue>        _command_queue;
-  Microsoft::WRL::ComPtr<ID3D12PipelineState>       _pipeline_state; // TODO: use single pipeline state for multiple swapchains
-                                                                     //       and can dynamic change render targets number for increase swapchain of window
-                                                                     //       check whether have a feature like vulkan's shader object use for dynamic pipeline
+  Microsoft::WRL::ComPtr<ID3D12PipelineState>       _pipeline_state;
   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _command_list;
   Microsoft::WRL::ComPtr<ID3D12RootSignature>       _root_signature; // TODO: impl sdf
 
@@ -83,7 +81,8 @@ private:
 private:
   void create_window_resources(HWND handle) noexcept;
   auto add_closed_window_resources(HWND handle) noexcept -> std::function<bool()>;
-  void set_window_minimized(HWND handle, bool is_minimized);
+  void set_window_minimized(HWND handle) noexcept;
+  void window_resize(HWND handle) noexcept;
 
 private:
   static constexpr auto Frame_Count = 2;
@@ -102,7 +101,7 @@ private:
     Microsoft::WRL::ComPtr<IDCompositionTarget>    comp_target;
     Microsoft::WRL::ComPtr<IDCompositionVisual>    comp_visual;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   rtv_heap; // TODO: make single dynamic descriptor heap
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   rtv_heap;
     Microsoft::WRL::ComPtr<ID3D12Resource>         rtvs[Frame_Count];
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> command_allocators[Frame_Count];
     CD3DX12_VIEWPORT                               viewport;
@@ -128,7 +127,7 @@ private:
     DirectX::XMFLOAT3 position;
   	DirectX::XMFLOAT4 color;
   };
-  Microsoft::WRL::ComPtr<ID3D12Resource> _vertex_buffer; // TODO: single global buffer
+  Microsoft::WRL::ComPtr<ID3D12Resource> _vertex_buffer;
   D3D12_VERTEX_BUFFER_VIEW               _vertex_buffer_view;
 };
 
