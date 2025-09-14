@@ -67,7 +67,7 @@ void WindowManager::create_window() noexcept
 {
   // create window
   _window_create_info.handle = CreateWindowExW(
-    0, Class_Name, nullptr, WS_OVERLAPPEDWINDOW,
+    0, Class_Name, nullptr, WS_POPUP,
     _window_create_info.x, _window_create_info.y, _window_create_info.width, _window_create_info.height,
     0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!_window_create_info.handle, "failed to create window");

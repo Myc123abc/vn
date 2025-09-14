@@ -7,6 +7,7 @@
 #include <d3d12.h>
 #include <DirectXMath.h>
 #include <directx/d3dx12.h>
+#include <dcomp.h>
 
 #include <vector>
 #include <thread>
@@ -95,7 +96,12 @@ private:
   {
     bool                                           is_minimized{};
 	  Window                                         window;
+
     Microsoft::WRL::ComPtr<IDXGISwapChain4>        swapchain;
+    Microsoft::WRL::ComPtr<IDCompositionDevice>    comp_device;
+    Microsoft::WRL::ComPtr<IDCompositionTarget>    comp_target;
+    Microsoft::WRL::ComPtr<IDCompositionVisual>    comp_visual;
+
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   rtv_heap; // TODO: make single dynamic descriptor heap
     Microsoft::WRL::ComPtr<ID3D12Resource>         rtvs[Frame_Count];
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> command_allocators[Frame_Count];

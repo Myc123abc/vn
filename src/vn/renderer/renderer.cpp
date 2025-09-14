@@ -96,9 +96,9 @@ void Renderer::init() noexcept
   // create vertices
   Vertex vertices[]
   {
-    { { 0.f,   .5f, 0.f }, { 1.f, 0.f, 0.f, 1.f } },
-    { { .5f,  -.5f, 0.f }, { 0.f, 1.f, 0.f, 1.f } },
-    { { -.5f, -.5f, 0.f }, { 0.f, 0.f, 1.f, 1.f } },
+    { { 0.f,   .5f, 0.f }, { 1.f, 0.f, 0.f, .5f } },
+    { { .5f,  -.5f, 0.f }, { 0.f, 1.f, 0.f, .5f } },
+    { { -.5f, -.5f, 0.f }, { 0.f, 0.f, 1.f, .5f } },
   };
 
   // FIXME: it's not to recommand use this, just like vulkan use device buffer to dynamic upload byte data every frame
@@ -157,13 +157,28 @@ void Renderer::create_window_resources(HWND handle) noexcept
   swapchain_desc.BufferCount      = Frame_Count;
   swapchain_desc.Width            = wnd_size.width;
   swapchain_desc.Height           = wnd_size.height;
+  swapchain_desc.AlphaMode        = DXGI_ALPHA_MODE_PREMULTIPLIED;
   swapchain_desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  err_if(_factory->CreateSwapChainForHwnd(_command_queue.Get(), window_resource.window.handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
-          "failed to create swapchain");
+  err_if(_factory->CreateSwapChainForComposition(_command_queue.Get(), &swapchain_desc, nullptr, &swapchain),
+          "failed to create swapchain for composition");          
   err_if(swapchain.As(&window_resource.swapchain), "failed to get swapchain4");
+
+  // create composition
+  err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&window_resource.comp_device)),
+          "failed to create composition device");
+  err_if(window_resource.comp_device->CreateTargetForHwnd(window_resource.window.handle(), TRUE, &window_resource.comp_target),
+          "failed to create composition target");
+  err_if(window_resource.comp_device->CreateVisual(&window_resource.comp_visual),
+          "failed to create composition visual");
+  err_if(window_resource.comp_visual->SetContent(window_resource.swapchain.Get()),
+          "failed to bind swapchain to composition visual");
+  err_if(window_resource.comp_target->SetRoot(window_resource.comp_visual.Get()),
+          "failed to bind composition visual to target");
+  err_if(window_resource.comp_device->Commit(),
+          "failed to commit composition device");
 
   // disable some combination keys
   err_if(_factory->MakeWindowAssociation(window_resource.window.handle(), DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_PRINT_SCREEN),
@@ -188,11 +203,10 @@ void Renderer::create_window_resources(HWND handle) noexcept
 
   // create frame resources
   for (auto i = 0; i < Frame_Count; ++i)
-  {
     // create command allocator
     err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&window_resource.command_allocators[i])),
             "failed to create command allocator");
-  }
+
   // create command list
   if (!_command_list)
   {
@@ -241,13 +255,10 @@ void Renderer::run() noexcept
 
 void Renderer::render() noexcept
 {
+  // render per window
   for (auto& window_resource : _window_resources)
-  {
     if (!window_resource.is_minimized) [[unlikely]]
-    {
       window_resource.render(_command_queue.Get(), _command_list.Get(), _pipeline_state.Get(), _root_signature.Get(), _vertex_buffer_view, _frame_index);
-    }
-  }
 
   // get current fence value
   auto current_fence_value = _fence_values[_frame_index];
@@ -302,7 +313,7 @@ void Renderer::WindowResource::render(
   command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, nullptr);
 
   // clear color
-  float constexpr clear_color[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+  float constexpr clear_color[4] = {};
   command_list->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
 
   // set primitive topology
@@ -361,7 +372,7 @@ void Renderer::set_window_minimized(HWND handle, bool is_minimized)
   {
     return handle == window_resource.window.handle();
   });
-  err_if(it == _window_resources.end(), "failed to find window");
+  if (it == _window_resources.end()) return;
   it->is_minimized = is_minimized;
 }
 
