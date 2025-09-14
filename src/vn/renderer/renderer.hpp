@@ -106,7 +106,6 @@ private:
     FrameResource                                frames[Frame_Count];
     uint32_t                                     frame_index{};
     Microsoft::WRL::ComPtr<ID3D12Fence>          fence;
-    uint32_t                                     current_fence_value{};
 
     void render(
       ID3D12CommandQueue*        command_queue,

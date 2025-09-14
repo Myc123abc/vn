@@ -266,12 +266,15 @@ void Renderer::WindowResource::render(
   command_list->RSSetViewports(1, &viewport);
   command_list->RSSetScissorRects(1, &scissor);
 
+  // get current render target view index
+  auto rtv_idx = swapchain->GetCurrentBackBufferIndex();
+
   // convert render target view from present type to render target type
-  auto barrier_begin = CD3DX12_RESOURCE_BARRIER::Transition(rtvs[frame_index].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+  auto barrier_begin = CD3DX12_RESOURCE_BARRIER::Transition(rtvs[rtv_idx].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
   command_list->ResourceBarrier(1, &barrier_begin);
 
   // set render target view
-  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtv_heap->GetCPUDescriptorHandleForHeapStart(), frame_index, Render_Target_View_Descriptor_Size);
+  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtv_heap->GetCPUDescriptorHandleForHeapStart(), rtv_idx, Render_Target_View_Descriptor_Size);
   command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, nullptr);
 
   // clear color
@@ -288,7 +291,7 @@ void Renderer::WindowResource::render(
   command_list->DrawInstanced(3, 1, 0, 0);
 
   // record finish, change render target view type to present
-  auto barrier_end = CD3DX12_RESOURCE_BARRIER::Transition(rtvs[frame_index].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+  auto barrier_end = CD3DX12_RESOURCE_BARRIER::Transition(rtvs[rtv_idx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
   command_list->ResourceBarrier(1, &barrier_end);
 
   // close command list
@@ -302,14 +305,14 @@ void Renderer::WindowResource::render(
   exit_if(swapchain->Present(1, 0), "failed to present swapchain");
 
   // get current fence value
-  current_fence_value = frames[frame_index].fence_value;
+  auto current_fence_value = frames[frame_index].fence_value;
       
   // signal fence
   exit_if(command_queue->Signal(fence.Get(), current_fence_value),
           "failed to signal fence");
       
   // move to next frame
-  frame_index = swapchain->GetCurrentBackBufferIndex();
+  frame_index = ++frame_index % Frame_Count;
 
   // wait if next fence not ready
   if (fence->GetCompletedValue() < frames[frame_index].fence_value)
@@ -337,7 +340,7 @@ auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::functio
   {
     auto fence_value = window_resource.fence->GetCompletedValue();
     exit_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
-    return fence_value >= window_resource.current_fence_value;
+    return fence_value >= window_resource.frames[window_resource.frame_index].fence_value;
   };
 
   // remove old one
