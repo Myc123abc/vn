@@ -120,7 +120,7 @@ auto WindowManager::message_process(MSG const& msg) noexcept -> bool
     break;
   
   case Message_Destroy_Window:
-    exit_if(!DestroyWindow(reinterpret_cast<HWND>(msg.wParam)), "failed to destroy window");    
+    exit_if(!DestroyWindow(reinterpret_cast<HWND>(msg.wParam)), "failed to destroy window");
     break;
   }
   return false;

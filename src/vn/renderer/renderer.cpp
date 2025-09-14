@@ -189,9 +189,12 @@ void Renderer::create_window_resources(HWND handle) noexcept
             "failed to create command allocator");
   }
   // create command list
-  exit_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.frames[window_resource.frame_index].command_allocator.Get(), _pipeline_state.Get(), IID_PPV_ARGS(&window_resource.command_list)),
-          "failed to create command list");
-  window_resource.command_list->Close();
+  if (!_command_list)
+  {
+    exit_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.frames[window_resource.frame_index].command_allocator.Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
+            "failed to create command list");
+    _command_list->Close();
+  }
 
   // create fence resources
   exit_if(_device->CreateFence(window_resource.frames[window_resource.frame_index].fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&window_resource.fence)),
@@ -234,18 +237,23 @@ void Renderer::run() noexcept
 
       // render
       for (auto& window_resource : _window_resources)
+      {
         if (!window_resource.is_minimized) [[unlikely]]
-          window_resource.render(_command_queue.Get(), _pipeline_state.Get(), _root_signature.Get(), _vertex_buffer_view, _fence_event);
+        {
+          window_resource.render(_command_queue.Get(), _command_list.Get(), _pipeline_state.Get(), _root_signature.Get(), _vertex_buffer_view, _fence_event);
+        }
+      }
     }
   }};
 }
 
 void Renderer::WindowResource::render(
-  ID3D12CommandQueue*      command_queue,
-  ID3D12PipelineState*     pipeline_state,
-  ID3D12RootSignature*     root_signature,
-  D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view,
-  HANDLE                   fence_event) noexcept
+  ID3D12CommandQueue*        command_queue,
+  ID3D12GraphicsCommandList* command_list,
+  ID3D12PipelineState*       pipeline_state,
+  ID3D12RootSignature*       root_signature,
+  D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
+  HANDLE                     fence_event) noexcept
 {
   // reset command allocator and command list
   exit_if(frames[frame_index].command_allocator->Reset() == E_FAIL, "failed to reset command allocator");
@@ -287,7 +295,7 @@ void Renderer::WindowResource::render(
   exit_if(command_list->Close(), "failed to close command list");
 
   // execute command list
-  ID3D12CommandList* command_lists[] = { command_list.Get() };
+  ID3D12CommandList* command_lists[] = { command_list };
   command_queue->ExecuteCommandLists(_countof(command_lists), command_lists);
 
   // present swapchain

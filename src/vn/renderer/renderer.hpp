@@ -62,7 +62,7 @@ private:
   Microsoft::WRL::ComPtr<ID3D12PipelineState>       _pipeline_state; // TODO: use single pipeline state for multiple swapchains
                                                                      //       and can dynamic change render targets number for increase swapchain of window
                                                                      //       check whether have a feature like vulkan's shader object use for dynamic pipeline
-
+  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _command_list;
   Microsoft::WRL::ComPtr<ID3D12RootSignature>       _root_signature; // TODO: impl sdf
 
   std::thread                                       _thread;
@@ -95,26 +95,26 @@ private:
   // window datas is compact data sets
   struct WindowResource
   {
-    bool                                              is_minimized{};
-	  Window                                            window;
-    Microsoft::WRL::ComPtr<IDXGISwapChain4>           swapchain;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>      rtv_heap; // TODO: make single dynamic descriptor heap
-    Microsoft::WRL::ComPtr<ID3D12Resource>            rtvs[Frame_Count];
-    CD3DX12_VIEWPORT                                  viewport;
-    CD3DX12_RECT                                      scissor;
+    bool                                         is_minimized{};
+	  Window                                       window;
+    Microsoft::WRL::ComPtr<IDXGISwapChain4>      swapchain;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap; // TODO: make single dynamic descriptor heap
+    Microsoft::WRL::ComPtr<ID3D12Resource>       rtvs[Frame_Count];
+    CD3DX12_VIEWPORT                             viewport;
+    CD3DX12_RECT                                 scissor;
 
-    FrameResource                                     frames[Frame_Count];
-    uint32_t                                          frame_index{};
-    Microsoft::WRL::ComPtr<ID3D12Fence>               fence;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> command_list;
-    uint32_t                                          current_fence_value{};
+    FrameResource                                frames[Frame_Count];
+    uint32_t                                     frame_index{};
+    Microsoft::WRL::ComPtr<ID3D12Fence>          fence;
+    uint32_t                                     current_fence_value{};
 
     void render(
-      ID3D12CommandQueue*      command_queue,
-      ID3D12PipelineState*     pipeline_state,
-      ID3D12RootSignature*     root_signature,
-      D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view,
-      HANDLE                   fence_event) noexcept;
+      ID3D12CommandQueue*        command_queue,
+      ID3D12GraphicsCommandList* command_list,
+      ID3D12PipelineState*       pipeline_state,
+      ID3D12RootSignature*       root_signature,
+      D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
+      HANDLE                     fence_event) noexcept;
 
     void wait_gpu_complete(ID3D12CommandQueue* command_queue, HANDLE fence_event) noexcept;
   };
