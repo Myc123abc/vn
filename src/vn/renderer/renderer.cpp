@@ -1,10 +1,9 @@
 #include "renderer.hpp"
-#include "renderer_message_queue.hpp"
+#include "message_queue.hpp"
 #include "../util.hpp"
 #include "../window/window_manager.hpp"
 
 #include <d3dcompiler.h>
-#include <dcommon.h>
 
 #include <algorithm>
 #include <chrono>
@@ -146,70 +145,12 @@ void Renderer::destroy() noexcept
 void Renderer::create_window_resources(HWND handle) noexcept
 {
   // create window resource
-  WindowResource window_resource{};
-  window_resource.window.init(handle);
-
-  // set viewport and scissor
-  auto wnd_size = window_resource.window.size();
-  window_resource.viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(wnd_size.width), static_cast<float>(wnd_size.height) };
-  window_resource.scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(wnd_size.width), static_cast<LONG>(wnd_size.height) };
-
-  // create swapchain
-  ComPtr<IDXGISwapChain1> swapchain;
-  DXGI_SWAP_CHAIN_DESC1 swapchain_desc{};
-  swapchain_desc.BufferCount      = Frame_Count;
-  swapchain_desc.Width            = wnd_size.width;
-  swapchain_desc.Height           = wnd_size.height;
-  swapchain_desc.AlphaMode        = DXGI_ALPHA_MODE_PREMULTIPLIED;
-  swapchain_desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
-  swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-  swapchain_desc.SampleDesc.Count = 1;
-  err_if(_factory->CreateSwapChainForComposition(_command_queue.Get(), &swapchain_desc, nullptr, &swapchain),
-          "failed to create swapchain for composition");
-  err_if(swapchain.As(&window_resource.swapchain), "failed to get swapchain4");
-
-  // create composition
-  err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&window_resource.comp_device)),
-          "failed to create composition device");
-  err_if(window_resource.comp_device->CreateTargetForHwnd(window_resource.window.handle(), TRUE, &window_resource.comp_target),
-          "failed to create composition target");
-  err_if(window_resource.comp_device->CreateVisual(&window_resource.comp_visual),
-          "failed to create composition visual");
-  err_if(window_resource.comp_visual->SetContent(window_resource.swapchain.Get()),
-          "failed to bind swapchain to composition visual");
-  err_if(window_resource.comp_target->SetRoot(window_resource.comp_visual.Get()),
-          "failed to bind composition visual to target");
-  err_if(window_resource.comp_device->Commit(),
-          "failed to commit composition device");
-
-  // create descriptor heaps
-  D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
-  rtv_heap_desc.NumDescriptors = Frame_Count;
-  rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-  err_if(_device->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&window_resource.rtv_heap)),
-    "failed to create render target view descriptor heap");
-
-  // create render target views
-  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ window_resource.rtv_heap->GetCPUDescriptorHandleForHeapStart() };
-  for (auto i = 0; i <Frame_Count; ++i)
-  {
-    err_if(window_resource.swapchain->GetBuffer(i, IID_PPV_ARGS(&window_resource.rtvs[i])),
-            "failed to get descriptor");
-    _device->CreateRenderTargetView(window_resource.rtvs[i].Get(), nullptr, rtv_handle);
-    rtv_handle.Offset(1, Render_Target_View_Descriptor_Size);
-  }
-
-  // create frame resources
-  for (auto i = 0; i < Frame_Count; ++i)
-    // create command allocator
-    err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&window_resource.command_allocators[i])),
-            "failed to create command allocator");
+  auto window_resource = WindowResource{ handle, _factory.Get(), _command_queue.Get(), _device.Get() };
 
   // create command list
   if (!_command_list)
   {
-    err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource.command_allocators[_frame_index].Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
+    err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, window_resource._command_allocators[_frame_index].Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
             "failed to create command list");
     _command_list->Close();
   }
@@ -246,7 +187,7 @@ void Renderer::run() noexcept
         return;
 
       // process all message
-      RendererMessageQueue::instance()->pop_all();
+      MessageQueue::instance()->pop_all();
 
       // render
       render();
@@ -268,7 +209,7 @@ void Renderer::render() noexcept
 {
   // render per window
   for (auto& window_resource : _window_resources)
-    if (!window_resource.is_minimized) [[unlikely]]
+    if (!window_resource._is_minimized) [[unlikely]]
       window_resource.render(_command_queue.Get(), _command_list.Get(), _pipeline_state.Get(), _root_signature.Get(), _vertex_buffer_view, _frame_index);
 
   // get current fence value
@@ -293,76 +234,12 @@ void Renderer::render() noexcept
   _fence_values[_frame_index] = current_fence_value + 1;
 }
 
-void Renderer::WindowResource::render(
-  ID3D12CommandQueue*        command_queue,
-  ID3D12GraphicsCommandList* command_list,
-  ID3D12PipelineState*       pipeline_state,
-  ID3D12RootSignature*       root_signature,
-  D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
-  uint32_t                   frame_index) noexcept
-{
-  // reset command allocator and command list
-  err_if(command_allocators[frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
-  err_if(command_list->Reset(command_allocators[frame_index].Get(), pipeline_state), "failed to reset command list");
-
-  // set root signature
-  command_list->SetGraphicsRootSignature(root_signature);
-
-  // set viewport and scissor rectangle
-  command_list->RSSetViewports(1, &viewport);
-  command_list->RSSetScissorRects(1, &scissor);
-
-  // get current render target view index
-  auto rtv_idx = swapchain->GetCurrentBackBufferIndex();
-
-  // convert render target view from present type to render target type
-  auto barrier_begin = CD3DX12_RESOURCE_BARRIER::Transition(rtvs[rtv_idx].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-  command_list->ResourceBarrier(1, &barrier_begin);
-
-  // set render target view
-  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtv_heap->GetCPUDescriptorHandleForHeapStart(), rtv_idx, Render_Target_View_Descriptor_Size);
-  command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, nullptr);
-
-  // clear color
-  float constexpr clear_color[4] = { 0.f, 0.f, 0.f, .5f };
-  command_list->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
-
-  // set primitive topology
-  command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-  // set vertex buffer
-  command_list->IASetVertexBuffers(0, 1, &vertex_buffer_view);
-
-  // set constant
-  static auto beg = std::chrono::high_resolution_clock::now();
-  auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - beg).count();
-  float alpha = abs(sin(3.1415926 / 3000 * dur));
-  command_list->SetGraphicsRoot32BitConstant(0, std::bit_cast<uint32_t>(alpha), 0);
-
-  // draw
-  command_list->DrawInstanced(3, 1, 0, 0);
-
-  // record finish, change render target view type to present
-  auto barrier_end = CD3DX12_RESOURCE_BARRIER::Transition(rtvs[rtv_idx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-  command_list->ResourceBarrier(1, &barrier_end);
-
-  // close command list
-  err_if(command_list->Close(), "failed to close command list");
-
-  // execute command list
-  ID3D12CommandList* command_lists[] = { command_list };
-  command_queue->ExecuteCommandLists(_countof(command_lists), command_lists);
-
-  // present swapchain
-  err_if(swapchain->Present(1, 0), "failed to present swapchain");
-}
-
 auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::function<bool()>
 {
   // find closed window resource
   auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
   {
-    return handle == window_resource.window.handle();
+    return handle == window_resource._window.handle();
   });
   err_if(it == _window_resources.end(), "failed to find closed window");
 
@@ -387,10 +264,10 @@ void Renderer::set_window_minimized(HWND handle) noexcept
 {
   auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
   {
-    return handle == window_resource.window.handle();
+    return handle == window_resource._window.handle();
   });
   if (it == _window_resources.end()) return;
-  it->is_minimized = true;
+  it->_is_minimized = true;
 }
 
 void Renderer::window_resize(HWND handle) noexcept
@@ -398,45 +275,12 @@ void Renderer::window_resize(HWND handle) noexcept
   // create new window resource and add old resource wait destroy, so need return func
   auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
   {
-    return handle == window_resource.window.handle();
+    return handle == window_resource._window.handle();
   });
   if (it == _window_resources.end()) return;
 
-  // reset minimized
-  it->is_minimized = false;
-
-  // set viewport and scissor rectangle
-  auto wnd_size = it->window.size();
-  it->viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(wnd_size.width), static_cast<float>(wnd_size.height) };
-  it->scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(wnd_size.width), static_cast<LONG>(wnd_size.height) };
-
-  // wait gpu finish
-  wait_gpu_complete();
-  
-  // reset swapchain relation resources
-  for (auto i = 0; i < Frame_Count; ++i)
-    it->rtvs[i].Reset();
-  it->comp_visual->SetContent(nullptr);
-
-  // resize swapchain
-  err_if(it->swapchain->ResizeBuffers(Frame_Count, wnd_size.width, wnd_size.height, DXGI_FORMAT_UNKNOWN, 0),
-          "failed to resize swapchain");
-
-  // rebind composition resources
-  err_if(it->comp_visual->SetContent(it->swapchain.Get()),
-          "failed to bind swapchain to composition visual");
-  err_if(it->comp_device->Commit(),
-          "failed to commit composition device");
-
-  // recreate render target views
-  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ it->rtv_heap->GetCPUDescriptorHandleForHeapStart() };
-  for (auto i = 0; i <Frame_Count; ++i)
-  {
-    err_if(it->swapchain->GetBuffer(i, IID_PPV_ARGS(&it->rtvs[i])),
-            "failed to get descriptor");
-    _device->CreateRenderTargetView(it->rtvs[i].Get(), nullptr, rtv_handle);
-    rtv_handle.Offset(1, Render_Target_View_Descriptor_Size);
-  }
+  // resize window resource
+  it->resize(_device.Get());
 }
 
 }}

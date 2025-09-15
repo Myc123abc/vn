@@ -1,10 +1,10 @@
-#include "renderer_message_queue.hpp"
+#include "message_queue.hpp"
 
 #include <iterator>
 
 namespace vn { namespace renderer {
 
-void RendererMessageQueue::pop_all() noexcept
+void MessageQueue::pop_all() noexcept
 {
   std::lock_guard lock(_mutex);
   std::deque<Message> new_messages;
@@ -42,7 +42,7 @@ void RendererMessageQueue::pop_all() noexcept
         it = _messages.erase(it);
       }
       else
-        static_assert(false, "[RendererMessageQueue] unknow message type");
+        static_assert(false, "[MessageQueue] unknow message type");
     }, it->info);
   }
   std::ranges::move(new_messages, std::back_inserter(_messages));

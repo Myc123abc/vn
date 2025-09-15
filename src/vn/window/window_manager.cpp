@@ -1,5 +1,5 @@
 #include "window_manager.hpp"
-#include "../renderer/renderer_message_queue.hpp"
+#include "../renderer/message_queue.hpp"
 #include "../util.hpp"
 
 #include <windowsx.h>
@@ -19,16 +19,16 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     ShowWindow(handle, SW_HIDE);
     EnableWindow(handle, FALSE);
     WindowManager::instance()->_window_count.fetch_sub(1, std::memory_order_relaxed);
-    renderer::RendererMessageQueue::instance()->push(renderer::WindowCloseInfo{ handle });
+    renderer::MessageQueue::instance()->push(renderer::WindowCloseInfo{ handle });
   }
   return 0;
 
   case WM_SIZE:
   {
     if (w_param == SIZE_MINIMIZED)
-      renderer::RendererMessageQueue::instance()->push(renderer::WindowMinimizedInfo{ handle });
+      renderer::MessageQueue::instance()->push(renderer::WindowMinimizedInfo{ handle });
     else if (w_param == SIZE_RESTORED)
-      renderer::RendererMessageQueue::instance()->push(renderer::WindowResizeInfo{ handle });
+      renderer::MessageQueue::instance()->push(renderer::WindowResizeInfo{ handle });
   }
   return 0;
 
@@ -155,7 +155,7 @@ void WindowManager::create_window() noexcept
   err_if(!_window_create_info.handle, "failed to create window");
 
   // init renderer resource
-  renderer::RendererMessageQueue::instance()->push(renderer::WindowCreateInfo{ _window_create_info.handle }).wait();
+  renderer::MessageQueue::instance()->push(renderer::WindowCreateInfo{ _window_create_info.handle }).wait();
 
   // show window
   ShowWindow(_window_create_info.handle, SW_SHOW);

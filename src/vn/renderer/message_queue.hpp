@@ -52,20 +52,20 @@ struct Message
   std::promise<void> done;
 };
 
-class RendererMessageQueue
+class MessageQueue
 {
 private:
-  RendererMessageQueue()                                       = default;
-  ~RendererMessageQueue()                                      = default;
+  MessageQueue()                                       = default;
+  ~MessageQueue()                                      = default;
 public:
-  RendererMessageQueue(RendererMessageQueue const&)            = delete;
-  RendererMessageQueue(RendererMessageQueue&&)                 = delete;
-  RendererMessageQueue& operator=(RendererMessageQueue const&) = delete;
-  RendererMessageQueue& operator=(RendererMessageQueue&&)      = delete;
+  MessageQueue(MessageQueue const&)            = delete;
+  MessageQueue(MessageQueue&&)                 = delete;
+  MessageQueue& operator=(MessageQueue const&) = delete;
+  MessageQueue& operator=(MessageQueue&&)      = delete;
 
   static auto const instance() noexcept
   {
-    static RendererMessageQueue instance;
+    static MessageQueue instance;
     return &instance;
   }
 

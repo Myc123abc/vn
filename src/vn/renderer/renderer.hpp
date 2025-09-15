@@ -1,13 +1,8 @@
 #pragma once
 
-#include "../window/window.hpp"
+#include "window_resource.hpp"
 
-#include <wrl/client.h>
-#include <dxgi1_6.h>
-#include <d3d12.h>
 #include <DirectXMath.h>
-#include <directx/d3dx12.h>
-#include <dcomp.h>
 
 #include <vector>
 #include <thread>
@@ -30,6 +25,8 @@ class Renderer
   friend void vn::init()    noexcept;
   friend void vn::destroy() noexcept;
   friend void vn::render()  noexcept;
+  
+  friend class WindowResource;
   
 private:
   Renderer()                           = default;
@@ -59,8 +56,6 @@ private:
   void acquire_render() noexcept { _render_acquire.release(); }
 
 private:
-  static inline auto Render_Target_View_Descriptor_Size = 0;
-
   Microsoft::WRL::ComPtr<IDXGIFactory6>             _factory;
   Microsoft::WRL::ComPtr<ID3D12Device>              _device;
   Microsoft::WRL::ComPtr<ID3D12CommandQueue>        _command_queue;
@@ -76,7 +71,7 @@ private:
 ///                            Window Resources 
 ////////////////////////////////////////////////////////////////////////////////
   
-  friend class RendererMessageQueue;
+  friend class MessageQueue;
 
 private:
   void create_window_resources(HWND handle) noexcept;
@@ -85,36 +80,6 @@ private:
   void window_resize(HWND handle) noexcept;
 
 private:
-  static constexpr auto Frame_Count = 2;
-
-  // TODO: use global buffer
-  // |            frame 0            |            frame 1            |
-  // | window 0 data | window 1 data | window 0 data | window 1 data |
-  // window datas is compact data sets
-  struct WindowResource
-  {
-    bool                                           is_minimized{};
-	  Window                                         window;
-
-    Microsoft::WRL::ComPtr<IDXGISwapChain4>        swapchain;
-    Microsoft::WRL::ComPtr<IDCompositionDevice>    comp_device;
-    Microsoft::WRL::ComPtr<IDCompositionTarget>    comp_target;
-    Microsoft::WRL::ComPtr<IDCompositionVisual>    comp_visual;
-
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   rtv_heap;
-    Microsoft::WRL::ComPtr<ID3D12Resource>         rtvs[Frame_Count];
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> command_allocators[Frame_Count];
-    CD3DX12_VIEWPORT                               viewport;
-    CD3DX12_RECT                                   scissor;
-
-    void render(
-      ID3D12CommandQueue*        command_queue,
-      ID3D12GraphicsCommandList* command_list,
-      ID3D12PipelineState*       pipeline_state,
-      ID3D12RootSignature*       root_signature,
-      D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
-      uint32_t                   frame_index) noexcept;
-  };
   std::vector<WindowResource> _window_resources;
 
   uint64_t                            _fence_values[Frame_Count]{};
