@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <array>
 
 using namespace Microsoft::WRL;
 
@@ -54,8 +55,9 @@ void Renderer::init() noexcept
   err_if(!_fence_event, "failed to create fence event");
 
   // create root signature
-  CD3DX12_ROOT_SIGNATURE_DESC signature_desc{};
-  signature_desc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER, 1>{};
+  root_parameters[0].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+  auto signature_desc = CD3DX12_ROOT_SIGNATURE_DESC{ root_parameters.size(), root_parameters.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
   ComPtr<ID3DBlob> signature;
   ComPtr<ID3DBlob> error;
   err_if(D3D12SerializeRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
@@ -66,13 +68,12 @@ void Renderer::init() noexcept
   // create shaders
   ComPtr<ID3DBlob> vertex_shader;
   ComPtr<ID3DBlob> pixel_shader;
-#ifndef NDEBUG
-  auto compile_flag = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#else
-  auto compile_flag = 0;
-#endif
-  err_if(D3DCompileFromFile(L"assets/shader.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compile_flag, 0, &vertex_shader, nullptr), "failed to compile vertex shader");
-  err_if(D3DCompileFromFile(L"assets/shader.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", compile_flag, 0, &pixel_shader,  nullptr), "failed to compile pixel shader");
+  auto vertex_data = read_file("assets/vertex.cso");
+  auto pixel_data  = read_file("assets/pixel.cso");
+  D3DCreateBlob(vertex_data.size(), &vertex_shader);
+  D3DCreateBlob(pixel_data.size(), &pixel_shader);
+  memcpy(vertex_shader->GetBufferPointer(), vertex_data.data(), vertex_data.size());
+  memcpy(pixel_shader->GetBufferPointer(), pixel_data.data(), pixel_data.size());
 
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
@@ -98,9 +99,9 @@ void Renderer::init() noexcept
   // create vertices
   Vertex vertices[]
   {
-    { { 0.f,   .5f, 0.f }, { 1.f, 0.f, 0.f, .5f } },
-    { { .5f,  -.5f, 0.f }, { 0.f, 1.f, 0.f, .5f } },
-    { { -.5f, -.5f, 0.f }, { 0.f, 0.f, 1.f, .5f } },
+    { { 0.f,   .5f, 0.f }, { 1.f, 0.f, 0.f, 1.f } },
+    { { .5f,  -.5f, 0.f }, { 0.f, 1.f, 0.f, 1.f } },
+    { { -.5f, -.5f, 0.f }, { 0.f, 0.f, 1.f, 1.f } },
   };
 
   // FIXME: it's not to recommand use this, just like vulkan use device buffer to dynamic upload byte data every frame
@@ -181,10 +182,6 @@ void Renderer::create_window_resources(HWND handle) noexcept
           "failed to bind composition visual to target");
   err_if(window_resource.comp_device->Commit(),
           "failed to commit composition device");
-
-  // disable some combination keys
-  err_if(_factory->MakeWindowAssociation(window_resource.window.handle(), DXGI_MWA_NO_WINDOW_CHANGES | DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_PRINT_SCREEN),
-    "failed to set window association");
 
   // create descriptor heaps
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
@@ -336,6 +333,12 @@ void Renderer::WindowResource::render(
   // set vertex buffer
   command_list->IASetVertexBuffers(0, 1, &vertex_buffer_view);
 
+  // set constant
+  static auto beg = std::chrono::high_resolution_clock::now();
+  auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - beg).count();
+  float alpha = abs(sin(3.1415926 / 3000 * dur));
+  command_list->SetGraphicsRoot32BitConstant(0, std::bit_cast<uint32_t>(alpha), 0);
+
   // draw
   command_list->DrawInstanced(3, 1, 0, 0);
 
@@ -375,7 +378,7 @@ auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::functio
   _window_resources.erase(it);
 
   // destroy window
-  WindowManager::instance()->destroy_window(handle);
+  vn::WindowManager::instance()->destroy_window(handle);
 
   return func;
 }
