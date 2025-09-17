@@ -17,7 +17,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   case WM_CLOSE:
   {
     ShowWindow(handle, SW_HIDE);
-    EnableWindow(handle, FALSE);
+    EnableWindow(handle, false);
     WindowManager::instance()->_window_count.fetch_sub(1, std::memory_order_relaxed);
     renderer::MessageQueue::instance()->push(renderer::WindowCloseInfo{ handle });
   }

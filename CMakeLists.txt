@@ -23,7 +23,7 @@ target_compile_definitions(test PRIVATE
   NOMINMAX
 )
 target_link_libraries(test PRIVATE
-  d3d12 dxgi d3dcompiler dcomp
+  d3d12 dxgi d3dcompiler dcomp d3d11 dxguid
   DirectX-Headers
 )
 

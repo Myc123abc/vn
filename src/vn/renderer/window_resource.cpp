@@ -8,8 +8,10 @@ using namespace Microsoft::WRL;
 
 namespace vn { namespace renderer {
 
-WindowResource::WindowResource(HWND handle, IDXGIFactory6* factory, ID3D12CommandQueue* command_queue, ID3D12Device* device) noexcept
+WindowResource::WindowResource(HWND handle) noexcept
 {
+  auto renderer = Renderer::instance();
+
   _window.init(handle);
 
   // set viewport and scissor
@@ -28,14 +30,14 @@ WindowResource::WindowResource(HWND handle, IDXGIFactory6* factory, ID3D12Comman
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  err_if(factory->CreateSwapChainForComposition(command_queue, &swapchain_desc, nullptr, &swapchain),
+  err_if(renderer->_factory->CreateSwapChainForComposition(renderer->_command_queue.Get(), &swapchain_desc, nullptr, &swapchain),
           "failed to create swapchain for composition");
   err_if(swapchain.As(&_swapchain), "failed to get swapchain4");
 
   // create composition
   err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
           "failed to create composition device");
-  err_if(_comp_device->CreateTargetForHwnd(_window.handle(), TRUE, &_comp_target),
+  err_if(_comp_device->CreateTargetForHwnd(_window.handle(), true, &_comp_target),
           "failed to create composition target");
   err_if(_comp_device->CreateVisual(&_comp_visual),
           "failed to create composition visual");
@@ -50,7 +52,7 @@ WindowResource::WindowResource(HWND handle, IDXGIFactory6* factory, ID3D12Comman
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
   rtv_heap_desc.NumDescriptors = Frame_Count;
   rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-  err_if(device->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&_rtv_heap)),
+  err_if(renderer->_device->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&_rtv_heap)),
     "failed to create render target view descriptor heap");
 
   // create render target views
@@ -59,33 +61,33 @@ WindowResource::WindowResource(HWND handle, IDXGIFactory6* factory, ID3D12Comman
   {
     err_if(swapchain->GetBuffer(i, IID_PPV_ARGS(&_rtvs[i])),
             "failed to get descriptor");
-    device->CreateRenderTargetView(_rtvs[i].Get(), nullptr, rtv_handle);
+    renderer->_device->CreateRenderTargetView(_rtvs[i].Get(), nullptr, rtv_handle);
     rtv_handle.Offset(1, Render_Target_View_Descriptor_Size);
   }
 
   // create frame resources
   for (auto i = 0; i < Frame_Count; ++i)
     // create command allocator
-    err_if(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_command_allocators[i])),
+    err_if(renderer->_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_command_allocators[i])),
             "failed to create command allocator");
 }
 
-void WindowResource::render(
-  ID3D12CommandQueue*        command_queue,
-  ID3D12GraphicsCommandList* command_list,
-  ID3D12PipelineState*       pipeline_state,
-  ID3D12RootSignature*       root_signature,
-  D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
-  uint32_t                   frame_index) noexcept
+void WindowResource::render() noexcept
 {
-  get_window_back_image();
+  auto renderer = Renderer::instance();
+  auto command_list = renderer->_command_list.Get();
   
   // reset command allocator and command list
-  err_if(_command_allocators[frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
-  err_if(command_list->Reset(_command_allocators[frame_index].Get(), pipeline_state), "failed to reset command list");
+  err_if(_command_allocators[renderer->_frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(command_list->Reset(_command_allocators[renderer->_frame_index].Get(), renderer->_pipeline_state.Get()), "failed to reset command list");
 
   // set root signature
-  command_list->SetGraphicsRootSignature(root_signature);
+  command_list->SetGraphicsRootSignature(renderer->_root_signature.Get());
+
+  // set descriptors
+  ID3D12DescriptorHeap* heaps[] = { Renderer::instance()->_srv_heap.Get() };
+  command_list->SetDescriptorHeaps(_countof(heaps), heaps);
+  command_list->SetGraphicsRootDescriptorTable(1, heaps[0]->GetGPUDescriptorHandleForHeapStart());
 
   // set viewport and scissor rectangle
   command_list->RSSetViewports(1, &_viewport);
@@ -100,7 +102,7 @@ void WindowResource::render(
 
   // set render target view
   auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(_rtv_heap->GetCPUDescriptorHandleForHeapStart(), rtv_idx, Render_Target_View_Descriptor_Size);
-  command_list->OMSetRenderTargets(1, &rtv_handle, FALSE, nullptr);
+  command_list->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
   float constexpr clear_color[4] = { 0.f, 0.f, 0.f, .5f };
@@ -110,7 +112,7 @@ void WindowResource::render(
   command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
   // set vertex buffer
-  command_list->IASetVertexBuffers(0, 1, &vertex_buffer_view);
+  command_list->IASetVertexBuffers(0, 1, &renderer->_vertex_buffer_view);
 
   // set constant
   static auto beg = std::chrono::high_resolution_clock::now();
@@ -130,7 +132,7 @@ void WindowResource::render(
 
   // execute command list
   ID3D12CommandList* command_lists[] = { command_list };
-  command_queue->ExecuteCommandLists(_countof(command_lists), command_lists);
+  renderer->_command_queue->ExecuteCommandLists(_countof(command_lists), command_lists);
 
   // present swapchain
   err_if(_swapchain->Present(1, 0), "failed to present swapchain");
@@ -173,11 +175,6 @@ void WindowResource::resize(ID3D12Device* device) noexcept
     device->CreateRenderTargetView(_rtvs[i].Get(), nullptr, rtv_handle);
     rtv_handle.Offset(1, Render_Target_View_Descriptor_Size);
   }
-}
-
-void WindowResource::get_window_back_image() noexcept
-{
-  
 }
 
 }}

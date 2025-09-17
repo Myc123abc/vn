@@ -20,19 +20,11 @@ class WindowResource
   friend class Renderer;
 
 public:
-  WindowResource(HWND handle, IDXGIFactory6* factory, ID3D12CommandQueue* command_queue, ID3D12Device* device) noexcept;
+  WindowResource(HWND handle) noexcept;
 
-  void render(
-    ID3D12CommandQueue*        command_queue,
-    ID3D12GraphicsCommandList* command_list,
-    ID3D12PipelineState*       pipeline_state,
-    ID3D12RootSignature*       root_signature,
-    D3D12_VERTEX_BUFFER_VIEW   vertex_buffer_view,
-    uint32_t                   frame_index) noexcept;
+  void render() noexcept;
 
   void resize(ID3D12Device* device) noexcept;
-
-  void get_window_back_image() noexcept;
 
 private:
   bool                                           _is_minimized{};
