@@ -2,7 +2,7 @@
 
 #include "window_resource.hpp"
 
-#include <DirectXMath.h>
+#include <glm/glm.hpp>
 
 #include <vector>
 #include <thread>
@@ -29,7 +29,6 @@ class Renderer
   
   friend class WindowResource;
   friend class MessageQueue;
-  friend class DesktopDuplication;
   
 private:
   Renderer()                           = default;
@@ -65,6 +64,8 @@ private:
   void set_window_minimized(HWND handle) noexcept;
   void window_resize(HWND handle) noexcept;
 
+  void capture_backdrop() noexcept;
+
 private:
   Microsoft::WRL::ComPtr<IDXGIFactory6>             _factory;
   Microsoft::WRL::ComPtr<ID3D12Device>              _device;
@@ -89,16 +90,17 @@ private:
 
   struct Vertex
   {
-    DirectX::XMFLOAT2 pos;
-    DirectX::XMFLOAT2 uv;
-  	DirectX::XMFLOAT4 color;
+    glm::vec2 pos;
+    glm::vec2 uv;
+  	glm::vec4 color;
   };
-  Microsoft::WRL::ComPtr<ID3D12Resource>       _vertex_buffer;
-  D3D12_VERTEX_BUFFER_VIEW                     _vertex_buffer_view;
-  Microsoft::WRL::ComPtr<ID3D12PipelineState>  _pipeline_state;
-  Microsoft::WRL::ComPtr<ID3D12RootSignature>  _root_signature;
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _srv_heap;
-  Microsoft::WRL::ComPtr<ID3D12Resource>       _texture;
+  Microsoft::WRL::ComPtr<ID3D12Resource>         _vertex_buffer;
+  D3D12_VERTEX_BUFFER_VIEW                       _vertex_buffer_view;
+  Microsoft::WRL::ComPtr<ID3D12PipelineState>    _pipeline_state;
+  Microsoft::WRL::ComPtr<ID3D12RootSignature>    _root_signature;
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   _srv_heap;
+  Microsoft::WRL::ComPtr<ID3D12Resource>         _backdrop_image;
+  Microsoft::WRL::ComPtr<IDXGIOutputDuplication> _desk_dup;
 };
 
 }}

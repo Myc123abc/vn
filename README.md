@@ -24,3 +24,4 @@
 | Library | License | Link |
 |--|--|--|
 |DirectX-Headers|MIT|https://github.com/microsoft/DirectX-Headers|
+|glm|MIT|https://github.com/g-truc/glm|

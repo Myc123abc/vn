@@ -10,6 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 ################################################################################
 
 add_subdirectory(vendor/DirectX-Headers)
+add_subdirectory(vendor/glm)
 
 ################################################################################
 ###                                 test exe
@@ -25,6 +26,9 @@ target_compile_definitions(test PRIVATE
 target_link_libraries(test PRIVATE
   d3d12 dxgi d3dcompiler dcomp d3d11 dxguid
   DirectX-Headers
+)
+target_include_directories(test PRIVATE
+  vendor/glm
 )
 
 ################################################################################

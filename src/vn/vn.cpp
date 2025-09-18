@@ -1,7 +1,6 @@
 #include "vn.hpp"
 #include "window/window_manager.hpp"
 #include "renderer/renderer.hpp"
-#include "renderer/desktop_duplication.hpp"
 
 using namespace vn::renderer;
 
@@ -11,7 +10,6 @@ void init() noexcept
 {
   WindowManager::instance()->init();
   Renderer::instance()->init();
-  DesktopDuplication::instance()->init();
 }
 
 void destroy() noexcept

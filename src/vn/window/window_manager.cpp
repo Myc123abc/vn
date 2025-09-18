@@ -154,6 +154,10 @@ void WindowManager::create_window() noexcept
     0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!_window_create_info.handle, "failed to create window");
 
+  // WARN: mini version of windows: windows 10 2004 Edition
+  // exclude the window from desktop duplication
+  err_if(!SetWindowDisplayAffinity(_window_create_info.handle, WDA_EXCLUDEFROMCAPTURE), "failed to exclude window from desktop duplicaiton");
+
   // init renderer resource
   renderer::MessageQueue::instance()->push(renderer::WindowCreateInfo{ _window_create_info.handle }).wait();
 
@@ -206,6 +210,12 @@ auto WindowManager::message_process(MSG const& msg) noexcept -> bool
     break;
   }
   return false;
+}
+
+// TODO: only primary screen
+auto WindowManager::screen_size() noexcept -> glm::vec2
+{
+  return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 }
 
 }

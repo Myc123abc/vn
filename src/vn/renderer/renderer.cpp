@@ -2,9 +2,9 @@
 #include "message_queue.hpp"
 #include "../util.hpp"
 #include "../window/window_manager.hpp"
-#include "desktop_duplication.hpp"
 
 #include <d3dcompiler.h>
+#include <d3d11.h>
 
 #include <algorithm>
 #include <chrono>
@@ -40,6 +40,9 @@ void Renderer::init() noexcept
   err_if(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&_device)),
           "failed to create d3d12 device");
 
+  // after create d3d12 device, the dropback image is valid
+  capture_backdrop();
+
   // create command queue
   D3D12_COMMAND_QUEUE_DESC queue_desc{};
   err_if(_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&_command_queue)),
@@ -65,47 +68,6 @@ void Renderer::init() noexcept
   init_pipeline_resources();
 
   run();
-}
-
-auto constexpr TextureWidth     = 256;
-auto constexpr TextureHeight    = 256;
-auto constexpr TexturePixelSize = 4;
-
-// Generate a simple black and white checkerboard texture.
-std::vector<UINT8> GenerateTextureData()
-{
-    const UINT rowPitch = TextureWidth * TexturePixelSize;
-    const UINT cellPitch = rowPitch >> 3;        // The width of a cell in the checkboard texture.
-    const UINT cellHeight = TextureWidth >> 3;    // The height of a cell in the checkerboard texture.
-    const UINT textureSize = rowPitch * TextureHeight;
-
-    std::vector<UINT8> data(textureSize);
-    UINT8* pData = &data[0];
-
-    for (UINT n = 0; n < textureSize; n += TexturePixelSize)
-    {
-        UINT x = n % rowPitch;
-        UINT y = n / rowPitch;
-        UINT i = x / cellPitch;
-        UINT j = y / cellHeight;
-
-        if (i % 2 == j % 2)
-        {
-            pData[n] = 0x00;        // R
-            pData[n + 1] = 0x00;    // G
-            pData[n + 2] = 0x00;    // B
-            pData[n + 3] = 0xff;    // A
-        }
-        else
-        {
-            pData[n] = 0xff;        // R
-            pData[n + 1] = 0xff;    // G
-            pData[n + 2] = 0xff;    // B
-            pData[n + 3] = 0xff;    // A
-        }
-    }
-
-    return data;
 }
 
 void Renderer::init_pipeline_resources() noexcept
@@ -175,9 +137,12 @@ void Renderer::init_pipeline_resources() noexcept
   // create vertices
   Vertex vertices[]
   {
-    { {  0.f,  .5f }, { 0.5f,  .0f }, { 1.f, 0.f, 0.f, 1.f } },
-    { {  .5f, -.5f }, { 1.0f, 1.0f }, { 0.f, 1.f, 0.f, 1.f } },
-    { { -.5f, -.5f }, {  .0f, 1.0f }, { 0.f, 0.f, 1.f, 1.f } },
+    { {  -1.f,  1.f }, {  0.f,  0.f }, {1, 1, 1, 1} },
+    { {  1.f,  1.f }, {  1.f,  0.f },  {1, 1, 1, 1} },
+    { {  -1.f, -1.f }, {  0.f,  1.f },  {1, 1, 1, 1} },
+    { {  -1.f, -1.f }, {  0.f,  1.f },  {1, 1, 1, 1} },
+    { {  1.f,  1.f }, {  1.f,  0.f },  {1, 1, 1, 1} },
+    { {  1.f, -1.f }, {  1.f,  1.f },   {1, 1, 1, 1}},
   };
 
   // FIXME: it's not to recommand use this, just like vulkan use device buffer to dynamic upload byte data every frame
@@ -208,35 +173,37 @@ void Renderer::init_pipeline_resources() noexcept
   _vertex_buffer_view.SizeInBytes    = sizeof(vertices);
 
   // create texture
+  auto screen_size = WindowManager::screen_size();
   D3D12_RESOURCE_DESC texture_desc{};
   texture_desc.MipLevels        = 1;
-  texture_desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
-  texture_desc.Width            = TextureWidth;
-  texture_desc.Height           = TextureHeight;
+  texture_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
+  texture_desc.Width            = screen_size.x;
+  texture_desc.Height           = screen_size.y;
   texture_desc.DepthOrArraySize = 1;
   texture_desc.SampleDesc.Count = 1;
   texture_desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
   heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_DEFAULT };
-  err_if(_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&_texture)),
+#if 0
+  err_if(_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&_backdrop_image)),
           "failed to create committed texture");
-
   // create upload heap
   ComPtr<ID3D12Resource> upload_heap;
   heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
-  resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(GetRequiredIntermediateSize(_texture.Get(), 0, 1));
+  resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(GetRequiredIntermediateSize(_backdrop_image.Get(), 0, 1));
   err_if(_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_heap)),
           "failed to create upload heap");
   upload_heap->SetName(L"upload heap");
 
   // upload
-  auto data = GenerateTextureData();
+  auto data = std::vector<std::byte>(texture_desc.Width * texture_desc.Height * 4);
   D3D12_SUBRESOURCE_DATA texture_data{};
   texture_data.pData      = data.data();
-  texture_data.RowPitch   = TextureWidth * TexturePixelSize;
-  texture_data.SlicePitch = texture_data.RowPitch + TextureHeight;
-  UpdateSubresources(_command_list.Get(), _texture.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
-  auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  texture_data.RowPitch   = texture_desc.Width * 4;
+  texture_data.SlicePitch = texture_data.RowPitch + texture_desc.Height;
+  UpdateSubresources(_command_list.Get(), _backdrop_image.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
+  auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_backdrop_image.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   _command_list->ResourceBarrier(1, &barrier);
+#endif
 
   // create srv
   D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
@@ -244,7 +211,7 @@ void Renderer::init_pipeline_resources() noexcept
   srv_desc.Format                  = texture_desc.Format;
   srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
   srv_desc.Texture2D.MipLevels     = 1;
-  _device->CreateShaderResourceView(_texture.Get(), &srv_desc, _srv_heap->GetCPUDescriptorHandleForHeapStart());  
+  _device->CreateShaderResourceView(_backdrop_image.Get(), &srv_desc, _srv_heap->GetCPUDescriptorHandleForHeapStart());  
 
   // commit command list
   _command_list->Close();
@@ -394,6 +361,54 @@ void Renderer::window_resize(HWND handle) noexcept
 
   // resize window resource
   it->resize(_device.Get());
+}
+
+void Renderer::capture_backdrop() noexcept
+{
+  // init d3d11 device
+  ComPtr<ID3D11Device> device;
+  err_if(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr),
+          "failed to create d3d11 device");
+    
+  // get dxgi device
+  ComPtr<IDXGIDevice> dxgI_device;
+  err_if(device.As(&dxgI_device), "failed to get dxgi device");
+
+  // get adapter
+  ComPtr<IDXGIAdapter> adapter;
+  err_if(dxgI_device->GetParent(IID_PPV_ARGS(&adapter)), "failed to get adapter from dxgi device");
+
+  // TODO: can get multiple monitors here
+  // get dxgi ouput
+  ComPtr<IDXGIOutput> output;
+  err_if(adapter->EnumOutputs(0, &output), "failed to get dxgi output");
+
+  // get dxgi output1
+  ComPtr<IDXGIOutput1> output1;
+  err_if(output.As(&output1), "failed to get dxgi output1");
+
+  // create desktop duplicaiton
+  err_if(output1->DuplicateOutput(device.Get(), &_desk_dup), "failed to get desktop duplication");
+
+  // read first frame of d3d11 texture
+  ComPtr<IDXGIResource>   desktop_resource;
+  DXGI_OUTDUPL_FRAME_INFO frame_info{};
+  ComPtr<ID3D11Texture2D> d3d11_texture;
+  err_if(_desk_dup->AcquireNextFrame(0, &frame_info, &desktop_resource), "failed to read first frame dropback");
+  err_if(_desk_dup->ReleaseFrame(), "failed to release capture backdrop");
+  err_if(desktop_resource.As(&d3d11_texture), "failed to get d3d11 texture");
+
+  // convert to dxgi resource
+  ComPtr<IDXGIResource1> texture_dxgi_resource;
+  err_if(d3d11_texture.As(&texture_dxgi_resource), "failed to conver to dxgi resource");
+
+  // share handle
+  HANDLE handle{};
+  err_if(texture_dxgi_resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr, &handle),
+          "failed to create shared handle");
+
+  // share with d3d12 resource
+  err_if(Renderer::instance()->_device->OpenSharedHandle(handle, IID_PPV_ARGS(&Renderer::instance()->_backdrop_image)), "failed to share d3d11 texture");
 }
 
 }}

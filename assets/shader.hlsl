@@ -28,8 +28,8 @@ PSInput VSMain(float4 pos : POSITION, float2 uv : TEXCOORD, float4 color : COLOR
 float4 PSMain(PSInput input) : SV_TARGET
 {
   float4 color = g_texture.Sample(g_sampler, input.uv);
-  color.rgb *= input.color.rgb;
-  color.rgb *= input.color.a;
-  color.a = input.color.a;
+  // color.rgb *= input.color.rgb;
+  // color.rgb *= input.color.a;
+  // color.a = input.color.a;
   return color;
 }

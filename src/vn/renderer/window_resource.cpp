@@ -16,15 +16,15 @@ WindowResource::WindowResource(HWND handle) noexcept
 
   // set viewport and scissor
   auto wnd_size = _window.size();
-  _viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(wnd_size.width), static_cast<float>(wnd_size.height) };
-  _scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(wnd_size.width), static_cast<LONG>(wnd_size.height) };
+  _viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(wnd_size.x), static_cast<float>(wnd_size.y) };
+  _scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(wnd_size.x), static_cast<LONG>(wnd_size.y) };
 
   // create swapchain
   ComPtr<IDXGISwapChain1> swapchain;
   DXGI_SWAP_CHAIN_DESC1 swapchain_desc{};
   swapchain_desc.BufferCount      = Frame_Count;
-  swapchain_desc.Width            = wnd_size.width;
-  swapchain_desc.Height           = wnd_size.height;
+  swapchain_desc.Width            = wnd_size.x;
+  swapchain_desc.Height           = wnd_size.y;
   swapchain_desc.AlphaMode        = DXGI_ALPHA_MODE_PREMULTIPLIED;
   swapchain_desc.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -121,7 +121,7 @@ void WindowResource::render() noexcept
   command_list->SetGraphicsRoot32BitConstant(0, std::bit_cast<uint32_t>(alpha), 0);
 
   // draw
-  command_list->DrawInstanced(3, 1, 0, 0);
+  command_list->DrawInstanced(6, 1, 0, 0);
 
   // record finish, change render target view type to present
   auto barrier_end = CD3DX12_RESOURCE_BARRIER::Transition(_rtvs[rtv_idx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -145,8 +145,8 @@ void WindowResource::resize(ID3D12Device* device) noexcept
 
   // set viewport and scissor rectangle
   auto wnd_size = _window.size();
-  _viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(wnd_size.width), static_cast<float>(wnd_size.height) };
-  _scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(wnd_size.width), static_cast<LONG>(wnd_size.height) };
+  _viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(wnd_size.x), static_cast<float>(wnd_size.y) };
+  _scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(wnd_size.x), static_cast<LONG>(wnd_size.y) };
 
   // wait gpu finish
   Renderer::instance()->wait_gpu_complete();
@@ -157,7 +157,7 @@ void WindowResource::resize(ID3D12Device* device) noexcept
   _comp_visual->SetContent(nullptr);
 
   // resize swapchain
-  err_if(_swapchain->ResizeBuffers(Frame_Count, wnd_size.width, wnd_size.height, DXGI_FORMAT_UNKNOWN, 0),
+  err_if(_swapchain->ResizeBuffers(Frame_Count, wnd_size.x, wnd_size.y, DXGI_FORMAT_UNKNOWN, 0),
           "failed to resize swapchain");
 
   // rebind composition resources
