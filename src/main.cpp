@@ -17,7 +17,7 @@ int main()
   while (WindowManager::instance()->window_count())
   {
     vn::render();
-  
+
     static bool ok{};
     auto now = std::chrono::high_resolution_clock::now();
     auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(now - beg).count();

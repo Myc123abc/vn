@@ -44,7 +44,7 @@ public:
   static auto screen_size() noexcept -> glm::vec2;
 
 private:
-  void init() noexcept;
+  void init()    noexcept;
   void destroy() noexcept;
 
   void create_window() noexcept;

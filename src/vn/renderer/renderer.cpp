@@ -72,6 +72,9 @@ void Renderer::init() noexcept
 
 void Renderer::init_pipeline_resources() noexcept
 {
+  // init frame buffer
+  _frame_buffer.init(1024);
+
   // create descriptor heaps
   auto srv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
   srv_heap_desc.NumDescriptors = 1;
@@ -134,44 +137,6 @@ void Renderer::init_pipeline_resources() noexcept
   err_if(_device->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
           "failed to create pipeline state");
 
-  // create vertices
-  Vertex vertices[]
-  {
-    { {  -1.f,  1.f }, {  0.f,  0.f }, {1, 1, 1, 1} },
-    { {  1.f,  1.f }, {  1.f,  0.f },  {1, 1, 1, 1} },
-    { {  -1.f, -1.f }, {  0.f,  1.f },  {1, 1, 1, 1} },
-    { {  -1.f, -1.f }, {  0.f,  1.f },  {1, 1, 1, 1} },
-    { {  1.f,  1.f }, {  1.f,  0.f },  {1, 1, 1, 1} },
-    { {  1.f, -1.f }, {  1.f,  1.f },   {1, 1, 1, 1}},
-  };
-
-  // FIXME: it's not to recommand use this, just like vulkan use device buffer to dynamic upload byte data every frame
-  //        upload heap should only use to upload single data like static texture
-  // create vertex buffer
-  auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
-  auto resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(sizeof(vertices));
-  err_if(_device->CreateCommittedResource(
-    &heap_properties,
-    D3D12_HEAP_FLAG_NONE,
-    &resource_desc,
-    D3D12_RESOURCE_STATE_GENERIC_READ,
-    nullptr,
-    IID_PPV_ARGS(&_vertex_buffer)),
-    "failed to create vertex buffer");
-
-  // copy data to vertex buffer
-  uint8_t* p;
-  auto range = CD3DX12_RANGE{};
-  err_if(_vertex_buffer->Map(0, &range, reinterpret_cast<void**>(&p)),
-          "failed to map pointer from vertex buffer");
-  memcpy(p, vertices, sizeof(vertices));
-  _vertex_buffer->Unmap(0, nullptr);
-
-  // init vertex buffer view
-  _vertex_buffer_view.BufferLocation = _vertex_buffer->GetGPUVirtualAddress();
-  _vertex_buffer_view.StrideInBytes  = sizeof(Vertex);
-  _vertex_buffer_view.SizeInBytes    = sizeof(vertices);
-
   // create texture
   auto screen_size = WindowManager::screen_size();
   D3D12_RESOURCE_DESC texture_desc{};
@@ -182,7 +147,7 @@ void Renderer::init_pipeline_resources() noexcept
   texture_desc.DepthOrArraySize = 1;
   texture_desc.SampleDesc.Count = 1;
   texture_desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-  heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_DEFAULT };
+  auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_DEFAULT };
 #if 0
   err_if(_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&_backdrop_image)),
           "failed to create committed texture");
@@ -287,6 +252,9 @@ void Renderer::run() noexcept
 
 void Renderer::render() noexcept
 {
+  // clear frame buffer
+  _frame_buffer.clear();
+
   // render per window
   for (auto& window_resource : _window_resources)
     if (!window_resource._is_minimized) [[unlikely]]
@@ -350,26 +318,24 @@ void Renderer::set_window_minimized(HWND handle) noexcept
   it->_is_minimized = true;
 }
 
+// TODO: resize and move to use a fake fullscreen transparent window to replace
 void Renderer::window_resize(HWND handle) noexcept
 {
-  // create new window resource and add old resource wait destroy, so need return func
   auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
   {
     return handle == window_resource._window.handle();
   });
   if (it == _window_resources.end()) return;
-
-  // resize window resource
   it->resize(_device.Get());
 }
 
 void Renderer::capture_backdrop() noexcept
 {
   // init d3d11 device
-  ComPtr<ID3D11Device> device;
+  ComPtr<ID3D11Device> device;  
   err_if(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr),
           "failed to create d3d11 device");
-    
+
   // get dxgi device
   ComPtr<IDXGIDevice> dxgI_device;
   err_if(device.As(&dxgI_device), "failed to get dxgi device");
@@ -409,6 +375,8 @@ void Renderer::capture_backdrop() noexcept
 
   // share with d3d12 resource
   err_if(Renderer::instance()->_device->OpenSharedHandle(handle, IID_PPV_ARGS(&Renderer::instance()->_backdrop_image)), "failed to share d3d11 texture");
+
+  CloseHandle(handle);
 }
 
 }}

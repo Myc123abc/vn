@@ -7,9 +7,9 @@
 #include <mutex>
 #include <deque>
 #include <variant>
-#include <future>
 #include <functional>
 #include <algorithm>
+#include <semaphore>
 
 namespace vn { namespace renderer {
 
@@ -38,25 +38,30 @@ struct WindowResizeInfo
   HWND handle;
 };
 
+struct FrameBufferDestroyInfo
+{
+  std::function<bool()> func;
+};
+
 using MessageInfo = std::variant<
   WindowCreateInfo,
   WindowCloseInfo,
   WindowResourceDestroyInfo,
   WindowMinimizedInfo,
-  WindowResizeInfo
+  WindowResizeInfo,
+  FrameBufferDestroyInfo
 >;
 
 struct Message
 {
-  MessageInfo        info;
-  std::promise<void> done;
+  MessageInfo info;
 };
 
 class MessageQueue
 {
 private:
-  MessageQueue()                                       = default;
-  ~MessageQueue()                                      = default;
+  MessageQueue()                               = default;
+  ~MessageQueue()                              = default;
 public:
   MessageQueue(MessageQueue const&)            = delete;
   MessageQueue(MessageQueue&&)                 = delete;
@@ -70,7 +75,7 @@ public:
   }
 
   template <typename T>
-  auto push(T&& info) noexcept
+  auto push(T&& info) noexcept -> MessageQueue&
   {
     Message msg;
     msg.info = std::forward<T>(info);
@@ -86,23 +91,27 @@ public:
                    std::get<WindowResizeInfo>(msg.info).handle == info.handle;
           });
           it != _messages.end())
-        return msg.done.get_future();
+        return *this;
     }
-
-    auto fut = msg.done.get_future();
 
     _messages.emplace_back(std::move(msg));
 
     Renderer::instance()->acquire_render();
 
-    return std::move(fut);
+    return *this;
   }
 
   void pop_all() noexcept;
 
+  void wait()   noexcept { _sem.acquire(); }
+
 private:
-  std::mutex          _mutex;
-  std::deque<Message> _messages;
+  void signal() noexcept { _sem.release(); }
+
+private:
+  std::mutex            _mutex;
+  std::deque<Message>   _messages;
+  std::binary_semaphore _sem{ 0 };
 };
 
 }}

@@ -16,7 +16,7 @@ void MessageQueue::pop_all() noexcept
       if constexpr (std::is_same_v<T, WindowCreateInfo>)
       {
         Renderer::instance()->create_window_resources(info.handle);
-        it->done.set_value();
+        signal();
         it = _messages.erase(it);
       }
       else if constexpr (std::is_same_v<T, WindowCloseInfo>)
@@ -29,7 +29,10 @@ void MessageQueue::pop_all() noexcept
         if (info.func())
           it = _messages.erase(it);
         else
+        {
           ++it;
+          Renderer::instance()->acquire_render();
+        }
       }
       else if constexpr (std::is_same_v<T, WindowMinimizedInfo>)
       {
@@ -40,6 +43,16 @@ void MessageQueue::pop_all() noexcept
       {
         Renderer::instance()->window_resize(info.handle);
         it = _messages.erase(it);
+      }
+      else if constexpr (std::is_same_v<T, FrameBufferDestroyInfo>)
+      {
+        if (info.func())
+          it = _messages.erase(it);
+        else
+        {
+          ++it;
+          Renderer::instance()->acquire_render();
+        }
       }
       else
         static_assert(false, "[MessageQueue] unknow message type");

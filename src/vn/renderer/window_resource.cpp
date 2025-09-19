@@ -111,8 +111,24 @@ void WindowResource::render() noexcept
   // set primitive topology
   command_list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  // set vertex buffer
-  command_list->IASetVertexBuffers(0, 1, &renderer->_vertex_buffer_view);
+  // create vertices
+  auto uvs = _window.uv_rect_coord();
+  std::vector<Vertex> vertices
+  {
+    { { -1.f,  1.f }, uvs.left_top,     {1, 1, 1, 1} },
+    { {  1.f,  1.f }, uvs.right_top,    {1, 1, 1, 1} },
+    { { -1.f, -1.f }, uvs.left_bottom,  {1, 1, 1, 1} },
+    { {  1.f, -1.f }, uvs.right_bottom, {1, 1, 1, 1} },
+  };
+
+  std::vector<uint16_t> indices
+  {
+    0, 1, 2,
+    2, 1, 3,
+  };
+
+  // upload vertices
+  Renderer::instance()->_frame_buffer.upload(command_list, vertices, indices);
 
   // set constant
   static auto beg = std::chrono::high_resolution_clock::now();
@@ -121,7 +137,7 @@ void WindowResource::render() noexcept
   command_list->SetGraphicsRoot32BitConstant(0, std::bit_cast<uint32_t>(alpha), 0);
 
   // draw
-  command_list->DrawInstanced(6, 1, 0, 0);
+  command_list->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
 
   // record finish, change render target view type to present
   auto barrier_end = CD3DX12_RESOURCE_BARRIER::Transition(_rtvs[rtv_idx].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);

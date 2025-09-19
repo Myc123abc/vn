@@ -1,6 +1,9 @@
 #pragma once
 
 #include "window_resource.hpp"
+#include "memory_allocator.hpp"
+
+#include <d3d11.h>
 
 #include <glm/glm.hpp>
 
@@ -29,6 +32,7 @@ class Renderer
   
   friend class WindowResource;
   friend class MessageQueue;
+  friend class FrameBuffer;
   
 private:
   Renderer()                           = default;
@@ -88,14 +92,7 @@ private:
 ///                          Pipeline Resources
 ////////////////////////////////////////////////////////////////////////////////
 
-  struct Vertex
-  {
-    glm::vec2 pos;
-    glm::vec2 uv;
-  	glm::vec4 color;
-  };
-  Microsoft::WRL::ComPtr<ID3D12Resource>         _vertex_buffer;
-  D3D12_VERTEX_BUFFER_VIEW                       _vertex_buffer_view;
+  FrameBuffer                                    _frame_buffer;
   Microsoft::WRL::ComPtr<ID3D12PipelineState>    _pipeline_state;
   Microsoft::WRL::ComPtr<ID3D12RootSignature>    _root_signature;
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   _srv_heap;
