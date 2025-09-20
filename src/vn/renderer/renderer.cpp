@@ -2,6 +2,7 @@
 #include "message_queue.hpp"
 #include "../util.hpp"
 #include "../window/window_manager.hpp"
+#include "core.hpp"
 
 #include <d3dcompiler.h>
 #include <d3d11.h>
@@ -16,71 +17,77 @@ namespace vn { namespace renderer {
 
 void Renderer::init() noexcept
 {
-  // init debug controller
-#ifndef NDEBUG
-  ComPtr<ID3D12Debug> debug_controller;
-  err_if(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_controller)),
-          "failed to create d3d12 debug controller");
-  debug_controller->EnableDebugLayer();
-#endif
+  Core::instance()->init();
 
-  // create factory
-#ifndef NDEBUG
-  err_if(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&_factory)),
-          "failed to create dxgi factory");
-#else
-  err_if(CreateDXGIFactory2(0, IID_PPV_ARGS(&_factory)),
-          "failed to create dxgi factory");
-#endif
-
-  // create device
-  ComPtr<IDXGIAdapter4> adapter;
-  err_if(_factory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter)),
-          "failed to enum dxgi adapter");
-  err_if(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&_device)),
-          "failed to create d3d12 device");
-
-  // after create d3d12 device, the dropback image is valid
   capture_backdrop();
 
-  // create command queue
-  D3D12_COMMAND_QUEUE_DESC queue_desc{};
-  err_if(_device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&_command_queue)),
-          "failed to create command queue");
-
-  // get render target view descriptor size
-  Render_Target_View_Descriptor_Size = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
-  // create fence resources
-  err_if(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)),
-          "failed to create fence");
-  _fence_event = CreateEvent(nullptr, false, false, nullptr);
-  err_if(!_fence_event, "failed to create fence event");
-  for (auto& fence_value : _fence_values)
-    fence_value = 1;
-
-  // create command allocator and list
-  err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_command_allocator)),
-          "failed to create command allocator");
-  err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _command_allocator.Get(), _pipeline_state.Get(), IID_PPV_ARGS(&_command_list)),
-          "failed to create command list");
-
   init_pipeline_resources();
+  init_blur_pipeline();
 
   run();
 }
 
-void Renderer::init_pipeline_resources() noexcept
+void Renderer::init_blur_pipeline() noexcept
 {
-  // init frame buffer
-  _frame_buffer.init(1024);
+  auto core = Core::instance();
+
+  // set root parameters
+  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 1>{};
+  auto des_ranges      = std::array<CD3DX12_DESCRIPTOR_RANGE1, 2>{};
+  des_ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+  des_ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+  root_parameters[0].InitAsDescriptorTable(2, des_ranges.data());
+
+  // set root signature desc
+  auto root_signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{};
+  root_signature_desc.Init_1_1(root_parameters.size(), root_parameters.data());
+
+  // serialize and create root signature
+  ComPtr<ID3DBlob> signature;
+  ComPtr<ID3DBlob> error;
+  err_if(D3DX12SerializeVersionedRootSignature(&root_signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
+          "failed to serialize root signature");
+  err_if(core->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_blur_root_signature)),
+          "failed to create root signature");
+
+  // create shader
+  ComPtr<ID3DBlob> blur_shader;
+  auto blur_shader_data = read_file("assets/blur.cso");
+  D3DCreateBlob(blur_shader_data.size(), &blur_shader);
+  memcpy(blur_shader->GetBufferPointer(), blur_shader_data.data(), blur_shader_data.size());
+
+  // create pipeline state
+  auto pipeline_state_desc = D3D12_COMPUTE_PIPELINE_STATE_DESC{};
+  pipeline_state_desc.pRootSignature = _blur_root_signature.Get();
+  pipeline_state_desc.CS = { blur_shader->GetBufferPointer(), blur_shader->GetBufferSize() };
+  core->device()->CreateComputePipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_blur_pipeline_state));
+
+  // create uav image
+  auto screen_size = WindowManager::screen_size();
+  _uav_image.init(screen_size.x, screen_size.y);
 
   // create descriptor heaps
-  auto srv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
-  srv_heap_desc.NumDescriptors = 1;
-  srv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  srv_heap_desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  err_if(_device->CreateDescriptorHeap(&srv_heap_desc, IID_PPV_ARGS(&_srv_heap)), "failed to create srv heap");
+  auto uav_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
+  uav_heap_desc.NumDescriptors = 2;
+  uav_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  uav_heap_desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  err_if(core->device()->CreateDescriptorHeap(&uav_heap_desc, IID_PPV_ARGS(&_srv_uav_heap)), "failed to create descriptor heap");
+
+  // create views
+  auto descriptor_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE{ _srv_uav_heap->GetCPUDescriptorHandleForHeapStart() };
+
+  _backdrop_image.create_descriptor(descriptor_handle, true);
+
+  descriptor_handle.Offset(CBV_SRV_UAV_Size);
+  _uav_image.create_descriptor(descriptor_handle);
+}
+
+void Renderer::init_pipeline_resources() noexcept
+{
+  auto core = Core::instance();
+
+  // init frame buffer
+  _frame_buffer.init(1024);
 
   // create root signature
   auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 2>{};
@@ -102,7 +109,7 @@ void Renderer::init_pipeline_resources() noexcept
   ComPtr<ID3DBlob> error;
   err_if(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
           "failed to serialize root signature");
-  err_if(_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
+  err_if(core->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
           "failed to create root signature");
   
   // create shaders
@@ -132,9 +139,9 @@ void Renderer::init_pipeline_resources() noexcept
   pipeline_state_desc.SampleMask            = UINT_MAX;
   pipeline_state_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
   pipeline_state_desc.NumRenderTargets      = 1;
-  pipeline_state_desc.RTVFormats[0]         = DXGI_FORMAT_R8G8B8A8_UNORM;
+  pipeline_state_desc.RTVFormats[0]         = DXGI_FORMAT_B8G8R8A8_UNORM;
   pipeline_state_desc.SampleDesc.Count      = 1;
-  err_if(_device->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
+  err_if(core->device()->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
           "failed to create pipeline state");
 
   // create texture
@@ -168,21 +175,13 @@ void Renderer::init_pipeline_resources() noexcept
   UpdateSubresources(_command_list.Get(), _backdrop_image.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
   auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_backdrop_image.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
   _command_list->ResourceBarrier(1, &barrier);
-#endif
-
-  // create srv
-  D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
-  srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-  srv_desc.Format                  = texture_desc.Format;
-  srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
-  srv_desc.Texture2D.MipLevels     = 1;
-  _device->CreateShaderResourceView(_backdrop_image.Get(), &srv_desc, _srv_heap->GetCPUDescriptorHandleForHeapStart());  
-
+  
   // commit command list
   _command_list->Close();
   ID3D12CommandList* cmds[] = { _command_list.Get() };
   _command_queue->ExecuteCommandLists(_countof(cmds), cmds);
   wait_gpu_complete();
+#endif
 }
 
 void Renderer::destroy() noexcept
@@ -190,33 +189,13 @@ void Renderer::destroy() noexcept
   _exit.store(true, std::memory_order_release);
   _render_acquire.release();
   _thread.join();
-  wait_gpu_complete();
-  CloseHandle(_fence_event);
+  Core::instance()->wait_gpu_complete();
+  Core::instance()->destroy();
 }
 
 void Renderer::create_window_resources(HWND handle) noexcept
 {
   _window_resources.emplace_back(handle);
-}
-
-void Renderer::wait_gpu_complete() noexcept
-{
-  auto const fence_value = _fence_values[_frame_index];
-
-  // signal fence
-  err_if(_command_queue->Signal(_fence.Get(), fence_value), "failed to signal fence");
-
-  if (_fence->GetCompletedValue() < fence_value)
-  {
-    // wait until frame is finished
-    err_if(_fence->SetEventOnCompletion(fence_value, _fence_event), "failed to set event on completion");
-    WaitForSingleObjectEx(_fence_event, INFINITE, false);
-  }
-
-  // advance frame
-  _frame_index = ++_frame_index % Frame_Count;
-  // advance fence
-  _fence_values[_frame_index] = fence_value + 1;
 }
 
 void Renderer::run() noexcept
@@ -259,27 +238,8 @@ void Renderer::render() noexcept
   for (auto& window_resource : _window_resources)
     if (!window_resource._is_minimized) [[unlikely]]
       window_resource.render();
-
-  // get current fence value
-  auto const fence_value = _fence_values[_frame_index];
-
-  // signal fence
-  err_if(_command_queue->Signal(_fence.Get(), fence_value),
-          "failed to signal fence");
-      
-  // move to next frame
-  _frame_index = ++_frame_index % Frame_Count;
-
-  // wait if next fence not ready
-  if (_fence->GetCompletedValue() < _fence_values[_frame_index])
-  {
-    err_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
-            "failed to set event on completion");
-    WaitForSingleObjectEx(_fence_event, INFINITE, false);
-  }
-
-  // update the next frame fence value
-  _fence_values[_frame_index] = fence_value + 1;
+  
+  Core::instance()->move_to_next_frame();
 }
 
 auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::function<bool()>
@@ -292,9 +252,9 @@ auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::functio
   err_if(it == _window_resources.end(), "failed to find closed window");
 
   // add to old resource, wait gpu finish using then destroy
-  auto func = [window_resource = *it, this, last_fence_value = _fence_values[_frame_index]]
+  auto func = [window_resource = *it, this, last_fence_value = Core::instance()->get_last_fence_value() ]
   {
-    auto fence_value = _fence->GetCompletedValue();
+    auto fence_value = Core::instance()->fence()->GetCompletedValue();
     err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
     return fence_value >= last_fence_value;
   };
@@ -326,7 +286,7 @@ void Renderer::window_resize(HWND handle) noexcept
     return handle == window_resource._window.handle();
   });
   if (it == _window_resources.end()) return;
-  it->resize(_device.Get());
+  it->resize();
 }
 
 void Renderer::capture_backdrop() noexcept
@@ -374,7 +334,7 @@ void Renderer::capture_backdrop() noexcept
           "failed to create shared handle");
 
   // share with d3d12 resource
-  err_if(Renderer::instance()->_device->OpenSharedHandle(handle, IID_PPV_ARGS(&Renderer::instance()->_backdrop_image)), "failed to share d3d11 texture");
+  _backdrop_image.init(handle);
 
   CloseHandle(handle);
 }

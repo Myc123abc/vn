@@ -3,8 +3,6 @@
 #include "window_resource.hpp"
 #include "memory_allocator.hpp"
 
-#include <d3d11.h>
-
 #include <glm/glm.hpp>
 
 #include <vector>
@@ -12,7 +10,6 @@
 #include <atomic>
 #include <functional>
 #include <semaphore>
-#include <array>
 
 namespace vn { 
 
@@ -53,13 +50,12 @@ private:
   void init()    noexcept;
   void destroy() noexcept;
 
+  void init_blur_pipeline() noexcept;
   void init_pipeline_resources() noexcept;
 
   void run() noexcept;
 
   void render() noexcept;
-
-  void wait_gpu_complete() noexcept;
   
   void acquire_render() noexcept { _render_acquire.release(); }
 
@@ -71,33 +67,27 @@ private:
   void capture_backdrop() noexcept;
 
 private:
-  Microsoft::WRL::ComPtr<IDXGIFactory6>             _factory;
-  Microsoft::WRL::ComPtr<ID3D12Device>              _device;
-  Microsoft::WRL::ComPtr<ID3D12CommandQueue>        _command_queue;
-  Microsoft::WRL::ComPtr<ID3D12CommandAllocator>    _command_allocator;
-  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _command_list;
-  
-  std::thread                                       _thread;
-  std::atomic_bool                                  _exit{ false };
-  std::binary_semaphore                             _render_acquire{ 0 };
+  std::thread                                      _thread;
+  std::atomic_bool                                 _exit{ false };
+  std::binary_semaphore                            _render_acquire{ 0 };
 
-  std::vector<WindowResource>                       _window_resources;
-
-  std::array<uint64_t, Frame_Count>                 _fence_values;
-  uint32_t                                          _frame_index{};
-  Microsoft::WRL::ComPtr<ID3D12Fence>               _fence;
-  HANDLE                                            _fence_event;
+  std::vector<WindowResource>                      _window_resources;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                          Pipeline Resources
 ////////////////////////////////////////////////////////////////////////////////
 
-  FrameBuffer                                    _frame_buffer;
-  Microsoft::WRL::ComPtr<ID3D12PipelineState>    _pipeline_state;
-  Microsoft::WRL::ComPtr<ID3D12RootSignature>    _root_signature;
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   _srv_heap;
-  Microsoft::WRL::ComPtr<ID3D12Resource>         _backdrop_image;
-  Microsoft::WRL::ComPtr<IDXGIOutputDuplication> _desk_dup;
+  FrameBuffer                                     _frame_buffer;
+  Microsoft::WRL::ComPtr<ID3D12PipelineState>     _pipeline_state;
+  Microsoft::WRL::ComPtr<ID3D12RootSignature>     _root_signature;
+  Image<ImageType::srv, ImageFormat::bgra8_unorm> _backdrop_image;
+  Microsoft::WRL::ComPtr<IDXGIOutputDuplication>  _desk_dup;
+
+  // blur pipeline
+  Microsoft::WRL::ComPtr<ID3D12RootSignature>     _blur_root_signature;
+  Microsoft::WRL::ComPtr<ID3D12PipelineState>     _blur_pipeline_state;
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>    _srv_uav_heap;
+  Image<ImageType::uav, ImageFormat::bgra8_unorm> _uav_image;
 };
 
 }}

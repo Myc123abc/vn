@@ -34,6 +34,8 @@ public:
 
   auto uv_rect_coord() const noexcept -> UVRectCoord;
 
+  auto rect_coord() const noexcept -> RECT;
+
 private:
   HWND _handle{};
 };

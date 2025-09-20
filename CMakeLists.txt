@@ -39,6 +39,9 @@ set(SHADER     ${CMAKE_SOURCE_DIR}/assets/shader.hlsl)
 set(VERTEX_CSO ${CMAKE_BINARY_DIR}/assets/vertex.cso)
 set(PIXEL_CSO  ${CMAKE_BINARY_DIR}/assets/pixel.cso)
 
+set(BLUR_SHADER ${CMAKE_SOURCE_DIR}/assets/blur.hlsl)
+set(BLUR_CSO    ${CMAKE_BINARY_DIR}/assets/blur.cso)
+
 add_custom_command(
   OUTPUT ${VERTEX_CSO}
   COMMAND dxc -T vs_6_0 -E VSMain -Fo ${VERTEX_CSO} ${SHADER}
@@ -49,10 +52,17 @@ add_custom_command(
   COMMAND dxc -T ps_6_0 -E PSMain -Fo ${PIXEL_CSO} ${SHADER}
   DEPENDS ${SHADER}
 )
+add_custom_command(
+  OUTPUT ${BLUR_CSO}
+  COMMAND dxc -T cs_6_0 -E compute_main -Fo ${BLUR_CSO} ${BLUR_SHADER}
+  DEPENDS ${BLUR_SHADER}
+)
+
 add_custom_target(Shaders ALL
   DEPENDS
     ${VERTEX_CSO}
     ${PIXEL_CSO}
+    ${BLUR_CSO}
 )
 
 # TODO: use for copy other assets like fonts in the future

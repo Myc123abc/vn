@@ -28,4 +28,11 @@ auto Window::uv_rect_coord() const noexcept -> UVRectCoord
   };
 }
 
+auto Window::rect_coord() const noexcept -> RECT
+{
+  RECT rect{};
+  GetWindowRect(_handle, &rect);
+  return rect;
+}
+
 }

@@ -1,5 +1,5 @@
 #include "memory_allocator.hpp"
-#include "renderer.hpp"
+#include "core.hpp"
 #include "../util.hpp"
 #include "config.hpp"
 #include "message_queue.hpp"
@@ -43,7 +43,7 @@ void FrameBuffer::init(uint32_t per_frame_capacity) noexcept
   // create buffer
   auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
   auto resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(_per_frame_capacity * Frame_Count);
-  err_if(Renderer::instance()->_device->CreateCommittedResource(
+  err_if(Core::instance()->device()->CreateCommittedResource(
     &heap_properties,
     D3D12_HEAP_FLAG_NONE,
     &resource_desc,
@@ -60,12 +60,12 @@ void FrameBuffer::init(uint32_t per_frame_capacity) noexcept
 
 auto FrameBuffer::get_current_frame_buffer_pointer() const noexcept -> std::byte*
 {
-  return _pointer + Renderer::instance()->_frame_index * _per_frame_capacity;
+  return _pointer + Core::instance()->frame_index() * _per_frame_capacity;
 }
 
 auto FrameBuffer::get_current_frame_buffer_address() const noexcept -> D3D12_GPU_VIRTUAL_ADDRESS
 {
-  return _buffer->GetGPUVirtualAddress() + Renderer::instance()->_frame_index * _per_frame_capacity;
+  return _buffer->GetGPUVirtualAddress() + Core::instance()->frame_index() * _per_frame_capacity;
 }
 
 auto FrameBuffer::append(void const* data, uint32_t size) noexcept -> FrameBuffer&
@@ -80,9 +80,9 @@ auto FrameBuffer::append(void const* data, uint32_t size) noexcept -> FrameBuffe
   {
     // add old buffer for destroy
     auto renderer = Renderer::instance();
-    auto func = [buffer = _buffer, last_fence_value = renderer->_fence_values[renderer->_frame_index]]
+    auto func = [buffer = _buffer, last_fence_value = Core::instance()->get_last_fence_value()]
     {
-      auto fence_value = Renderer::instance()->_fence->GetCompletedValue();
+      auto fence_value = Core::instance()->fence()->GetCompletedValue();
       err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
       return fence_value >= last_fence_value;
     };

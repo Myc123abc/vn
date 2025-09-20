@@ -2,12 +2,15 @@
 
 #include "config.hpp"
 #include "../window/window.hpp"
+#include "image.hpp"
 
 #include <dxgi1_6.h>
 #include <dcomp.h>
 #include <d3d12.h>
 #include <directx/d3dx12.h>
 #include <wrl/client.h>
+
+#include <array>
 
 namespace vn { namespace renderer {
 
@@ -24,9 +27,11 @@ public:
 
   void render() noexcept;
 
-  void resize(ID3D12Device* device) noexcept;
+  void resize() noexcept;
 
 private:
+  using RTVImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
+
   bool                                           _is_minimized{};
   Window                                         _window;
 
@@ -36,7 +41,7 @@ private:
   Microsoft::WRL::ComPtr<IDCompositionVisual>    _comp_visual;
 
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   _rtv_heap;
-  Microsoft::WRL::ComPtr<ID3D12Resource>         _rtvs[Frame_Count];
+  std::array<RTVImageType, Frame_Count>          _rtv_images;
   Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _command_allocators[Frame_Count];
   CD3DX12_VIEWPORT                               _viewport;
   CD3DX12_RECT                                   _scissor;
