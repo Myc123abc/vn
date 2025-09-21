@@ -1,7 +1,6 @@
 #pragma once
 
 #include "window_resource.hpp"
-#include "memory_allocator.hpp"
 
 #include <glm/glm.hpp>
 
@@ -66,6 +65,8 @@ private:
 
   void capture_backdrop() noexcept;
 
+  void sort_windows_by_z_order() noexcept;
+
 private:
   std::thread                                      _thread;
   std::atomic_bool                                 _exit{ false };
@@ -78,16 +79,16 @@ private:
 ////////////////////////////////////////////////////////////////////////////////
 
   FrameBuffer                                     _frame_buffer;
+
+  // sdf pipeline, for future
   Microsoft::WRL::ComPtr<ID3D12PipelineState>     _pipeline_state;
   Microsoft::WRL::ComPtr<ID3D12RootSignature>     _root_signature;
-  Image<ImageType::srv, ImageFormat::bgra8_unorm> _backdrop_image;
-  Microsoft::WRL::ComPtr<IDXGIOutputDuplication>  _desk_dup;
 
   // blur pipeline
+  Image<ImageType::srv, ImageFormat::bgra8_unorm> _desktop_image;
+  Microsoft::WRL::ComPtr<IDXGIOutputDuplication>  _desk_dup;
   Microsoft::WRL::ComPtr<ID3D12RootSignature>     _blur_root_signature;
   Microsoft::WRL::ComPtr<ID3D12PipelineState>     _blur_pipeline_state;
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>    _srv_uav_heap;
-  Image<ImageType::uav, ImageFormat::bgra8_unorm> _uav_image;
 };
 
 }}

@@ -61,25 +61,6 @@ void Renderer::init_blur_pipeline() noexcept
   pipeline_state_desc.pRootSignature = _blur_root_signature.Get();
   pipeline_state_desc.CS = { blur_shader->GetBufferPointer(), blur_shader->GetBufferSize() };
   core->device()->CreateComputePipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_blur_pipeline_state));
-
-  // create uav image
-  auto screen_size = WindowManager::screen_size();
-  _uav_image.init(screen_size.x, screen_size.y);
-
-  // create descriptor heaps
-  auto uav_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
-  uav_heap_desc.NumDescriptors = 2;
-  uav_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-  uav_heap_desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-  err_if(core->device()->CreateDescriptorHeap(&uav_heap_desc, IID_PPV_ARGS(&_srv_uav_heap)), "failed to create descriptor heap");
-
-  // create views
-  auto descriptor_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE{ _srv_uav_heap->GetCPUDescriptorHandleForHeapStart() };
-
-  _backdrop_image.create_descriptor(descriptor_handle, true);
-
-  descriptor_handle.Offset(CBV_SRV_UAV_Size);
-  _uav_image.create_descriptor(descriptor_handle);
 }
 
 void Renderer::init_pipeline_resources() noexcept
@@ -90,21 +71,22 @@ void Renderer::init_pipeline_resources() noexcept
   _frame_buffer.init(1024);
 
   // create root signature
-  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 2>{};
+  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 1>{};
   root_parameters[0].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-  auto des_range = CD3DX12_DESCRIPTOR_RANGE1{};
-  des_range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
-  root_parameters[1].InitAsDescriptorTable(1, &des_range, D3D12_SHADER_VISIBILITY_PIXEL);
+  //auto des_range = CD3DX12_DESCRIPTOR_RANGE1{};
+  //des_range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+  //root_parameters[1].InitAsDescriptorTable(1, &des_range, D3D12_SHADER_VISIBILITY_PIXEL);
   
-  auto sampler_desc = D3D12_STATIC_SAMPLER_DESC{};
-  sampler_desc.AddressU         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  sampler_desc.AddressV         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  sampler_desc.AddressW         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  sampler_desc.ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER;
-  sampler_desc.MaxLOD           = D3D12_FLOAT32_MAX;
-  sampler_desc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+  //auto sampler_desc = D3D12_STATIC_SAMPLER_DESC{};
+  //sampler_desc.AddressU         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+  //sampler_desc.AddressV         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+  //sampler_desc.AddressW         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+  //sampler_desc.ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER;
+  //sampler_desc.MaxLOD           = D3D12_FLOAT32_MAX;
+  //sampler_desc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-  auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{ root_parameters.size(), root_parameters.data(), 1, &sampler_desc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
+  //auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{ root_parameters.size(), root_parameters.data(), 1, &sampler_desc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
+  auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{ root_parameters.size(), root_parameters.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
   ComPtr<ID3DBlob> signature;
   ComPtr<ID3DBlob> error;
   err_if(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
@@ -143,7 +125,7 @@ void Renderer::init_pipeline_resources() noexcept
   pipeline_state_desc.SampleDesc.Count      = 1;
   err_if(core->device()->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
           "failed to create pipeline state");
-
+#if 0
   // create texture
   auto screen_size = WindowManager::screen_size();
   D3D12_RESOURCE_DESC texture_desc{};
@@ -155,7 +137,7 @@ void Renderer::init_pipeline_resources() noexcept
   texture_desc.SampleDesc.Count = 1;
   texture_desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
   auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_DEFAULT };
-#if 0
+
   err_if(_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&_backdrop_image)),
           "failed to create committed texture");
   // create upload heap
@@ -212,6 +194,8 @@ void Renderer::run() noexcept
 
       // process all message
       MessageQueue::instance()->pop_all();
+
+      sort_windows_by_z_order();
 
       // render
       render();
@@ -333,10 +317,29 @@ void Renderer::capture_backdrop() noexcept
   err_if(texture_dxgi_resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr, &handle),
           "failed to create shared handle");
 
+  // get description of texture
+  D3D11_TEXTURE2D_DESC desc{};
+  d3d11_texture->GetDesc(&desc);
+
   // share with d3d12 resource
-  _backdrop_image.init(handle);
+  _desktop_image.init(handle, desc.Width, desc.Height);
 
   CloseHandle(handle);
+}
+
+void Renderer::sort_windows_by_z_order() noexcept
+{
+  std::ranges::sort(_window_resources, [](auto const& x, auto const& y)
+  {
+    auto handle = x._window.handle();
+    while (handle)
+    {
+      handle = GetWindow(handle, GW_HWNDNEXT);
+      if (handle == y._window.handle())
+        return true;
+    }
+    return false;
+  });
 }
 
 }}

@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 
 #include <cstdint>
+#include <algorithm>
 
 namespace vn { namespace renderer {
 
@@ -33,32 +34,33 @@ enum class ImageState
   present,
   unorder_access,
   common,
+  render_target,
 };
 
 template <ImageFormat T>
-auto constexpr dx12_image_format()
+auto constexpr dx12_image_format() noexcept
 {
   if constexpr (T == ImageFormat::bgra8_unorm)
     return DXGI_FORMAT_B8G8R8A8_UNORM;
   else
-    static_assert(true, "unsupport image format now");
+    static_assert(false, "unsupport image format now");
 }
 
 template <ImageType T>
-auto constexpr dx12_image_flags()
+auto constexpr dx12_image_flags() noexcept
 {
   if constexpr (T == ImageType::uav)
     return D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
   else if constexpr (T == ImageType::rtv)
-    static_assert(true, "rtv not need the image initialize flags");
+    static_assert(false, "rtv not need the image initialize flags");
   else if constexpr (T == ImageType::srv)
-    return 0;
+    return D3D12_RESOURCE_FLAG_NONE;
   else
-    static_assert(true, "unsupport image type now");
+    static_assert(false, "unsupport image type now");
 }
 
 template <ImageType T>
-auto constexpr dx12_init_image_state()
+auto constexpr dx12_init_image_state() noexcept
 {
   if constexpr (T == ImageType::uav)
     return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -67,11 +69,11 @@ auto constexpr dx12_init_image_state()
   else if constexpr (T == ImageType::srv)
     return D3D12_RESOURCE_STATE_COMMON;
   else
-    static_assert(true, "unsupport image state now");
+    static_assert(false, "unsupport image state now");
 }
 
 template <ImageState T>
-auto constexpr dx12_image_state()
+auto constexpr dx12_image_state() noexcept
 {
   if constexpr (T == ImageState::copy_dst)
     return D3D12_RESOURCE_STATE_COPY_DEST;
@@ -83,8 +85,10 @@ auto constexpr dx12_image_state()
     return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
   else if constexpr (T == ImageState::common)
     return D3D12_RESOURCE_STATE_COMMON;
+  else if constexpr (T == ImageState::render_target)
+    return D3D12_RESOURCE_STATE_RENDER_TARGET;
   else
-    static_assert(true, "unsupport image state now");
+    static_assert(false, "unsupport image state now");
 }
 
 template <ImageType Type, ImageFormat Format>
@@ -100,7 +104,9 @@ public:
 
   void init(uint32_t width , uint32_t height) noexcept
   {
-    _state = dx12_init_image_state<Type>();
+    _state  = dx12_init_image_state<Type>();
+    _width  = width;
+    _height = height;
 
     // create image
     D3D12_RESOURCE_DESC texture_desc{};
@@ -117,24 +123,30 @@ public:
             "failed to create image");
   }
 
-  auto init(IDXGISwapChain1* swapchain, uint32_t index) -> Image&
+  auto init(IDXGISwapChain1* swapchain, uint32_t index) noexcept -> Image&
   {
-    _state  = dx12_init_image_state<Type>();
+    _state = dx12_init_image_state<Type>();
     err_if(Type != ImageType::rtv, "must be rtv");
     err_if(swapchain->GetBuffer(index, IID_PPV_ARGS(&_handle)),
            "failed to get descriptor");
+    DXGI_SWAP_CHAIN_DESC1 desc{};
+    err_if(swapchain->GetDesc1(&desc), "failed to get swapchain description");
+    _width  = desc.Width;
+    _height = desc.Height;
     return *this;
   }
 
-  void init(HANDLE handle)
+  void init(HANDLE handle, uint32_t width, uint32_t height) noexcept
   {
     _state  = dx12_init_image_state<Type>();
+    _width  = width;
+    _height = height;
     err_if(Core::instance()->device()->OpenSharedHandle(handle, IID_PPV_ARGS(&_handle)), "failed to share d3d11 texture");
   }
 
   void destroy() noexcept { _handle.Reset(); }
 
-  void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle, bool shared = false) const noexcept
+  void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const noexcept
   {
     if constexpr (Type == ImageType::uav)
     {
@@ -150,14 +162,14 @@ public:
     else if constexpr (Type == ImageType::srv)
     {  
       D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
-      srv_desc.Shader4ComponentMapping = shared ? D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING : 0;
+      srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
       srv_desc.Format                  = dx12_image_format<Format>();
       srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
       srv_desc.Texture2D.MipLevels     = 1;
       Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, handle);
     }
     else
-      static_assert(true, "unsupport image type now");
+      static_assert(false, "unsupport image type now");
   }
 
   template <ImageState state>
@@ -170,10 +182,14 @@ public:
   }
 
   auto handle() const noexcept { return _handle.Get(); }
+  auto width()  const noexcept { return _width;        }
+  auto height() const noexcept { return _height;       }
 
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;
   D3D12_RESOURCE_STATES                  _state{};
+  uint32_t                               _width{};
+  uint32_t                               _height{};
 };
 
 template <ImageType SrcType, ImageFormat SrcFormat,
@@ -181,23 +197,31 @@ template <ImageType SrcType, ImageFormat SrcFormat,
 inline void copy(
   ID3D12GraphicsCommandList* cmd,
   Image<SrcType, SrcFormat>& src,
-  glm::vec4 region,
+  LONG left,
+  LONG top,
+  LONG right,
+  LONG bottom,
   Image<DstType, DstFormat>& dst,
-  glm::vec2 offset = {})
+  uint32_t x = 0,
+  uint32_t y = 0) noexcept
 {
   src.template set_state<ImageState::copy_src>(cmd);
   dst.template set_state<ImageState::copy_dst>(cmd);
 
   auto src_loc = CD3DX12_TEXTURE_COPY_LOCATION{ src.handle() };
   auto dst_loc = CD3DX12_TEXTURE_COPY_LOCATION{ dst.handle() };
-  auto region_box = CD3DX12_BOX
-  { 
-    static_cast<LONG>(region.x), 
-    static_cast<LONG>(region.y), 
-    static_cast<LONG>(region.z),
-    static_cast<LONG>(region.w)
-  };
-  cmd->CopyTextureRegion(&dst_loc, offset.x, offset.y, 0, &src_loc, &region_box);
+  auto region_box = CD3DX12_BOX{ left, top, right, bottom };
+  cmd->CopyTextureRegion(&dst_loc, x, y, 0, &src_loc, &region_box);
+}
+
+template <ImageType SrcType, ImageFormat SrcFormat,
+          ImageType DstType, ImageFormat DstFormat>
+inline void copy(
+  ID3D12GraphicsCommandList* cmd,
+  Image<SrcType, SrcFormat>& src,
+  Image<DstType, DstFormat>& dst) noexcept
+{
+  copy(cmd, src, 0, 0, src.width(), src.height(), dst);
 }
 
 }}

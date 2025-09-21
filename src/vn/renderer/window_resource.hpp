@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "../window/window.hpp"
 #include "image.hpp"
+#include "memory_allocator.hpp"
 
 #include <dxgi1_6.h>
 #include <dcomp.h>
@@ -30,21 +31,43 @@ public:
   void resize() noexcept;
 
 private:
-  using RTVImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
+  struct WindowBackdropInfo
+  {
+    Image<ImageType::rtv, ImageFormat::bgra8_unorm>* image{};
+    struct CopyInfo
+    {
+      RECT                  region{};
+      glm::vec<2, uint32_t> offset;
+    };
+    std::vector<CopyInfo> copy_infos;
+  };
+  auto get_other_window_backdrop_regions() const noexcept -> std::vector<WindowBackdropInfo>;
+  void set_backdrop_image(ID3D12GraphicsCommandList* cmd) noexcept;
 
-  bool                                           _is_minimized{};
-  Window                                         _window;
+private:
+  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
 
-  Microsoft::WRL::ComPtr<IDXGISwapChain4>        _swapchain;
-  Microsoft::WRL::ComPtr<IDCompositionDevice>    _comp_device;
-  Microsoft::WRL::ComPtr<IDCompositionTarget>    _comp_target;
-  Microsoft::WRL::ComPtr<IDCompositionVisual>    _comp_visual;
+  bool                                         _is_minimized{};
+  Window                                       _window;
 
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>   _rtv_heap;
-  std::array<RTVImageType, Frame_Count>          _rtv_images;
-  Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _command_allocators[Frame_Count];
-  CD3DX12_VIEWPORT                               _viewport;
-  CD3DX12_RECT                                   _scissor;
+  Microsoft::WRL::ComPtr<IDXGISwapChain4>      _swapchain;
+  Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
+  Microsoft::WRL::ComPtr<IDCompositionTarget>  _comp_target;
+  Microsoft::WRL::ComPtr<IDCompositionVisual>  _comp_visual;
+
+  std::array<SwapchainImageType, Frame_Count>  _swapchain_images;
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtv_heap;
+  CD3DX12_VIEWPORT                             _viewport;
+  CD3DX12_RECT                                 _scissor;
+
+  struct FrameResource
+  {
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator>  command_allocator;
+    Image<ImageType::srv, ImageFormat::bgra8_unorm> backdrop_image;
+    Image<ImageType::uav, ImageFormat::bgra8_unorm> blur_backdrop_image;
+    DescriptorHeap<DescriptorHeapType::cbv_srv_uav> heap;
+  };
+  std::array<FrameResource, Frame_Count> _frames;
 };
 
 }}

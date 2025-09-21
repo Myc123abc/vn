@@ -9,8 +9,8 @@ int main()
 {
   vn::init();
 
-  WindowManager::instance()->create_window(50, 50, 200, 200);
-  WindowManager::instance()->create_window(100, 100, 500, 500);
+  WindowManager::instance()->create_window(50, 50, 250, 250);
+  WindowManager::instance()->create_window(100, 200, 500, 500);
 
   auto beg = std::chrono::high_resolution_clock::now();
 
@@ -24,7 +24,7 @@ int main()
     if (dur >= 1000 && !ok)
     {
       ok = true;
-      WindowManager::instance()->create_window(150, 150, 200, 200);
+      //WindowManager::instance()->create_window(150, 150, 200, 200);
     }
   }
 

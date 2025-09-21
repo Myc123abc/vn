@@ -41,8 +41,6 @@ public:
 
   auto window_count() const noexcept { return _window_count.load(std::memory_order_relaxed); }
 
-  static auto screen_size() noexcept -> glm::vec2;
-
 private:
   void init()    noexcept;
   void destroy() noexcept;

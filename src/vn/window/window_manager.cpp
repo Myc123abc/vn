@@ -75,6 +75,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   // when move or resize window, render the window content to the backup transparent fullscreen window as a virtual rendering window
   // and in fullscreen rendering it will be sliky move or resize, and restore the window to the new size and position after move or resize operation.
   case WM_NCHITTEST:
+    break;
   {
     auto pos = POINT{ GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param) };
 
@@ -157,7 +158,7 @@ void WindowManager::create_window() noexcept
   // TODO: don't move or resize, use a fullscreen as transparent to move rendered window context, and this window also should be transparent not duplication
   // WARN: mini version of windows: windows 10 2004 Edition
   // exclude the window from desktop duplication
-  //err_if(!SetWindowDisplayAffinity(_window_create_info.handle, WDA_EXCLUDEFROMCAPTURE), "failed to exclude window from desktop duplicaiton");
+  err_if(!SetWindowDisplayAffinity(_window_create_info.handle, WDA_EXCLUDEFROMCAPTURE), "failed to exclude window from desktop duplicaiton");
 
   // init renderer resource
   renderer::MessageQueue::instance()->push(renderer::WindowCreateInfo{ _window_create_info.handle }).wait();
@@ -211,12 +212,6 @@ auto WindowManager::message_process(MSG const& msg) noexcept -> bool
     break;
   }
   return false;
-}
-
-// TODO: only primary screen
-auto WindowManager::screen_size() noexcept -> glm::vec2
-{
-  return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 }
 
 }
