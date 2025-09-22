@@ -68,8 +68,10 @@ auto FrameBuffer::get_current_frame_buffer_address() const noexcept -> D3D12_GPU
   return _buffer->GetGPUVirtualAddress() + Core::instance()->frame_index() * _per_frame_capacity;
 }
 
-auto FrameBuffer::append(void const* data, uint32_t size) noexcept -> FrameBuffer&
+auto FrameBuffer::append(void const* data, uint32_t size) noexcept -> uint32_t
 {
+  // promise aligment
+  size = align(size, 4);
   auto total_size = _size + size;
   if (total_size <= _per_frame_capacity)
   {
@@ -100,13 +102,13 @@ auto FrameBuffer::append(void const* data, uint32_t size) noexcept -> FrameBuffe
     // now copy current data again
     append(data, size);
   }
-  return *this;
+  return size;
 }
 
 void FrameBuffer::upload(ID3D12GraphicsCommandList* command_list, std::span<Vertex> vertices, std::span<uint16_t> indices) noexcept
 {
-  append_range(vertices);
-  append_range(indices);
+  auto vertices_offset = append_range(vertices);
+  auto indices_offset  = append_range(indices);
 
   // get current buffer gpu address
   auto address = get_current_frame_buffer_address() + _window_offset;
@@ -115,16 +117,16 @@ void FrameBuffer::upload(ID3D12GraphicsCommandList* command_list, std::span<Vert
   D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view{};
   vertex_buffer_view.BufferLocation = address;
   vertex_buffer_view.StrideInBytes  = sizeof(Vertex);
-  vertex_buffer_view.SizeInBytes    = vertices.size_bytes();
+  vertex_buffer_view.SizeInBytes    = vertices_offset;
   command_list->IASetVertexBuffers(0, 1, &vertex_buffer_view);
 
   // add vertices offset
-  address += vertices.size_bytes();
+  address += vertices_offset;
 
   // set index buffer view
   D3D12_INDEX_BUFFER_VIEW index_buffer_view{};
   index_buffer_view.BufferLocation = address;
-  index_buffer_view.SizeInBytes    = indices.size_bytes();
+  index_buffer_view.SizeInBytes    = indices_offset;
   index_buffer_view.Format         = DXGI_FORMAT_R16_UINT;
   command_list->IASetIndexBuffer(&index_buffer_view);
 

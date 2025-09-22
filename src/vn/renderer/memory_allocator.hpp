@@ -41,11 +41,11 @@ public:
   void upload(ID3D12GraphicsCommandList* command_list, std::span<Vertex> vertices, std::span<uint16_t> indices) noexcept;
 
 private:
-  auto append(void const* data, uint32_t size) noexcept -> FrameBuffer&;
+  auto append(void const* data, uint32_t size) noexcept -> uint32_t;
 
   template <std::ranges::range T>
   requires std::ranges::sized_range<T> && std::ranges::contiguous_range<T>
-  auto append_range(T&& values) noexcept -> FrameBuffer&
+  auto append_range(T&& values) noexcept -> uint32_t
   {
     return append(std::ranges::data(values), std::ranges::size(values) * sizeof(std::ranges::range_value_t<T>));
   }
