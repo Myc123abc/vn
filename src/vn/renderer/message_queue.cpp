@@ -13,7 +13,13 @@ void MessageQueue::pop_all() noexcept
     std::visit([&](auto&& info)
     {
       using T = std::decay_t<decltype(info)>;
-      if constexpr (std::is_same_v<T, WindowCreateInfo>)
+      if constexpr (std::is_same_v<T, FullscreenWindowCreateInfo>)
+      {
+        Renderer::instance()->init_fullscreen_window(info.handle);
+        signal();
+        it = _messages.erase(it);
+      }
+      else if constexpr (std::is_same_v<T, WindowCreateInfo>)
       {
         Renderer::instance()->create_window_resources(info.handle);
         signal();
@@ -53,6 +59,16 @@ void MessageQueue::pop_all() noexcept
           ++it;
           Renderer::instance()->acquire_render();
         }
+      }
+      else if constexpr (std::is_same_v<T, WindowMoveStart>)
+      {
+        Renderer::instance()->window_move_start(info.handle);
+        it = _messages.erase(it);
+      }
+      else if constexpr (std::is_same_v<T, WindowMoveEnd>)
+      {
+        Renderer::instance()->window_move_end();
+        it = _messages.erase(it);
       }
       else
         static_assert(false, "[MessageQueue] unknow message type");

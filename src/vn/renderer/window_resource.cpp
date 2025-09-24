@@ -157,27 +157,20 @@ void WindowResource::render() noexcept
   // set primitive topology
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  // create vertices
-  std::vector<Vertex> vertices
-  {
-    { {  0.f,  1.f }, {}, {1, 0, 0, 1} },
-    { {  1.f, -1.f }, {}, {0, 1, 0, 1} },
-    { { -1.f, -1.f }, {}, {0, 0, 1, 1} },
-  };
-
-  std::vector<uint16_t> indices
-  {
-    0, 1, 2,
-  };
-
   // upload vertices
-  Renderer::instance()->_frame_buffer.upload(cmd, vertices, indices);
+  Renderer::instance()->_frame_buffer.upload(cmd, _vertices, _indices);
 
   // set constant
-  cmd->SetGraphicsRoot32BitConstant(0, std::bit_cast<uint32_t>(1), 0);
+  auto constants = Constants{};
+  constants.window_extent = _window.size();
+  cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
 
   // draw
-  cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
+  cmd->DrawIndexedInstanced(_indices.size(), 1, 0, 0, 0);
+
+  // clear vertices and indices
+  _vertices.clear();
+  _indices.clear();
 
   // record finish, change render target view type to present
   swapchain_image.set_state<ImageState::present>(cmd);

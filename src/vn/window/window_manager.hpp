@@ -45,6 +45,8 @@ private:
   void init()    noexcept;
   void destroy() noexcept;
 
+  void init_fullscreen_window() noexcept;
+
   void create_window() noexcept;
 
   auto message_process(MSG const& msg) noexcept -> bool;
@@ -60,6 +62,8 @@ private:
   DWORD                _thread_id{};
   std::latch           _wait_post_thread_message_valid{ 1 };
   std::atomic_uint32_t _window_count;
+  HWND                 _fullscreen_window{};
+  HWND                 _moved_window{};
 
   struct WindowCreateInfo
   {

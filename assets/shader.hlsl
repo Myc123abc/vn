@@ -7,14 +7,14 @@ struct PSInput
 
 struct Constants
 {
-  float alpha;
+  uint2 window_extent;
 };
-ConstantBuffer<Constants> cb : register(b0);
+ConstantBuffer<Constants> constants : register(b0);
 
-PSInput VSMain(float4 pos : POSITION, float2 uv : TEXCOORD, float4 color : COLOR)
+PSInput VSMain(float2 pos : POSITION, float2 uv : TEXCOORD, float4 color : COLOR)
 {
   PSInput result;
-  result.pos   = pos;
+  result.pos   = float4(pos / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
   result.uv    = uv;
   result.color = color;
   return result;

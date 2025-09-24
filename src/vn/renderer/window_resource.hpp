@@ -30,6 +30,9 @@ public:
 
   void resize() noexcept;
 
+  void push_vertices(std::span<Vertex> vertices) noexcept { _vertices.append_range(vertices); }
+  void push_indices(std::span<uint16_t> indices) noexcept { _indices.append_range(indices); }
+
 private:
   struct WindowBackdropInfo
   {
@@ -68,6 +71,9 @@ private:
     DescriptorHeap<DescriptorHeapType::cbv_srv_uav> heap;
   };
   std::array<FrameResource, Frame_Count> _frames;
+
+  std::vector<Vertex>   _vertices;
+  std::vector<uint16_t> _indices;
 };
 
 }}

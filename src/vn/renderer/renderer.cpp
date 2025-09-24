@@ -72,7 +72,7 @@ void Renderer::init_pipeline_resources() noexcept
 
   // create root signature
   auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 1>{};
-  root_parameters[0].InitAsConstants(1, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+  root_parameters[0].InitAsConstants(sizeof(Constants), 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
   //auto des_range = CD3DX12_DESCRIPTOR_RANGE1{};
   //des_range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
   //root_parameters[1].InitAsDescriptorTable(1, &des_range, D3D12_SHADER_VISIBILITY_PIXEL);
@@ -197,7 +197,7 @@ void Renderer::run() noexcept
 
       sort_windows_by_z_order();
 
-      // render
+      update();
       render();
 
       ++count;
@@ -213,15 +213,79 @@ void Renderer::run() noexcept
   }};
 }
 
+void Renderer::update() noexcept
+{
+  if (_window_start_moving)
+  {
+    std::vector<uint16_t> indices;
+    for (auto& window_resource : _window_resources)
+    {
+      if (!window_resource._is_minimized) [[unlikely]]
+      {
+        auto pos  = window_resource._window.position();
+        auto size = window_resource._window.size();
+        std::vector<Vertex> vertices
+        {
+          { pos + glm::vec<2, int32_t>{ size.x / 2, 0      }, {}, {1, 0, 0, 1} },
+          { pos + glm::vec<2, int32_t>{ size.x,     size.y }, {}, {0, 1, 0, 1} },
+          { pos + glm::vec<2, int32_t>{ 0,          size.y }, {}, {0, 0, 1, 1} },
+        };
+        auto idx = indices.size();
+        indices.append_range(std::vector<uint16_t>
+        {
+          static_cast<uint16_t>(idx),
+          static_cast<uint16_t>(idx + 1),
+          static_cast<uint16_t>(idx + 2),
+        });
+        _fullscreen_window->push_vertices(vertices);
+        _fullscreen_window->push_indices(indices);
+      }
+    }
+  }
+  else
+  {
+    for (auto& window_resource : _window_resources)
+    {
+      if (!window_resource._is_minimized) [[unlikely]]
+      {
+        auto size = window_resource._window.size();
+        std::vector<Vertex> vertices
+        {
+          { { size.x / 2, 0      }, {}, {1, 0, 0, 1} },
+          { { size.x,     size.y }, {}, {0, 1, 0, 1} },
+          { { 0,          size.y }, {}, {0, 0, 1, 1} },
+        };
+        std::vector<uint16_t> indices
+        {
+          0, 1, 2,
+        };
+        window_resource.push_vertices(vertices);
+        window_resource.push_indices(indices);
+      }
+    }
+  }
+}
+
 void Renderer::render() noexcept
 {
   // clear frame buffer
   _frame_buffer.clear();
 
-  // render per window
-  for (auto& window_resource : _window_resources)
-    if (!window_resource._is_minimized) [[unlikely]]
-      window_resource.render();
+  if (_window_start_moving)
+  {
+    _fullscreen_window->render();
+  }
+  else
+  {
+    // render per window
+    for (auto& window_resource : _window_resources)
+    {
+      if (!window_resource._is_minimized) [[unlikely]]
+      {
+        window_resource.render();
+      }
+    }
+  }
   
   Core::instance()->move_to_next_frame();
 }
@@ -340,6 +404,29 @@ void Renderer::sort_windows_by_z_order() noexcept
     }
     return false;
   });
+}
+
+void Renderer::init_fullscreen_window(HWND handle) noexcept
+{
+  _fullscreen_window = std::make_unique<WindowResource>(handle);
+}
+
+void Renderer::window_move_start(HWND handle) noexcept
+{
+  _window_start_moving = true;
+  auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
+  {
+    return handle == window_resource._window.handle();
+  });
+  err_if(it == _window_resources.end(), "faild to find moved window");
+  _moved_window = &*it;
+  //std::ranges::for_each(_window_resources, [](auto const& window) { ShowWindow(window._window.handle(), SW_HIDE); });
+}
+
+void Renderer::window_move_end() noexcept
+{
+  _window_start_moving = false;
+  _moved_window        = nullptr;
 }
 
 }}

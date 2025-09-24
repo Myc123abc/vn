@@ -9,6 +9,7 @@
 #include <atomic>
 #include <functional>
 #include <semaphore>
+#include <memory>
 
 namespace vn { 
 
@@ -49,11 +50,16 @@ private:
   void init()    noexcept;
   void destroy() noexcept;
 
+  void init_fullscreen_window(HWND handle) noexcept;
+  void window_move_start(HWND handle) noexcept;
+  void window_move_end() noexcept;
+
   void init_blur_pipeline() noexcept;
   void init_pipeline_resources() noexcept;
 
   void run() noexcept;
 
+  void update() noexcept;
   void render() noexcept;
   
   void acquire_render() noexcept { _render_acquire.release(); }
@@ -73,6 +79,9 @@ private:
   std::binary_semaphore                            _render_acquire{ 0 };
 
   std::vector<WindowResource>                      _window_resources;
+  std::unique_ptr<WindowResource>                  _fullscreen_window;
+  bool                                             _window_start_moving{};
+  WindowResource*                                  _moved_window{};
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                          Pipeline Resources

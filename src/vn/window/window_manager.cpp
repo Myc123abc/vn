@@ -42,6 +42,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       dragging = true;
       SetCapture(handle);
     }
+    renderer::MessageQueue::instance()->push(renderer::WindowMoveStart{ handle });
+
+    auto wm = WindowManager::instance();
+    ShowWindow(wm->_fullscreen_window, SW_SHOW);
+    wm->_moved_window = handle;
   }
   break;
 
@@ -51,6 +56,13 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     {
       dragging = false;
       ReleaseCapture();
+      renderer::MessageQueue::instance()->push(renderer::WindowMoveEnd{});
+      
+      auto wm = WindowManager::instance();
+      ShowWindow(wm->_fullscreen_window, SW_HIDE);
+      SetWindowPos(wm->_moved_window, nullptr,
+        dragging_window_rect.left, dragging_window_rect.top, 0, 0,
+        SWP_DEFERERASE | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOSENDCHANGING | SWP_NOSIZE | SWP_NOZORDER);
     }
   }
   break;
@@ -64,9 +76,9 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       dragging_window_rect.left += pos.x - dragging_mouse_pos.x;
       dragging_window_rect.top  += pos.y - dragging_mouse_pos.y;
       dragging_mouse_pos = pos;
-      SetWindowPos(handle, nullptr,
-        dragging_window_rect.left, dragging_window_rect.top, 0, 0,
-        SWP_DEFERERASE | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOSENDCHANGING | SWP_NOSIZE | SWP_NOZORDER);
+      //SetWindowPos(handle, nullptr,
+      //  dragging_window_rect.left, dragging_window_rect.top, 0, 0,
+      //  SWP_DEFERERASE | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOSENDCHANGING | SWP_NOSIZE | SWP_NOZORDER);
     }
   }
   break;
@@ -121,6 +133,8 @@ void WindowManager::init() noexcept
 
   // enable window manager thread
   _thread = std::thread{[this] {
+    init_fullscreen_window();
+
     _thread_id = GetCurrentThreadId();
     PeekMessageW(nullptr, nullptr, 0, 0, PM_NOREMOVE);
     _wait_post_thread_message_valid.count_down();
@@ -144,6 +158,21 @@ void WindowManager::destroy() noexcept
   PostThreadMessageW(_thread_id, Message_Exit, 0, 0);
   _thread.join();
   err_if(!UnregisterClassW(Class_Name, GetModuleHandleW(nullptr)), "failed unregister class");
+}
+
+void WindowManager::init_fullscreen_window() noexcept
+{
+  auto screen_size = get_screen_size();
+
+  _fullscreen_window = CreateWindowExW(
+    WS_EX_NOREDIRECTIONBITMAP, Class_Name, nullptr, WS_POPUP,
+    0, 0, screen_size.x, screen_size.y,
+    0, 0, GetModuleHandleW(nullptr), 0);
+  err_if(!_fullscreen_window, "failed to create window");
+
+  err_if(!SetWindowDisplayAffinity(_fullscreen_window, WDA_EXCLUDEFROMCAPTURE), "failed to exclude window from desktop duplicaiton");
+
+  renderer::MessageQueue::instance()->push(renderer::FullscreenWindowCreateInfo{ _fullscreen_window }).wait();
 }
 
 void WindowManager::create_window() noexcept

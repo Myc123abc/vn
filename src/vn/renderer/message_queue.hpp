@@ -13,6 +13,17 @@
 
 namespace vn { namespace renderer {
 
+struct FullscreenWindowCreateInfo
+{
+  HWND handle;
+};
+
+struct WindowMoveStart
+{
+  HWND handle;
+};
+struct WindowMoveEnd{};
+
 struct WindowCreateInfo
 {
   HWND handle;
@@ -44,6 +55,9 @@ struct FrameBufferDestroyInfo
 };
 
 using MessageInfo = std::variant<
+  FullscreenWindowCreateInfo,
+  WindowMoveStart,
+  WindowMoveEnd,
   WindowCreateInfo,
   WindowCloseInfo,
   WindowResourceDestroyInfo,

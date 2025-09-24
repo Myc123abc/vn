@@ -20,6 +20,11 @@ struct Vertex
 	glm::vec4 color;
 };
 
+struct Constants
+{
+  glm::vec<2, uint32_t> window_extent;
+};
+
 class FrameBuffer
 {
 public:
