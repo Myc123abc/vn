@@ -3,16 +3,16 @@
 #include "core.hpp"
 #include "renderer.hpp"
 
-#undef Use_Compositor
-
 using namespace Microsoft::WRL;
 
 namespace vn { namespace renderer {
 
-WindowResource::WindowResource(HWND handle) noexcept
+WindowResource::WindowResource(HWND handle, bool is_fullscreen_window) noexcept
 {
   auto core     = Core::instance();
   auto renderer = Renderer::instance();
+
+  _is_fullscreen_window = is_fullscreen_window;
 
   _window.init(handle);
 
@@ -27,37 +27,34 @@ WindowResource::WindowResource(HWND handle) noexcept
   swapchain_desc.BufferCount      = Frame_Count;
   swapchain_desc.Width            = wnd_size.x;
   swapchain_desc.Height           = wnd_size.y;
-#ifdef Use_Compositor
-  swapchain_desc.AlphaMode        = DXGI_ALPHA_MODE_PREMULTIPLIED;
-#endif
   swapchain_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-#ifdef Use_Compositor
-  err_if(core->factory()->CreateSwapChainForComposition(core->command_queue(), &swapchain_desc, nullptr, &swapchain),
-          "failed to create swapchain for composition");
-#else
-  err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
-          "failed to create swapchain");
-#endif
-  err_if(swapchain.As(&_swapchain), "failed to get swapchain4");
+  if (_is_fullscreen_window)
+  {
+    swapchain_desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+    err_if(core->factory()->CreateSwapChainForComposition(core->command_queue(), &swapchain_desc, nullptr, &swapchain),
+            "failed to create swapchain for composition");
 
-#ifdef Use_Compositor
-  // create composition
-  err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
-          "failed to create composition device");
-  err_if(_comp_device->CreateTargetForHwnd(_window.handle(), true, &_comp_target),
-          "failed to create composition target");
-  err_if(_comp_device->CreateVisual(&_comp_visual),
-          "failed to create composition visual");
-  err_if(_comp_visual->SetContent(swapchain.Get()),
-          "failed to bind swapchain to composition visual");
-  err_if(_comp_target->SetRoot(_comp_visual.Get()),
-          "failed to bind composition visual to target");
-  err_if(_comp_device->Commit(),
-          "failed to commit composition device");
-#endif
+    // create composition
+    err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
+            "failed to create composition device");
+    err_if(_comp_device->CreateTargetForHwnd(_window.handle(), true, &_comp_target),
+            "failed to create composition target");
+    err_if(_comp_device->CreateVisual(&_comp_visual),
+            "failed to create composition visual");
+    err_if(_comp_visual->SetContent(swapchain.Get()),
+            "failed to bind swapchain to composition visual");
+    err_if(_comp_target->SetRoot(_comp_visual.Get()),
+            "failed to bind composition visual to target");
+    err_if(_comp_device->Commit(),
+            "failed to commit composition device");
+  }  
+  else
+    err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
+            "failed to create swapchain");
+  err_if(swapchain.As(&_swapchain), "failed to get swapchain4");
 
   // create descriptor heaps
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
@@ -118,18 +115,22 @@ void WindowResource::render() noexcept
   cmd->SetDescriptorHeaps(1, &heap);
   cmd->SetComputeRootDescriptorTable(0, frame.heap.gpu_handle());
 #endif
-  // get backdrop image
-  set_backdrop_image(cmd);
 
+  if (!_is_fullscreen_window)
+  {
+    // get backdrop image
+    set_backdrop_image(cmd);
 #ifdef USE_BLUR
-  auto screen_size = get_screen_size();
-  cmd->Dispatch((screen_size.x + 15) / 16, (screen_size.y + 15) / 16, 1);
+    auto screen_size = get_screen_size();
+    cmd->Dispatch((screen_size.x + 15) / 16, (screen_size.y + 15) / 16, 1);
 
-  // copy blur backdrop image to swapchain image
-  copy(cmd, frame.blur_backdrop_image, swapchain_image);
+    // copy blur backdrop image to swapchain image
+    copy(cmd, frame.blur_backdrop_image, swapchain_image);
 #else
-  copy(cmd, frame.backdrop_image, swapchain_image);
+    copy(cmd, frame.backdrop_image, swapchain_image);
 #endif
+  }
+
   // set pipeline state
   cmd->SetPipelineState(renderer->_pipeline_state.Get());
 
@@ -150,9 +151,12 @@ void WindowResource::render() noexcept
   auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(_rtv_heap->GetCPUDescriptorHandleForHeapStart(), _swapchain->GetCurrentBackBufferIndex(), RTV_Size);
   cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
-  // clear color
-  //float constexpr clear_color[4] = { 0.f, 0.f, 0.f, .5f };
-  //cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  if (_is_fullscreen_window)
+  {
+    // clear color
+    float constexpr clear_color[4]{};
+    cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  }
 
   // set primitive topology
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -210,13 +214,14 @@ void WindowResource::resize() noexcept
   err_if(_swapchain->ResizeBuffers(Frame_Count, wnd_size.x, wnd_size.y, DXGI_FORMAT_UNKNOWN, 0),
           "failed to resize swapchain");
 
-#ifdef Use_Compositor
-  // rebind composition resources
-  err_if(_comp_visual->SetContent(_swapchain.Get()),
-          "failed to bind swapchain to composition visual");
-  err_if(_comp_device->Commit(),
-          "failed to commit composition device");
-#endif
+  if (_is_fullscreen_window)
+  {
+    // rebind composition resources
+    err_if(_comp_visual->SetContent(_swapchain.Get()),
+            "failed to bind swapchain to composition visual");
+    err_if(_comp_device->Commit(),
+            "failed to commit composition device");
+  }
 
   // recreate images
   CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ _rtv_heap->GetCPUDescriptorHandleForHeapStart() };
@@ -298,7 +303,7 @@ auto WindowResource::get_other_window_backdrop_regions() const noexcept -> std::
     {
       return window_resource._window.handle() == handle;
     });
-    if (it == renderer->_window_resources.end())
+    if (it == renderer->_window_resources.end() || middle_window_rects.empty())
       continue;
 
     // get intersection region

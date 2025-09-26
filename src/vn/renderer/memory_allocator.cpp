@@ -2,7 +2,7 @@
 #include "core.hpp"
 #include "../util.hpp"
 #include "config.hpp"
-#include "message_queue.hpp"
+#include "renderer.hpp"
 
 #include <directx/d3dx12.h>
 
@@ -88,7 +88,7 @@ auto FrameBuffer::append(void const* data, uint32_t size) noexcept -> uint32_t
       err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
       return fence_value >= last_fence_value;
     };
-    MessageQueue::instance()->push(FrameBufferDestroyInfo{ func });
+    renderer->add_old_resource(func);
 
     // temporary copy old data
     std::vector<std::byte> old_data(_size);

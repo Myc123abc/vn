@@ -18,11 +18,15 @@ struct FullscreenWindowCreateInfo
   HWND handle;
 };
 
-struct WindowMoveStart
+struct WindowMoveStartInfo
 {
   HWND handle;
 };
-struct WindowMoveEnd{};
+struct WindowMoveEndInfo{};
+struct WindowMoveInfo
+{
+  glm::vec2 offset;
+};
 
 struct WindowCreateInfo
 {
@@ -56,14 +60,15 @@ struct FrameBufferDestroyInfo
 
 using MessageInfo = std::variant<
   FullscreenWindowCreateInfo,
-  WindowMoveStart,
-  WindowMoveEnd,
+  WindowMoveStartInfo,
+  WindowMoveEndInfo,
   WindowCreateInfo,
   WindowCloseInfo,
   WindowResourceDestroyInfo,
   WindowMinimizedInfo,
   WindowResizeInfo,
-  FrameBufferDestroyInfo
+  FrameBufferDestroyInfo,
+  WindowMoveInfo
 >;
 
 struct Message
@@ -96,17 +101,9 @@ public:
 
     std::lock_guard lock(_mutex);
 
-    // if have existing resize of same handle, jump this message
-    if constexpr (std::is_same_v<T, WindowResizeInfo>)
-    {
-      if (auto it = std::ranges::find_if(_messages, [&](auto const& msg)
-          {
-            return std::holds_alternative<WindowResizeInfo>(msg.info)         &&
-                   std::get<WindowResizeInfo>(msg.info).handle == info.handle;
-          });
-          it != _messages.end())
-        return *this;
-    }
+    if (exist<WindowResizeInfo>(info) ||
+        exist<WindowMoveInfo>(info))
+      return *this;
 
     _messages.emplace_back(std::move(msg));
 
@@ -117,10 +114,25 @@ public:
 
   void pop_all() noexcept;
 
+  void signal() noexcept { _sem.release(); }
   void wait()   noexcept { _sem.acquire(); }
 
 private:
-  void signal() noexcept { _sem.release(); }
+  template <typename MsgType, typename T>
+  auto exist(T&& info) noexcept
+  {
+    if constexpr (std::is_same_v<T, MsgType>)
+    {
+      if (auto it = std::ranges::find_if(_messages, [&](auto const& msg)
+          {
+            return std::holds_alternative<MsgType>(msg.info)         &&
+                   std::get<MsgType>(msg.info).handle == info.handle;
+          });
+          it != _messages.end())
+        return true;
+    }
+    return false;
+  }
 
 private:
   std::mutex            _mutex;

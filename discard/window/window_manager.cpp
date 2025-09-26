@@ -8,9 +8,10 @@ namespace vn {
 
 LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 {
-  static POINT dragging_mouse_pos{};
-  static RECT  dragging_window_rect{};
-  static bool  dragging{};
+  static POINT     dragging_mouse_pos{};
+  static RECT      dragging_window_rect{};
+  static bool      dragging{};
+  static glm::vec2 dragging_offset{};
 
   switch (msg)
   {
@@ -34,6 +35,10 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
   case WM_LBUTTONDOWN:
   {
+    auto wm = WindowManager::instance();
+    if (wm->_fullscreen_window == handle) 
+      break;
+
     GetCursorPos(&dragging_mouse_pos);
     GetWindowRect(handle, &dragging_window_rect);
     // TODO: customize move dragging area
@@ -42,11 +47,12 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       dragging = true;
       SetCapture(handle);
     }
-    renderer::MessageQueue::instance()->push(renderer::WindowMoveStart{ handle });
 
-    auto wm = WindowManager::instance();
-    ShowWindow(wm->_fullscreen_window, SW_SHOW);
+    renderer::MessageQueue::instance()->push(renderer::WindowMoveStartInfo{ handle }).wait();
+
     wm->_moved_window = handle;
+    ShowWindow(wm->_fullscreen_window, SW_SHOW);
+    ShowWindow(wm->_moved_window, SW_HIDE);
   }
   break;
 
@@ -56,13 +62,16 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     {
       dragging = false;
       ReleaseCapture();
-      renderer::MessageQueue::instance()->push(renderer::WindowMoveEnd{});
+      // TODO: wait moved window render finish then reture here
+      renderer::MessageQueue::instance()->push(renderer::WindowMoveEndInfo{}).wait();
       
       auto wm = WindowManager::instance();
-      ShowWindow(wm->_fullscreen_window, SW_HIDE);
       SetWindowPos(wm->_moved_window, nullptr,
-        dragging_window_rect.left, dragging_window_rect.top, 0, 0,
+        dragging_window_rect.left + dragging_offset.x, dragging_window_rect.top + dragging_offset.y, 0, 0,
         SWP_DEFERERASE | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOSENDCHANGING | SWP_NOSIZE | SWP_NOZORDER);
+      ShowWindow(wm->_moved_window, SW_SHOW);
+      ShowWindow(wm->_fullscreen_window, SW_HIDE);
+      wm->_moved_window = {};
     }
   }
   break;
@@ -73,9 +82,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     {
       POINT pos;
       GetCursorPos(&pos);
-      dragging_window_rect.left += pos.x - dragging_mouse_pos.x;
-      dragging_window_rect.top  += pos.y - dragging_mouse_pos.y;
-      dragging_mouse_pos = pos;
+      //dragging_window_rect.left += pos.x - dragging_mouse_pos.x;
+      //dragging_window_rect.top  += pos.y - dragging_mouse_pos.y;
+      dragging_offset = { pos.x - dragging_mouse_pos.x, pos.y - dragging_mouse_pos.y };
+      renderer::MessageQueue::instance()->push(renderer::WindowMoveInfo{dragging_offset});
+      //dragging_mouse_pos = pos;
       //SetWindowPos(handle, nullptr,
       //  dragging_window_rect.left, dragging_window_rect.top, 0, 0,
       //  SWP_DEFERERASE | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOSENDCHANGING | SWP_NOSIZE | SWP_NOZORDER);

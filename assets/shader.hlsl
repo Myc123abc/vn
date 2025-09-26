@@ -11,7 +11,7 @@ struct Constants
 };
 ConstantBuffer<Constants> constants : register(b0);
 
-PSInput VSMain(float2 pos : POSITION, float2 uv : TEXCOORD, float4 color : COLOR)
+PSInput vs(float2 pos : POSITION, float2 uv : TEXCOORD, float4 color : COLOR)
 {
   PSInput result;
   result.pos   = float4(pos / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
@@ -20,7 +20,7 @@ PSInput VSMain(float2 pos : POSITION, float2 uv : TEXCOORD, float4 color : COLOR
   return result;
 }
 
-float4 PSMain(PSInput input) : SV_TARGET
+float4 ps(PSInput input) : SV_TARGET
 {
   return input.color;
 }

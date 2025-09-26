@@ -1,5 +1,5 @@
 #include "vn/vn.hpp"
-#include "vn/window/window_manager.hpp"
+#include "vn/renderer/window_system.hpp"
 
 #include <chrono>
 
@@ -9,12 +9,14 @@ int main()
 {
   vn::init();
 
-  WindowManager::instance()->create_window(50, 50, 250, 250);
-  WindowManager::instance()->create_window(100, 200, 500, 500);
+  auto window_system = renderer::WindowSystem::instance();
+
+  window_system->create_window(50, 50, 50, 50);
+  window_system->create_window(75, 75, 50, 50);
 
   auto beg = std::chrono::high_resolution_clock::now();
 
-  while (WindowManager::instance()->window_count())
+  while (true)
   {
     vn::render();
 
@@ -24,7 +26,7 @@ int main()
     if (dur >= 1000 && !ok)
     {
       ok = true;
-      //WindowManager::instance()->create_window(150, 150, 200, 200);
+      window_system->create_window(150, 150, 50, 50);
     }
   }
 

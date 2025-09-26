@@ -1,15 +1,19 @@
 #pragma once
 
-#include "window_resource.hpp"
+#include "image.hpp"
+#include "memory_allocator.hpp"
+#include "window_system.hpp"
+
+#include <dcomp.h>
 
 #include <glm/glm.hpp>
 
 #include <vector>
 #include <thread>
 #include <atomic>
-#include <functional>
 #include <semaphore>
-#include <memory>
+#include <functional>
+#include <deque>
 
 namespace vn { 
 
@@ -50,12 +54,11 @@ private:
   void init()    noexcept;
   void destroy() noexcept;
 
-  void init_fullscreen_window(HWND handle) noexcept;
-  void window_move_start(HWND handle) noexcept;
-  void window_move_end() noexcept;
+  void create_swapchain_resources() noexcept;
+  void create_frame_resources() noexcept;
 
-  void init_blur_pipeline() noexcept;
-  void init_pipeline_resources() noexcept;
+  void create_blur_pipeline() noexcept;
+  void create_pipeline_resources() noexcept;
 
   void run() noexcept;
 
@@ -64,30 +67,39 @@ private:
   
   void acquire_render() noexcept { _render_acquire.release(); }
 
-  void create_window_resources(HWND handle) noexcept;
-  auto add_closed_window_resources(HWND handle) noexcept -> std::function<bool()>;
-  void set_window_minimized(HWND handle) noexcept;
-  void window_resize(HWND handle) noexcept;
-
   void capture_backdrop() noexcept;
 
-  void sort_windows_by_z_order() noexcept;
+  void add_old_resource(std::function<bool()>&& func) noexcept { _old_resource_destructor.emplace_back(func); }
 
-private:
-  std::thread                                      _thread;
-  std::atomic_bool                                 _exit{ false };
-  std::binary_semaphore                            _render_acquire{ 0 };
+////////////////////////////////////////////////////////////////////////////////
+///                                  Misc
+////////////////////////////////////////////////////////////////////////////////
 
-  std::vector<WindowResource>                      _window_resources;
-  std::unique_ptr<WindowResource>                  _fullscreen_window;
-  bool                                             _window_start_moving{};
-  WindowResource*                                  _moved_window{};
+  std::deque<std::function<bool()>> _old_resource_destructor;
+  std::thread                       _thread;
+  std::atomic_bool                  _exit{ false };
+  std::binary_semaphore             _render_acquire{ 0 };
+  WindowResources const*            _window_resources{};
+
+////////////////////////////////////////////////////////////////////////////////
+///                            Swaochain Resources
+////////////////////////////////////////////////////////////////////////////////
+
+  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
+
+  Microsoft::WRL::ComPtr<IDXGISwapChain4>      _swapchain;
+  Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
+  Microsoft::WRL::ComPtr<IDCompositionTarget>  _comp_target;
+  Microsoft::WRL::ComPtr<IDCompositionVisual>  _comp_visual;
+
+  std::array<SwapchainImageType, Frame_Count>  _swapchain_images;
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtv_heap;
+  CD3DX12_VIEWPORT                             _viewport;
+  CD3DX12_RECT                                 _scissor;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                          Pipeline Resources
 ////////////////////////////////////////////////////////////////////////////////
-
-  FrameBuffer                                     _frame_buffer;
 
   // sdf pipeline, for future
   Microsoft::WRL::ComPtr<ID3D12PipelineState>     _pipeline_state;
@@ -98,6 +110,23 @@ private:
   Microsoft::WRL::ComPtr<IDXGIOutputDuplication>  _desk_dup;
   Microsoft::WRL::ComPtr<ID3D12RootSignature>     _blur_root_signature;
   Microsoft::WRL::ComPtr<ID3D12PipelineState>     _blur_pipeline_state;
+
+////////////////////////////////////////////////////////////////////////////////
+///                          Frame Resources
+////////////////////////////////////////////////////////////////////////////////
+
+  struct FrameResource
+  {
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator>  command_allocator;
+    Image<ImageType::srv, ImageFormat::bgra8_unorm> backdrop_image;
+    Image<ImageType::uav, ImageFormat::bgra8_unorm> blur_backdrop_image;
+    DescriptorHeap<DescriptorHeapType::cbv_srv_uav> heap;
+  };
+  std::array<FrameResource, Frame_Count> _frames;
+  FrameBuffer                            _frame_buffer;
+  std::vector<Vertex>                    _vertices;
+  std::vector<uint16_t>                  _indices;
+  uint16_t                               _idx_beg{};
 };
 
 }}

@@ -60,14 +60,19 @@ void MessageQueue::pop_all() noexcept
           Renderer::instance()->acquire_render();
         }
       }
-      else if constexpr (std::is_same_v<T, WindowMoveStart>)
+      else if constexpr (std::is_same_v<T, WindowMoveStartInfo>)
       {
         Renderer::instance()->window_move_start(info.handle);
         it = _messages.erase(it);
       }
-      else if constexpr (std::is_same_v<T, WindowMoveEnd>)
+      else if constexpr (std::is_same_v<T, WindowMoveEndInfo>)
       {
         Renderer::instance()->window_move_end();
+        it = _messages.erase(it);
+      }
+      else if constexpr (std::is_same_v<T, WindowMoveInfo>)
+      {
+        Renderer::instance()->window_move(info.offset);
         it = _messages.erase(it);
       }
       else

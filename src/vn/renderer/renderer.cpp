@@ -1,33 +1,191 @@
 #include "renderer.hpp"
-#include "message_queue.hpp"
-#include "../util.hpp"
-#include "../window/window_manager.hpp"
-#include "core.hpp"
 
 #include <d3dcompiler.h>
+#include <dxcapi.h>
 #include <d3d11.h>
 
-#include <algorithm>
+#include <utf8.h>
+
 #include <chrono>
 #include <array>
 
 using namespace Microsoft::WRL;
 
+namespace
+{
+
+#ifdef _WIN32
+auto to_wstring(std::string_view str) noexcept -> std::wstring
+{
+  auto u16str = utf8::utf8to16(str);
+  return { reinterpret_cast<wchar_t*>(u16str.data()), u16str.size() };
+}
+#endif
+
+auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer, std::string_view main, std::string_view profile) noexcept
+{
+  auto args = ComPtr<IDxcCompilerArgs>{};
+  vn::err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), nullptr, 0, nullptr, 0, args.GetAddressOf()),
+              "failed to create dxc args");
+  
+  auto result = ComPtr<IDxcResult>{};
+  vn::err_if(compiler->Compile(&buffer, args->GetArguments(), args->GetCount(), nullptr, IID_PPV_ARGS(&result)),
+              "failed to compile {}", main);
+  
+  auto hr = HRESULT{};
+  result->GetStatus(&hr);
+  if (FAILED(hr))
+  {
+    auto msg = ComPtr<IDxcBlobUtf8>{};
+    vn::err_if(result->GetOutput(DXC_OUT_ERRORS,  IID_PPV_ARGS(&msg), nullptr), "failed to get error ouput of dxc");
+    vn::err_if(true, "failed to compile {}\n{}", main, msg->GetStringPointer());
+  }
+
+  auto cso = ComPtr<IDxcBlob>{};
+  vn::err_if(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&cso), nullptr), "failed to get compile result");
+
+  return cso;
+}
+
+auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::string_view pixel_main) noexcept -> std::pair<ComPtr<IDxcBlob>, ComPtr<IDxcBlob>>
+{
+  auto compiler = ComPtr<IDxcCompiler3>{};
+  vn::err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
+              "failed to create dxc compiler");
+
+  DxcBuffer buffer{};
+  auto data       = vn::read_file(path);
+  buffer.Ptr      = data.data();
+  buffer.Size     = data.size();
+  buffer.Encoding = DXC_CP_UTF8;
+
+  auto utils = ComPtr<IDxcUtils>{};
+  vn::err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
+              "failed to create dxc utils");
+  return { compile_shader(compiler.Get(), utils.Get(), buffer, vert_main, "vs_6_0"), compile_shader(compiler.Get(), utils.Get(), buffer, pixel_main, "ps_6_0") };
+}
+
+auto compile_comp(std::string_view path, std::string_view comp_main) noexcept
+{
+  auto compiler = ComPtr<IDxcCompiler3>{};
+  vn::err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
+              "failed to create dxc compiler");
+
+  DxcBuffer buffer{};
+  auto data       = vn::read_file(path);
+  buffer.Ptr      = data.data();
+  buffer.Size     = data.size();
+  buffer.Encoding = DXC_CP_UTF8;
+
+  auto utils = ComPtr<IDxcUtils>{};
+  vn::err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
+              "failed to create dxc utils");
+  return compile_shader(compiler.Get(), utils.Get(), buffer, comp_main, "cs_6_0");
+}
+
+}
+
 namespace vn { namespace renderer {
 
 void Renderer::init() noexcept
 {
-  Core::instance()->init();
+  _thread = std::thread{[this]
+  {
+    Core::instance()->init();
 
-  capture_backdrop();
+    create_swapchain_resources();
+    create_frame_resources();
 
-  init_pipeline_resources();
-  init_blur_pipeline();
+    capture_backdrop();
 
-  run();
+    create_pipeline_resources();
+    create_blur_pipeline();
+
+    run();
+  }};
 }
 
-void Renderer::init_blur_pipeline() noexcept
+void Renderer::create_swapchain_resources() noexcept
+{
+  auto core = Core::instance();
+  auto ws   = WindowSystem::instance();
+
+  auto size = ws->screen_size();
+
+  // set viewport and scissor
+  _viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(size.x), static_cast<float>(size.y) };
+  _scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(size.x), static_cast<LONG>(size.y) };
+
+  // create swapchain
+  ComPtr<IDXGISwapChain1> swapchain;
+  DXGI_SWAP_CHAIN_DESC1 swapchain_desc{};
+  swapchain_desc.BufferCount      = Frame_Count;
+  swapchain_desc.Width            = size.x;
+  swapchain_desc.Height           = size.y;
+  swapchain_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
+  swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+  swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+  swapchain_desc.SampleDesc.Count = 1;
+  swapchain_desc.AlphaMode        = DXGI_ALPHA_MODE_PREMULTIPLIED;
+  err_if(core->factory()->CreateSwapChainForComposition(core->command_queue(), &swapchain_desc, nullptr, &swapchain),
+          "failed to create swapchain for composition");
+  err_if(swapchain.As(&_swapchain), "failed to get swapchain4");
+
+  // create composition
+  err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
+          "failed to create composition device");
+  err_if(_comp_device->CreateTargetForHwnd(ws->handle(), true, &_comp_target),
+          "failed to create composition target");
+  err_if(_comp_device->CreateVisual(&_comp_visual),
+          "failed to create composition visual");
+  err_if(_comp_visual->SetContent(swapchain.Get()),
+          "failed to bind swapchain to composition visual");
+  err_if(_comp_target->SetRoot(_comp_visual.Get()),
+          "failed to bind composition visual to target");
+  err_if(_comp_device->Commit(),
+          "failed to commit composition device");
+
+  // create descriptor heaps
+  D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
+  rtv_heap_desc.NumDescriptors = Frame_Count;
+  rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+  err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&_rtv_heap)),
+    "failed to create render target view descriptor heap");
+}
+
+void Renderer::create_frame_resources() noexcept
+{
+  auto core = Core::instance();
+
+  auto size = WindowSystem::instance()->screen_size();
+
+  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ _rtv_heap->GetCPUDescriptorHandleForHeapStart() };
+  for (auto i = 0; i < Frame_Count; ++i)
+  {
+    auto& frame = _frames[i];
+
+    // get swapchain image
+    _swapchain_images[i].init(_swapchain.Get(), i)
+                        .create_descriptor(rtv_handle);
+    // offset next swapchain image
+    rtv_handle.Offset(1, RTV_Size);
+
+    // get command allocator
+    err_if(core->device()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&frame.command_allocator)),
+        "failed to create command allocator");
+
+    // create backdrop image and blur backdrop image
+    frame.backdrop_image.init(size.x, size.y);
+    frame.blur_backdrop_image.init(size.x, size.y);
+
+    // create descriptors
+    frame.heap.init(2);
+    frame.backdrop_image.create_descriptor(frame.heap.pop_handle());
+    frame.blur_backdrop_image.create_descriptor(frame.heap.pop_handle());
+  }
+}
+
+void Renderer::create_blur_pipeline() noexcept
 {
   auto core = Core::instance();
 
@@ -51,19 +209,16 @@ void Renderer::init_blur_pipeline() noexcept
           "failed to create root signature");
 
   // create shader
-  ComPtr<ID3DBlob> blur_shader;
-  auto blur_shader_data = read_file("assets/blur.cso");
-  D3DCreateBlob(blur_shader_data.size(), &blur_shader);
-  memcpy(blur_shader->GetBufferPointer(), blur_shader_data.data(), blur_shader_data.size());
+  auto shader = compile_comp("assets/blur.hlsl", "compute_main");
 
   // create pipeline state
   auto pipeline_state_desc = D3D12_COMPUTE_PIPELINE_STATE_DESC{};
   pipeline_state_desc.pRootSignature = _blur_root_signature.Get();
-  pipeline_state_desc.CS = { blur_shader->GetBufferPointer(), blur_shader->GetBufferSize() };
+  pipeline_state_desc.CS = { shader->GetBufferPointer(), shader->GetBufferSize() };
   core->device()->CreateComputePipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_blur_pipeline_state));
 }
 
-void Renderer::init_pipeline_resources() noexcept
+void Renderer::create_pipeline_resources() noexcept
 {
   auto core = Core::instance();
 
@@ -95,14 +250,7 @@ void Renderer::init_pipeline_resources() noexcept
           "failed to create root signature");
   
   // create shaders
-  ComPtr<ID3DBlob> vertex_shader;
-  ComPtr<ID3DBlob> pixel_shader;
-  auto vertex_data = read_file("assets/vertex.cso");
-  auto pixel_data  = read_file("assets/pixel.cso");
-  D3DCreateBlob(vertex_data.size(), &vertex_shader);
-  D3DCreateBlob(pixel_data.size(), &pixel_shader);
-  memcpy(vertex_shader->GetBufferPointer(), vertex_data.data(), vertex_data.size());
-  memcpy(pixel_shader->GetBufferPointer(), pixel_data.data(), pixel_data.size());
+  auto [vertex_shader, pixel_shader] = compile_vert_pixel("assets/shader.hlsl", "vs", "ps");
 
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
@@ -114,8 +262,8 @@ void Renderer::init_pipeline_resources() noexcept
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline_state_desc{};
   pipeline_state_desc.InputLayout           = { layout, _countof(layout) };
   pipeline_state_desc.pRootSignature        = _root_signature.Get();
-  pipeline_state_desc.VS                    = CD3DX12_SHADER_BYTECODE{ vertex_shader.Get() };
-  pipeline_state_desc.PS                    = CD3DX12_SHADER_BYTECODE{ pixel_shader.Get() };
+  pipeline_state_desc.VS                    = CD3DX12_SHADER_BYTECODE{ vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize() };
+  pipeline_state_desc.PS                    = CD3DX12_SHADER_BYTECODE{ pixel_shader->GetBufferPointer(),  pixel_shader->GetBufferSize()  };
   pipeline_state_desc.RasterizerState       = CD3DX12_RASTERIZER_DESC{ D3D12_DEFAULT };
   pipeline_state_desc.BlendState            = CD3DX12_BLEND_DESC{ D3D12_DEFAULT };
   pipeline_state_desc.SampleMask            = UINT_MAX;
@@ -175,168 +323,133 @@ void Renderer::destroy() noexcept
   Core::instance()->destroy();
 }
 
-void Renderer::create_window_resources(HWND handle) noexcept
-{
-  _window_resources.emplace_back(handle);
-}
-
 void Renderer::run() noexcept
 {
-  _thread = std::thread{[this] {
-    auto beg = std::chrono::high_resolution_clock::now();
-    uint32_t count{};
-    while (true)
+  auto beg = std::chrono::high_resolution_clock::now();
+  uint32_t count{};
+  while (true)
+  {
+    // wait render acquire
+    _render_acquire.acquire();
+    if (_exit.load(std::memory_order_acquire)) [[unlikely]]
+      return;
+
+    // destruct old resources
+    for (auto it = _old_resource_destructor.begin(); it != _old_resource_destructor.end();)
+      (*it)() ? it = _old_resource_destructor.erase(it) : ++it;
+
+    update();
+    render();
+
+    ++count;
+    auto now = std::chrono::high_resolution_clock::now();
+    auto dur = std::chrono::duration<float>(now - beg).count();
+    if (dur >= 1.f)
     {
-      // wait render acquire
-      _render_acquire.acquire();
-      if (_exit.load(std::memory_order_acquire)) [[unlikely]]
-        return;
-
-      // process all message
-      MessageQueue::instance()->pop_all();
-
-      sort_windows_by_z_order();
-
-      update();
-      render();
-
-      ++count;
-      auto now = std::chrono::high_resolution_clock::now();
-      auto dur = std::chrono::duration<float>(now - beg).count();
-      if (dur >= 1.f)
-      {
-        info("[fps] {}", count / dur);
-        count = 0;
-        beg = now;
-      }
+      info("[fps] {}", count / dur);
+      count = 0;
+      beg = now;
     }
-  }};
+  }
 }
 
 void Renderer::update() noexcept
 {
-  if (_window_start_moving)
+  _window_resources = WindowSystem::instance()->updated_data();
+
+  for (auto const& window : _window_resources->windows)
   {
-    std::vector<uint16_t> indices;
-    for (auto& window_resource : _window_resources)
+    std::vector<Vertex> vertices
     {
-      if (!window_resource._is_minimized) [[unlikely]]
-      {
-        auto pos  = window_resource._window.position();
-        auto size = window_resource._window.size();
-        std::vector<Vertex> vertices
-        {
-          { pos + glm::vec<2, int32_t>{ size.x / 2, 0      }, {}, {1, 0, 0, 1} },
-          { pos + glm::vec<2, int32_t>{ size.x,     size.y }, {}, {0, 1, 0, 1} },
-          { pos + glm::vec<2, int32_t>{ 0,          size.y }, {}, {0, 0, 1, 1} },
-        };
-        auto idx = indices.size();
-        indices.append_range(std::vector<uint16_t>
-        {
-          static_cast<uint16_t>(idx),
-          static_cast<uint16_t>(idx + 1),
-          static_cast<uint16_t>(idx + 2),
-        });
-        _fullscreen_window->push_vertices(vertices);
-        _fullscreen_window->push_indices(indices);
-      }
-    }
-  }
-  else
-  {
-    for (auto& window_resource : _window_resources)
+      { { window.x + window.width / 2, window.y                 }, {}, {1, 0, 0, 1} },
+      { { window.x + window.width,     window.y + window.height }, {}, {0, 1, 0, 1} },
+      { { window.x,                    window.y + window.height }, {}, {0, 0, 1, 1} },
+    };
+    _vertices.append_range(vertices);
+
+    _indices.append_range(std::vector<uint16_t>
     {
-      if (!window_resource._is_minimized) [[unlikely]]
-      {
-        auto size = window_resource._window.size();
-        std::vector<Vertex> vertices
-        {
-          { { size.x / 2, 0      }, {}, {1, 0, 0, 1} },
-          { { size.x,     size.y }, {}, {0, 1, 0, 1} },
-          { { 0,          size.y }, {}, {0, 0, 1, 1} },
-        };
-        std::vector<uint16_t> indices
-        {
-          0, 1, 2,
-        };
-        window_resource.push_vertices(vertices);
-        window_resource.push_indices(indices);
-      }
-    }
+      static_cast<uint16_t>(_idx_beg + 0),
+      static_cast<uint16_t>(_idx_beg + 1),
+      static_cast<uint16_t>(_idx_beg + 2),
+    });
+    _idx_beg += 3;
   }
 }
 
 void Renderer::render() noexcept
 {
+  auto  core  = Core::instance();
+  auto  cmd   = core->cmd();
+  auto& frame = _frames[core->frame_index()];
+
+  // reset command allocator and command list
+  err_if(frame.command_allocator->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(cmd->Reset(frame.command_allocator.Get(), nullptr), "failed to reset command list");
+
+  // get current swapchain
+  auto& swapchain_image = _swapchain_images[_swapchain->GetCurrentBackBufferIndex()];
+
+  // set pipeline state
+  cmd->SetPipelineState(_pipeline_state.Get());
+
+  // set root signature
+  cmd->SetGraphicsRootSignature(_root_signature.Get());
+
+  // set viewport and scissor rectangle
+  cmd->RSSetViewports(1, &_viewport);
+  cmd->RSSetScissorRects(1, &_scissor);
+
+  // convert render target view from present type to render target type
+  swapchain_image.set_state<ImageState::render_target>(cmd);
+
+  // set render target view
+  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(_rtv_heap->GetCPUDescriptorHandleForHeapStart(), _swapchain->GetCurrentBackBufferIndex(), RTV_Size);
+  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
+
+  // clear color
+  float constexpr clear_color[4]{};
+  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+
+  // set primitive topology
+  cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
   // clear frame buffer
   _frame_buffer.clear();
 
-  if (_window_start_moving)
-  {
-    _fullscreen_window->render();
-  }
-  else
-  {
-    // render per window
-    for (auto& window_resource : _window_resources)
-    {
-      if (!window_resource._is_minimized) [[unlikely]]
-      {
-        window_resource.render();
-      }
-    }
-  }
-  
+  // upload vertices and indices
+  _frame_buffer.upload(cmd, _vertices, _indices);
+
+  // set constant
+  auto constants = Constants{};
+  constants.window_extent = WindowSystem::instance()->screen_size();
+  cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
+
+  // draw
+  cmd->DrawIndexedInstanced(_indices.size(), 1, 0, 0, 0);
+
+  // clear vertices and indices
+  _vertices.clear();
+  _indices.clear();
+  _idx_beg = {};
+
+  // record finish, change render target view type to present
+  swapchain_image.set_state<ImageState::present>(cmd);
+
+  // close command list
+  err_if(cmd->Close(), "failed to close command list");
+
+  // execute command list
+  ID3D12CommandList* cmds[] = { cmd };
+  core->command_queue()->ExecuteCommandLists(_countof(cmds), cmds);
+
+  // present swapchain
+  err_if(_swapchain->Present(1, 0), "failed to present swapchain");
+
   Core::instance()->move_to_next_frame();
 }
 
-auto Renderer::add_closed_window_resources(HWND handle) noexcept -> std::function<bool()>
-{
-  // find closed window resource
-  auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
-  {
-    return handle == window_resource._window.handle();
-  });
-  err_if(it == _window_resources.end(), "failed to find closed window");
-
-  // add to old resource, wait gpu finish using then destroy
-  auto func = [window_resource = *it, this, last_fence_value = Core::instance()->get_last_fence_value() ]
-  {
-    auto fence_value = Core::instance()->fence()->GetCompletedValue();
-    err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
-    return fence_value >= last_fence_value;
-  };
-
-  // remove old one
-  _window_resources.erase(it);
-
-  // destroy window
-  vn::WindowManager::instance()->destroy_window(handle);
-
-  return func;
-}
-
-void Renderer::set_window_minimized(HWND handle) noexcept
-{
-  auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
-  {
-    return handle == window_resource._window.handle();
-  });
-  if (it == _window_resources.end()) return;
-  it->_is_minimized = true;
-}
-
-// TODO: resize and move to use a fake fullscreen transparent window to replace
-void Renderer::window_resize(HWND handle) noexcept
-{
-  auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
-  {
-    return handle == window_resource._window.handle();
-  });
-  if (it == _window_resources.end()) return;
-  it->resize();
-}
-
+// TODO: in sleep screen then open, will get nothing from desktop duplication
 void Renderer::capture_backdrop() noexcept
 {
   // init d3d11 device
@@ -389,44 +502,6 @@ void Renderer::capture_backdrop() noexcept
   _desktop_image.init(handle, desc.Width, desc.Height);
 
   CloseHandle(handle);
-}
-
-void Renderer::sort_windows_by_z_order() noexcept
-{
-  std::ranges::sort(_window_resources, [](auto const& x, auto const& y)
-  {
-    auto handle = x._window.handle();
-    while (handle)
-    {
-      handle = GetWindow(handle, GW_HWNDNEXT);
-      if (handle == y._window.handle())
-        return true;
-    }
-    return false;
-  });
-}
-
-void Renderer::init_fullscreen_window(HWND handle) noexcept
-{
-  _fullscreen_window = std::make_unique<WindowResource>(handle);
-}
-
-void Renderer::window_move_start(HWND handle) noexcept
-{
-  _window_start_moving = true;
-  auto it = std::ranges::find_if(_window_resources, [handle] (auto const& window_resource)
-  {
-    return handle == window_resource._window.handle();
-  });
-  err_if(it == _window_resources.end(), "faild to find moved window");
-  _moved_window = &*it;
-  //std::ranges::for_each(_window_resources, [](auto const& window) { ShowWindow(window._window.handle(), SW_HIDE); });
-}
-
-void Renderer::window_move_end() noexcept
-{
-  _window_start_moving = false;
-  _moved_window        = nullptr;
 }
 
 }}

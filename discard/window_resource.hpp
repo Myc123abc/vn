@@ -24,7 +24,7 @@ class WindowResource
   friend class Renderer;
 
 public:
-  WindowResource(HWND handle) noexcept;
+  WindowResource(HWND handle, bool is_fullscreen_window = false) noexcept;
 
   void render() noexcept;
 
@@ -50,6 +50,8 @@ private:
 private:
   using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
 
+  bool                                         _is_fullscreen_window{};
+  
   bool                                         _is_minimized{};
   Window                                       _window;
 
