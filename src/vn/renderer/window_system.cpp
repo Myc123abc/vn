@@ -3,6 +3,7 @@
 
 #include <thread>
 #include <span>
+#include <algorithm>
 
 namespace
 {
@@ -10,16 +11,6 @@ namespace
 constexpr wchar_t Class_Name[] = L"vn::renderer::WindowSystem";
 
 constexpr auto Wnd_Msg_Change_Mouse_Interaction_Region = WM_APP;
-
-LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
-{
-  switch (msg)
-  {
-  case WM_SYSCOMMAND:
-    return 0;
-  }
-  return DefWindowProcW(handle, msg, w_param, l_param);
-}
 
 auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
 {
@@ -29,7 +20,7 @@ auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
 void change_mouse_interaction_region(HWND handle, std::span<RECT> rects)
 {
   if (rects.empty()) return;
-//_redIconCheckPeriod.StartDate = _redIconCheckPeriod.StartDate.AddDays(-23)
+
   auto region = CreateRectRgnIndirect(&rects[0]);
   for (auto i = 1; i < rects.size(); ++i)
   {
@@ -54,6 +45,34 @@ auto to_32_bits(uint64_t x) noexcept -> std::pair<uint32_t, uint32_t>
 }
 
 namespace vn { namespace renderer {
+
+LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
+{
+  auto ws = instance();
+
+  switch (msg)
+  {
+  case WM_SYSCOMMAND:
+    return 0;
+  
+  case WM_LBUTTONDOWN:
+    auto pos = POINT{};
+    GetCursorPos(&pos);
+    auto& windows = ws->_data->windows;
+    if (auto it = std::ranges::find_last_if(windows, [&](auto const& window)
+        {
+          auto rect = window.rect();
+          return PtInRect(&rect, pos);
+        });
+        it.begin() != windows.end() && it.begin() + 1 != windows.end())
+    {
+      std::ranges::rotate(it.begin(), it.begin() + 1, windows.end());
+      ws->_updated = true;
+    }
+    break;
+  }
+  return DefWindowProcW(handle, msg, w_param, l_param);
+}
 
 void WindowSystem::init() noexcept
 {
@@ -100,7 +119,7 @@ void WindowSystem::init() noexcept
 
         auto tmp = *_data;
 
-        _updated_data.store(_data, std::memory_order_relaxed);
+        _updated_data.store(_data, std::memory_order_release);
         _data = _data == _data0.get() ? _data1.get() : _data0.get();
 
         *_data = tmp;

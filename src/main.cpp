@@ -11,12 +11,12 @@ int main()
 
   auto window_system = renderer::WindowSystem::instance();
 
-  window_system->create_window(50, 50, 50, 50);
-  window_system->create_window(75, 75, 50, 50);
+  window_system->create_window(50, 50, 100, 100);
+  window_system->create_window(75, 75, 125, 125);
 
   auto beg = std::chrono::high_resolution_clock::now();
 
-  while (true)
+  while (!(GetKeyState(VK_SPACE) & 0x8000))
   {
     vn::render();
 
@@ -26,7 +26,7 @@ int main()
     if (dur >= 1000 && !ok)
     {
       ok = true;
-      window_system->create_window(150, 150, 50, 50);
+      window_system->create_window(150, 150, 250, 250);
     }
   }
 

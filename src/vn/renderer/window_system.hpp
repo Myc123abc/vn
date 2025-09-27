@@ -17,6 +17,17 @@ struct Window
   uint32_t y;
   uint32_t width;
   uint32_t height;
+
+  auto rect() const noexcept
+  {
+    return RECT
+    { 
+      static_cast<LONG>(x), 
+      static_cast<LONG>(y), 
+      static_cast<LONG>(x + width),
+      static_cast<LONG>(y + height)
+    };
+  }
 };
 
 struct WindowResources
@@ -46,11 +57,13 @@ public:
   auto handle()      const noexcept { return _handle;      }
   auto screen_size() const noexcept { return _screen_size; }
 
-  auto const* updated_data() const noexcept { return _updated_data.load(std::memory_order_relaxed); }
+  auto const* updated_data() const noexcept { return _updated_data.load(std::memory_order_acquire); }
 
   void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
 
 private:
+  static LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param);
+
   void process_message(MSG const& msg) noexcept;
 
   void process_message_create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
