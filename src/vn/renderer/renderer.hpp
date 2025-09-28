@@ -5,6 +5,7 @@
 #include "window_system.hpp"
 
 #include <glm/glm.hpp>
+#include <rigtorp/SPSCQueue.h>
 
 #include <vector>
 #include <thread>
@@ -12,6 +13,7 @@
 #include <semaphore>
 #include <functional>
 #include <deque>
+#include <variant>
 
 namespace vn { 
 
@@ -29,8 +31,6 @@ class Renderer
   friend void vn::destroy() noexcept;
   friend void vn::render()  noexcept;
   
-  friend class WindowResource;
-  friend class MessageQueue;
   friend class FrameBuffer;
   
 private:
@@ -67,17 +67,17 @@ private:
 
   void capture_backdrop() noexcept;
 
-  void add_old_resource(std::function<bool()>&& func) noexcept { _old_resource_destructor.emplace_back(func); }
+  void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                                  Misc
 ////////////////////////////////////////////////////////////////////////////////
 
-  std::deque<std::function<bool()>> _old_resource_destructor;
+  std::deque<std::function<bool()>> _current_frame_render_finish_procs;
   std::thread                       _thread;
   std::atomic_bool                  _exit{ false };
   std::binary_semaphore             _render_acquire{ 0 };
-  WindowResources const*            _window_resources{};
+  WindowResources                   _window_resources{};
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Swaochain Resources
@@ -121,6 +121,34 @@ private:
   std::vector<Vertex>                    _vertices;
   std::vector<uint16_t>                  _indices;
   uint16_t                               _idx_beg{};
+
+////////////////////////////////////////////////////////////////////////////////
+///                          Frame Resources
+////////////////////////////////////////////////////////////////////////////////
+
+public:
+
+  struct Message_Update_Window_Resource
+  {
+    WindowResources window_resources;
+  };
+  struct Message_Update_Fullscreen_Region
+  {
+    HRGN region;
+  };
+
+  using Message = std::variant<
+    Message_Update_Window_Resource,
+    Message_Update_Fullscreen_Region
+  >;
+
+  void push_message(Message const& msg) noexcept { return _message_queue.push(msg); }
+
+private:
+  void process_messages() noexcept;
+
+private:
+  rigtorp::SPSCQueue<Message> _message_queue{ 10 };
 };
 
 }}

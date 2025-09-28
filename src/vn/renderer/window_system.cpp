@@ -1,5 +1,6 @@
 #include "window_system.hpp"
 #include "../util.hpp"
+#include "renderer.hpp"
 
 #include <thread>
 #include <span>
@@ -17,10 +18,8 @@ auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
   return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 }
 
-void change_mouse_interaction_region(HWND handle, std::span<RECT> rects)
+auto get_window_region(HWND handle, std::span<RECT> rects)
 {
-  if (rects.empty()) return;
-
   auto region = CreateRectRgnIndirect(&rects[0]);
   for (auto i = 1; i < rects.size(); ++i)
   {
@@ -28,8 +27,7 @@ void change_mouse_interaction_region(HWND handle, std::span<RECT> rects)
     CombineRgn(region, region, tmp, RGN_OR);
     DeleteObject(tmp);
   }
-
-  SetWindowRgn(handle, region, false);
+  return region;
 }
 
 auto to_64_bits(uint32_t x, uint32_t y) noexcept
@@ -52,13 +50,18 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
 
   switch (msg)
   {
+  case WM_TIMER:
+    if (w_param == 1)
+      ws->send_message_to_renderer();
+    return 0;
+
   case WM_SYSCOMMAND:
     return 0;
   
   case WM_LBUTTONDOWN:
     auto pos = POINT{};
     GetCursorPos(&pos);
-    auto& windows = ws->_data->windows;
+    auto& windows = ws->_window_resources.windows;
     if (auto it = std::ranges::find_last_if(windows, [&](auto const& window)
         {
           auto rect = window.rect();
@@ -67,7 +70,7 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
         it.begin() != windows.end() && it.begin() + 1 != windows.end())
     {
       std::ranges::rotate(it.begin(), it.begin() + 1, windows.end());
-      ws->_updated = true;
+      ws->_window_resources_changed = true;
     }
     break;
   }
@@ -97,6 +100,12 @@ void WindowSystem::init() noexcept
     // exclude window from desktop duplication
     err_if(!SetWindowDisplayAffinity(_handle, WDA_EXCLUDEFROMCAPTURE), "failed to exclude window from desktop duplicaiton");
 
+    // set timer for window resource update
+    err_if(!SetTimer(_handle, 1, 0, nullptr), "failed to set timer");
+
+    auto rect   = RECT{};
+    auto region = CreateRectRgnIndirect(&rect);
+    SetWindowRgn(_handle, region, false);
     ShowWindow(_handle, SW_SHOW);
 
     // create message queue
@@ -104,28 +113,43 @@ void WindowSystem::init() noexcept
     _message_queue_create_complete.count_down();
 
     MSG msg{};
-    while (true)
+    while (GetMessageW(&msg, nullptr, 0, 0))
     {
-      while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
-      {
-        process_message(msg);
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-      }
-
-      if (_updated)
-      {
-        _updated = false;
-
-        auto tmp = *_data;
-
-        _updated_data.store(_data, std::memory_order_release);
-        _data = _data == _data0.get() ? _data1.get() : _data0.get();
-
-        *_data = tmp;
-      }
+      process_message(msg);
+      TranslateMessage(&msg);
+      DispatchMessageW(&msg);
     }
   }).detach();
+}
+
+void WindowSystem::send_message_to_renderer() noexcept
+{
+  auto renderer = Renderer::instance();
+
+  if (_window_resources_changed)
+  {
+    _window_resources_changed = false;
+    renderer->push_message(Renderer::Message_Update_Window_Resource{ _window_resources });
+  }
+
+  if (_fullscreen_region_changed)
+  {
+    _fullscreen_region_changed = false;
+
+    // get new mouse interaction region of fullscreen window
+    auto rects = std::vector<RECT>(_window_resources.windows.size());
+    for (auto i = 0; i < rects.size(); ++i)
+    {
+      auto&       rect   = rects[i];
+      auto const& window = _window_resources.windows[i];
+    
+      rect.left   = window.x;
+      rect.right  = window.x + window.width;
+      rect.top    = window.y;
+      rect.bottom = window.y + window.height;
+    }
+    renderer->push_message(Renderer::Message_Update_Fullscreen_Region{ get_window_region(_handle, rects) });
+  }
 }
 
 void WindowSystem::process_message(MSG const& msg) noexcept
@@ -149,21 +173,9 @@ void WindowSystem::create_window(uint32_t x, uint32_t y, uint32_t width, uint32_
 
 void WindowSystem::process_message_create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept
 {
-  _updated = true;
-  _data->windows.emplace_back(x, y, width, height);
-
-  auto rects = std::vector<RECT>(_data->windows.size());
-  for (auto i = 0; i < rects.size(); ++i)
-  {
-    auto&       rect   = rects[i];
-    auto const& window = _data->windows[i];
-
-    rect.left   = window.x;
-    rect.right  = window.x + window.width;
-    rect.top    = window.y;
-    rect.bottom = window.y + window.height;
-  }
-  change_mouse_interaction_region(_handle, rects);
+  _window_resources_changed  = true;
+  _fullscreen_region_changed = true;
+  _window_resources.windows.emplace_back(x, y, width, height);
 }
 
 }}

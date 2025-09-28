@@ -11,6 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_subdirectory(vendor/DirectX-Headers)
 add_subdirectory(vendor/glm)
+add_subdirectory(vendor/SPSCQueue)
 
 ################################################################################
 ###                                 test exe
@@ -27,6 +28,7 @@ target_compile_definitions(test PRIVATE
 target_link_libraries(test PRIVATE
   d3d12 dxgi d3d11 dxcompiler
   DirectX-Headers
+  SPSCQueue
 )
 target_include_directories(test PRIVATE
   vendor/glm

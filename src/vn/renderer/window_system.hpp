@@ -4,9 +4,7 @@
 
 #include <glm/glm.hpp>
 
-#include <memory>
 #include <vector>
-#include <atomic>
 #include <latch>
 
 namespace vn { namespace renderer {
@@ -57,7 +55,7 @@ public:
   auto handle()      const noexcept { return _handle;      }
   auto screen_size() const noexcept { return _screen_size; }
 
-  auto const* updated_data() const noexcept { return _updated_data.load(std::memory_order_acquire); }
+  void send_message_to_renderer() noexcept;
 
   void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
 
@@ -74,11 +72,10 @@ private:
   std::latch                       _message_queue_create_complete{ 1 };
   glm::vec<2, uint32_t>            _screen_size;
 
-  std::unique_ptr<WindowResources> _data0{ std::make_unique<WindowResources>() };
-  std::unique_ptr<WindowResources> _data1{ std::make_unique<WindowResources>() };
-  WindowResources*                 _data         = _data0.get();
-  std::atomic<WindowResources*>    _updated_data = _data1.get();
-  bool                             _updated{};
+  WindowResources                  _window_resources;
+
+  bool                             _window_resources_changed{};
+  bool                             _fullscreen_region_changed{};
 };
   
 }}

@@ -7,3 +7,6 @@
 [submodule "vendor/utfcpp"]
 	path = vendor/utfcpp
 	url = https://github.com/nemtrif/utfcpp.git
+[submodule "vendor/SPSCQueue"]
+	path = vendor/SPSCQueue
+	url = https://github.com/rigtorp/SPSCQueue.git

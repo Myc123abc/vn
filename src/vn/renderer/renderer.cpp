@@ -318,10 +318,11 @@ void Renderer::run() noexcept
     if (_exit.load(std::memory_order_acquire)) [[unlikely]]
       return;
 
-    // destruct old resources
-    for (auto it = _old_resource_destructor.begin(); it != _old_resource_destructor.end();)
-      (*it)() ? it = _old_resource_destructor.erase(it) : ++it;
+    // process last render finish processes
+    for (auto it = _current_frame_render_finish_procs.begin(); it != _current_frame_render_finish_procs.end();)
+      (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
 
+    process_messages();
     update();
     render();
 
@@ -339,9 +340,7 @@ void Renderer::run() noexcept
 
 void Renderer::update() noexcept
 {
-  _window_resources = WindowSystem::instance()->updated_data();
-
-  for (auto const& window : _window_resources->windows)
+  for (auto const& window : _window_resources.windows)
   {
     std::vector<Vertex> vertices
     {
@@ -375,7 +374,7 @@ void Renderer::render() noexcept
   auto& swapchain_image = _swapchain_images[_swapchain->GetCurrentBackBufferIndex()];
 
   // copy backdrop image
-  for (auto const& window : _window_resources->windows)
+  for (auto const& window : _window_resources.windows)
   {
     auto rect = window.rect();
     copy(cmd, _desktop_image, rect.left, rect.top, rect.right, rect.bottom, frame.backdrop_image, rect.left, rect.top);
@@ -494,6 +493,46 @@ void Renderer::capture_backdrop() noexcept
   _desktop_image.init(handle, desc.Width, desc.Height);
 
   CloseHandle(handle);
+}
+
+void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept
+{
+  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->get_last_fence_value()]()
+  {
+    auto fence_value = Core::instance()->fence()->GetCompletedValue();
+    err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
+    auto render_complete = fence_value >= last_fence_value;
+    if (render_complete) func();
+    return render_complete;
+  });
+}
+
+void Renderer::process_messages() noexcept
+{
+  while (!_message_queue.empty())
+  {
+    auto msg = *_message_queue.front();
+
+    std::visit([this](auto&& data)
+    {
+      using T = std::decay_t<decltype(data)>;
+      if constexpr (std::is_same_v<T, Message_Update_Window_Resource>)
+      {
+        _window_resources = data.window_resources;
+      }
+      else if constexpr (std::is_same_v<T, Message_Update_Fullscreen_Region>)
+      {
+        add_current_frame_render_finish_proc([region = data.region]
+        {
+          err_if(!SetWindowRgn(WindowSystem::instance()->handle(), region, false), "failed to set fullscreen region");
+        });
+      }
+      else
+        static_assert(false, "unexist message type of renderer");
+    }, msg);
+
+    _message_queue.pop();
+  }
 }
 
 }}

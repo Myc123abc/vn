@@ -81,14 +81,7 @@ auto FrameBuffer::append(void const* data, uint32_t size) noexcept -> uint32_t
   else
   {
     // add old buffer for destroy
-    auto renderer = Renderer::instance();
-    auto func = [buffer = _buffer, last_fence_value = Core::instance()->get_last_fence_value()]
-    {
-      auto fence_value = Core::instance()->fence()->GetCompletedValue();
-      err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
-      return fence_value >= last_fence_value;
-    };
-    renderer->add_old_resource(func);
+    Renderer::instance()->add_current_frame_render_finish_proc([buffer = _buffer] {});
 
     // temporary copy old data
     std::vector<std::byte> old_data(_size);

@@ -25,3 +25,5 @@
 |--|--|--|
 |DirectX-Headers|MIT|https://github.com/microsoft/DirectX-Headers|
 |glm|MIT|https://github.com/g-truc/glm|
+|utfcpp|MIT|https://github.com/nemtrif/utfcpp|
+|SPSCQueue|MIT|https://github.com/rigtorp/SPSCQueue|

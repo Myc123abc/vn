@@ -28,6 +28,8 @@ int main()
       ok = true;
       window_system->create_window(150, 150, 250, 250);
     }
+
+    Sleep(1);
   }
 
   vn::destroy();
