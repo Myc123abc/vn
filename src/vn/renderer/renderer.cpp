@@ -125,9 +125,26 @@ void Renderer::create_swapchain_resources() noexcept
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), ws->handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
+  //err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), ws->handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
+  //      "failed to create swapchain");
+  swapchain_desc.AlphaMode        = DXGI_ALPHA_MODE_PREMULTIPLIED; // FIXME: why it will change to a little alpha after six frames and then to be ok?
+  err_if(core->factory()->CreateSwapChainForComposition(core->command_queue(), &swapchain_desc, nullptr, &swapchain),
         "failed to create swapchain for composition");
   err_if(swapchain.As(&_swapchain), "failed to get swapchain4");
+
+  // create composition
+  err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
+          "failed to create composition device");
+  err_if(_comp_device->CreateTargetForHwnd(ws->handle(), TRUE, &_comp_target),
+          "failed to create composition target");
+  err_if(_comp_device->CreateVisual(&_comp_visual),
+          "failed to create composition visual");
+  err_if(_comp_visual->SetContent(_swapchain.Get()),
+          "failed to bind swapchain to composition visual");
+  err_if(_comp_target->SetRoot(_comp_visual.Get()),
+          "failed to bind composition visual to target");
+  err_if(_comp_device->Commit(),
+          "failed to commit composition device");
 
   // create descriptor heaps
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
@@ -309,7 +326,7 @@ void Renderer::destroy() noexcept
 
 void Renderer::run() noexcept
 {
-  auto beg = std::chrono::high_resolution_clock::now();
+  auto beg = std::chrono::steady_clock ::now();
   uint32_t count{};
   while (true)
   {
@@ -327,7 +344,7 @@ void Renderer::run() noexcept
     render();
 
     ++count;
-    auto now = std::chrono::high_resolution_clock::now();
+    auto now = std::chrono::steady_clock ::now();
     auto dur = std::chrono::duration<float>(now - beg).count();
     if (dur >= 1.f)
     {
@@ -342,14 +359,12 @@ void Renderer::update() noexcept
 {
   for (auto const& window : _window_resources.windows)
   {
-    std::vector<Vertex> vertices
+    _vertices.append_range(std::vector<Vertex>
     {
       { { window.x + window.width / 2, window.y                 }, {}, {1, 0, 0, 1} },
       { { window.x + window.width,     window.y + window.height }, {}, {0, 1, 0, 1} },
       { { window.x,                    window.y + window.height }, {}, {0, 0, 1, 1} },
-    };
-    _vertices.append_range(vertices);
-
+    });
     _indices.append_range(std::vector<uint16_t>
     {
       static_cast<uint16_t>(_idx_beg + 0),
@@ -376,9 +391,13 @@ void Renderer::render() noexcept
   // copy backdrop image
   for (auto const& window : _window_resources.windows)
   {
-    auto rect = window.rect();
+    auto const& rect = window.scissor_rect;
     copy(cmd, _desktop_image, rect.left, rect.top, rect.right, rect.bottom, frame.backdrop_image, rect.left, rect.top);
-    copy(cmd, frame.backdrop_image, swapchain_image);
+    
+    // TODO: convert backdrop image to blur backdrop image
+
+    // TODO: change to copy blur backdrop image to swapchain image
+    copy(cmd, frame.backdrop_image, rect.left, rect.top, rect.right, rect.bottom, swapchain_image, rect.left, rect.top);
   }
 
   // set pipeline state
@@ -399,8 +418,8 @@ void Renderer::render() noexcept
   cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
-  //float constexpr clear_color[4]{};
-  //cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  float constexpr clear_color[4]{};
+  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
 
   // set primitive topology
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

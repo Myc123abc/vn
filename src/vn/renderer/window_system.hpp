@@ -11,21 +11,47 @@ namespace vn { namespace renderer {
 
 struct Window
 {
-  uint32_t x;
-  uint32_t y;
-  uint32_t width;
-  uint32_t height;
+  uint32_t id;
+  int      x;
+  int      y;
+  int      width;
+  int      height;
+  RECT     scissor_rect;
 
-  auto rect() const noexcept
+public:
+  Window(int x, int y, int width, int height);
+
+  void move(int x, int y) noexcept;
+  
+  static auto constexpr Resize_Width  = 10;
+  static auto constexpr Resize_Height = 10;
+
+  enum class ResizeType
   {
-    return RECT
-    { 
-      static_cast<LONG>(x), 
-      static_cast<LONG>(y), 
-      static_cast<LONG>(x + width),
-      static_cast<LONG>(y + height)
-    };
+    none,
+    left_top,
+    right_top,
+    left_bottom,
+    right_bottom,
+    left,
+    right,
+    top,
+    bottom,
+  };
+  void resize(ResizeType type, int x, int y) noexcept;
+  auto get_resize_type(POINT const& p) const noexcept;
+
+private:
+  static auto generate_id() noexcept
+  {
+    static uint32_t id{};
+    return ++id;
   }
+  
+  void left_offset(int dx) noexcept;
+  void top_offset(int dy) noexcept;
+
+  void reset_scissor_rect() noexcept;
 };
 
 struct WindowResources
@@ -57,25 +83,24 @@ public:
 
   void send_message_to_renderer() noexcept;
 
-  void create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
+  void create_window(int x, int y, int width, int height) noexcept;
 
 private:
   static LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param);
 
   void process_message(MSG const& msg) noexcept;
 
-  void process_message_create_window(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
+  void process_message_create_window(int x, int y, int width, int height) noexcept;
 
 private:
-  HWND                             _handle{};
-  DWORD                            _thread_id{};
-  std::latch                       _message_queue_create_complete{ 1 };
-  glm::vec<2, uint32_t>            _screen_size;
+  HWND                  _handle{};
+  DWORD                 _thread_id{};
+  std::latch            _message_queue_create_complete{ 1 };
+  glm::vec<2, uint32_t> _screen_size;
 
-  WindowResources                  _window_resources;
-
-  bool                             _window_resources_changed{};
-  bool                             _fullscreen_region_changed{};
+  WindowResources       _window_resources;
+  bool                  _window_resources_changed{};
+  bool                  _fullscreen_region_changed{};
 };
   
 }}

@@ -4,6 +4,8 @@
 #include "memory_allocator.hpp"
 #include "window_system.hpp"
 
+#include <dcomp.h>
+
 #include <glm/glm.hpp>
 #include <rigtorp/SPSCQueue.h>
 
@@ -90,6 +92,9 @@ private:
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtv_heap;
   CD3DX12_VIEWPORT                             _viewport;
   CD3DX12_RECT                                 _scissor;
+  Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
+  Microsoft::WRL::ComPtr<IDCompositionTarget>  _comp_target;
+  Microsoft::WRL::ComPtr<IDCompositionVisual>  _comp_visual;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                          Pipeline Resources
