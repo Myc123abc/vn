@@ -4,8 +4,6 @@
 #include "memory_allocator.hpp"
 #include "window_system.hpp"
 
-#include <dcomp.h>
-
 #include <glm/glm.hpp>
 #include <rigtorp/SPSCQueue.h>
 
@@ -92,9 +90,6 @@ private:
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtv_heap;
   CD3DX12_VIEWPORT                             _viewport;
   CD3DX12_RECT                                 _scissor;
-  Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
-  Microsoft::WRL::ComPtr<IDCompositionTarget>  _comp_target;
-  Microsoft::WRL::ComPtr<IDCompositionVisual>  _comp_visual;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                          Pipeline Resources
@@ -128,7 +123,7 @@ private:
   uint16_t                               _idx_beg{};
 
 ////////////////////////////////////////////////////////////////////////////////
-///                          Frame Resources
+///                          Message Process
 ////////////////////////////////////////////////////////////////////////////////
 
 public:
@@ -141,10 +136,15 @@ public:
   {
     HRGN region;
   };
+  struct Message_Desktop_Image_Copy
+  {
+    bool start;
+  };
 
   using Message = std::variant<
     Message_Update_Window_Resource,
-    Message_Update_Fullscreen_Region
+    Message_Update_Fullscreen_Region,
+    Message_Desktop_Image_Copy
   >;
 
   void push_message(Message const& msg) noexcept { return _message_queue.push(msg); }
@@ -154,6 +154,7 @@ private:
 
 private:
   rigtorp::SPSCQueue<Message> _message_queue{ 10 };
+  bool                        _need_copy_desktop_image{};
 };
 
 }}

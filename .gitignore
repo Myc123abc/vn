@@ -4,3 +4,4 @@ build
 .vs
 out
 assets/*.cso
+bin

@@ -17,6 +17,8 @@ add_subdirectory(vendor/SPSCQueue)
 ###                                 test exe
 ################################################################################
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+
 file(GLOB_RECURSE SRC src/*.cpp)
 
 add_executable(test ${SRC})
@@ -26,7 +28,7 @@ target_compile_definitions(test PRIVATE
   UTF_CPP_CPLUSPLUS=202002L
 )
 target_link_libraries(test PRIVATE
-  d3d12 dxgi d3d11 dxcompiler dcomp
+  d3d12 dxgi d3d11 dxcompiler
   DirectX-Headers
   SPSCQueue
 )
@@ -42,5 +44,5 @@ target_include_directories(test PRIVATE
 add_custom_target(copy_assets ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_SOURCE_DIR}/assets
-          ${CMAKE_BINARY_DIR}/assets
+          ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
 )

@@ -10,9 +10,6 @@
 
 #include <glm/glm.hpp>
 
-#include <cstdint>
-#include <algorithm>
-
 namespace vn { namespace renderer {
 
 enum class ImageType

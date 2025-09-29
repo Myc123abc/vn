@@ -125,26 +125,9 @@ void Renderer::create_swapchain_resources() noexcept
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  //err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), ws->handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
-  //      "failed to create swapchain");
-  swapchain_desc.AlphaMode        = DXGI_ALPHA_MODE_PREMULTIPLIED; // FIXME: why it will change to a little alpha after six frames and then to be ok?
-  err_if(core->factory()->CreateSwapChainForComposition(core->command_queue(), &swapchain_desc, nullptr, &swapchain),
-        "failed to create swapchain for composition");
+  err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), ws->handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
+        "failed to create swapchain");
   err_if(swapchain.As(&_swapchain), "failed to get swapchain4");
-
-  // create composition
-  err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
-          "failed to create composition device");
-  err_if(_comp_device->CreateTargetForHwnd(ws->handle(), TRUE, &_comp_target),
-          "failed to create composition target");
-  err_if(_comp_device->CreateVisual(&_comp_visual),
-          "failed to create composition visual");
-  err_if(_comp_visual->SetContent(_swapchain.Get()),
-          "failed to bind swapchain to composition visual");
-  err_if(_comp_target->SetRoot(_comp_visual.Get()),
-          "failed to bind composition visual to target");
-  err_if(_comp_device->Commit(),
-          "failed to commit composition device");
 
   // create descriptor heaps
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
@@ -256,9 +239,9 @@ void Renderer::create_pipeline_resources() noexcept
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
   {
-    {  "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,       0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    {  "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    {  "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    {  "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    {  "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    {  "COLOR",    0, DXGI_FORMAT_R32_UINT,     0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
   };
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline_state_desc{};
   pipeline_state_desc.InputLayout           = { layout, _countof(layout) };
@@ -361,9 +344,9 @@ void Renderer::update() noexcept
   {
     _vertices.append_range(std::vector<Vertex>
     {
-      { { window.x + window.width / 2, window.y                 }, {}, {1, 0, 0, 1} },
-      { { window.x + window.width,     window.y + window.height }, {}, {0, 1, 0, 1} },
-      { { window.x,                    window.y + window.height }, {}, {0, 0, 1, 1} },
+      { { window.x + window.width / 2, window.y                 }, {}, 0x00ff00ff },
+      { { window.x + window.width,     window.y + window.height }, {}, 0x0000ffff },
+      { { window.x,                    window.y + window.height }, {}, 0x00ffffff },
     });
     _indices.append_range(std::vector<uint16_t>
     {
@@ -387,6 +370,9 @@ void Renderer::render() noexcept
 
   // get current swapchain
   auto& swapchain_image = _swapchain_images[_swapchain->GetCurrentBackBufferIndex()];
+
+  if (_need_copy_desktop_image)
+    copy(cmd, _desktop_image, swapchain_image);
 
   // copy backdrop image
   for (auto const& window : _window_resources.windows)
@@ -418,8 +404,8 @@ void Renderer::render() noexcept
   cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
-  float constexpr clear_color[4]{};
-  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  //float constexpr clear_color[4]{};
+  //cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
 
   // set primitive topology
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -462,6 +448,12 @@ void Renderer::render() noexcept
 // TODO: in sleep screen then open, will get nothing from desktop duplication
 void Renderer::capture_backdrop() noexcept
 {
+  // attach desktop to renderer thread
+  auto desk = OpenInputDesktop(0, false, GENERIC_ALL);
+  err_if(!desk, "failed to get desktop");
+  err_if(SetThreadDesktop(desk) == 0, "failed to set desktop on renderer thread");
+  CloseDesktop(desk);
+
   // init d3d11 device
   ComPtr<ID3D11Device> device;  
   err_if(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr),
@@ -545,6 +537,15 @@ void Renderer::process_messages() noexcept
         {
           err_if(!SetWindowRgn(WindowSystem::instance()->handle(), region, false), "failed to set fullscreen region");
         });
+      }
+      else if constexpr (std::is_same_v<T, Message_Desktop_Image_Copy>)
+      {
+        _need_copy_desktop_image = data.start;
+        if (_need_copy_desktop_image)
+          add_current_frame_render_finish_proc([]
+          {
+            err_if(!SetWindowRgn(WindowSystem::instance()->handle(), nullptr, false), "failed to set fullscreen region");
+          });
       }
       else
         static_assert(false, "unexist message type of renderer");

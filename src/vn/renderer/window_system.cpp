@@ -44,13 +44,18 @@ auto to_32_bits(uint64_t x) noexcept -> std::pair<uint32_t, uint32_t>
 
 namespace vn { namespace renderer {
 
+////////////////////////////////////////////////////////////////////////////////
+///                                Window
+////////////////////////////////////////////////////////////////////////////////
+
 Window::Window(int x, int y, int width, int height)
   : id(generate_id()), x(x), y(y), width(width), height(height)
 {
-  reset_scissor_rect();
+  update_scissor_rect();
+  update_rect();
 }
 
-void Window::reset_scissor_rect() noexcept
+void Window::update_scissor_rect() noexcept
 {
   auto screen_size = get_screen_size();
   scissor_rect.left   = std::clamp(x,          0, static_cast<int>(screen_size.x));
@@ -59,70 +64,77 @@ void Window::reset_scissor_rect() noexcept
   scissor_rect.bottom = std::clamp(y + height, 0, static_cast<int>(screen_size.y));
 }
 
+void Window::update_rect() noexcept
+{
+  rect.left   = x;
+  rect.top    = y;
+  rect.right  = x + width;
+  rect.bottom = y + height;
+}
+
+void Window::update_by_rect() noexcept
+{
+  x      = rect.left;
+  y      = rect.top;
+  width  = rect.right  - rect.left;
+  height = rect.bottom - rect.top;
+
+  update_scissor_rect();
+}
+
 void Window::move(int32_t x, int32_t y) noexcept
 {
   this->x += x;
   this->y += y;
-  reset_scissor_rect();
+  update_scissor_rect();
+  update_rect();
 }
 
-// FIXME: rewrite resize!!!
-void Window::resize(ResizeType type, int x, int y) noexcept
+void Window::resize(ResizeType type, int dx, int dy) noexcept
 {
   using enum Window::ResizeType;
-  auto screen_size = get_screen_size();
-
   switch (type)
   {
   case none:
     return;
 
   case left_top:
-
-    this->x = std::clamp(this->x + x, 0, static_cast<int>(scissor_rect.right)  - Resize_Width * 2);
-    this->y = std::clamp(this->y + y, 0, static_cast<int>(scissor_rect.bottom) - Resize_Width * 2);
-    if (this->x > 0 && this->x < static_cast<int>(scissor_rect.right) - Resize_Width * 2)
-      width = std::clamp(width - x, Resize_Width * 2, static_cast<int>(screen_size.x));
-    if (this->y > 0 && this->y < static_cast<int>(scissor_rect.bottom) - Resize_Width * 2)
-      height = std::clamp(height - y, Resize_Width * 2, static_cast<int>(screen_size.y));
+    left_offset(dx);
+    top_offset(dy);
     break;
 
   case right_top:
-    this->y = std::clamp(this->y + y, 0, static_cast<int>(scissor_rect.bottom) - Resize_Width * 2);
-    width   = std::clamp(width  + x, Resize_Width * 2, static_cast<int>(screen_size.x));
-    if (this->y > 0 && this->y < static_cast<int>(scissor_rect.bottom) - Resize_Width * 2)
-      height = std::clamp(height - y, Resize_Width * 2, static_cast<int>(screen_size.y));
+    right_offset(dx);
+    top_offset(dy);
     break;
 
   case left_bottom:
-    this->x = std::clamp(this->x + x, 0, static_cast<int>(scissor_rect.right)  - Resize_Width * 2);
-    if (this->x > 0 && this->x < static_cast<int>(scissor_rect.right) - Resize_Width * 2)
-      width = std::clamp(width - x, Resize_Width * 2, static_cast<int>(screen_size.x));
-    height  = std::clamp(height + y, Resize_Width * 2, static_cast<int>(screen_size.y));
+    left_offset(dx);
+    bottom_offset(dy);
     break;
   
   case right_bottom:
-    width   = std::clamp(width  + x, Resize_Width * 2, static_cast<int>(screen_size.x));
-    height  = std::clamp(height + y, Resize_Width * 2, static_cast<int>(screen_size.y));
+    right_offset(dx);
+    bottom_offset(dy);
     break;
 
   case left:
-    left_offset(x);
+    left_offset(dx);
     break;
 
   case right:
-    width = std::clamp(width + x, Resize_Width * 2, static_cast<int>(screen_size.x));
+    right_offset(dx);
     break;
 
   case top:
-    top_offset(y);
+    top_offset(dy);
     break;
 
   case bottom:
-    height  = std::clamp(height + y, Resize_Width * 2, static_cast<int>(screen_size.y));
+    bottom_offset(dy);
     break;
   }
-  reset_scissor_rect();
+  update_by_rect();
 }
 
 auto Window::get_resize_type(POINT const& p) const noexcept
@@ -133,10 +145,12 @@ auto Window::get_resize_type(POINT const& p) const noexcept
       p.y < scissor_rect.top  || p.y > scissor_rect.bottom)
     return none;
 
-  bool left_side   = p.x < x + Resize_Width;
-  bool right_side  = p.x > scissor_rect.right - Resize_Width;
-  bool top_side    = p.y < y + Resize_Width;
-  bool bottom_side = p.y > scissor_rect.bottom - Resize_Width;
+  auto screen_size = get_screen_size();
+
+  bool left_side   = rect.left   >= 0             && p.x < x                   + Resize_Width;
+  bool right_side  = rect.right  <= screen_size.x && p.x > scissor_rect.right  - Resize_Width;
+  bool top_side    = rect.top    >= 0             && p.y < y                   + Resize_Height;
+  bool bottom_side = rect.bottom <= screen_size.y && p.y > scissor_rect.bottom - Resize_Height;
 
   if (top_side)
   {
@@ -157,69 +171,83 @@ auto Window::get_resize_type(POINT const& p) const noexcept
 
 void Window::left_offset(int dx) noexcept
 {
-  if (dx > 0)
+  auto screen_size = get_screen_size();
+
+  if (rect.left < 0) return;
+  
+  LONG max_left;
+  if (rect.right > screen_size.x)
   {
-    auto width_bound = width - Resize_Width * 2;
-    auto offset = width_bound - dx;
-    if (offset >= 0)
-    {
-      x     += dx;
-      width -= dx;
-    }
+    if (screen_size.x - rect.left < Min_Width)
+      max_left = rect.left;
     else
-    {
-      x    += width_bound;
-      width = Resize_Width * 2;
-    }
+      max_left = screen_size.x - Min_Width;
   }
   else
-  {
-    auto new_x = x + dx;
-    if (new_x >= 0)
-    {
-      x      = new_x;
-      width -= dx;
-    }
-    else
-    {
-      x     = 0;
-      width = scissor_rect.right;
-    }
-  }
+    max_left = rect.right - Min_Width;
+  rect.left = std::clamp(rect.left + dx, 0l, max_left);
 }
 
 void Window::top_offset(int dy) noexcept
 {
-  if (dy > 0)
+  auto screen_size = get_screen_size();
+
+  if (rect.top < 0) return;
+
+  LONG max_top;
+  if (rect.bottom > screen_size.y)
   {
-    auto height_bound = height - Resize_Height * 2;
-    auto offset       = height_bound - dy;
-    if (offset >= 0)
-    {
-      y      += dy;
-      height -= dy;
-    }
+    if (screen_size.y - rect.top < Min_Height)
+      max_top = rect.top;
     else
-    {
-      y           += height_bound;
-      height_bound = Resize_Height * 2;
-    }
+      max_top = screen_size.y - Min_Height;
   }
   else
-  {
-    auto new_y = y + dy;
-    if (new_y > 0)
-    {
-      y       = new_y;
-      height -= dy;
-    }
-    else
-    {
-      y      = 0;
-      height = scissor_rect.bottom;
-    }
-  }
+    max_top = rect.bottom - Min_Height;
+  rect.top = std::clamp(rect.top + dy, 0l, max_top);
 }
+
+void Window::right_offset(int dx) noexcept
+{
+  auto screen_size = get_screen_size();
+  
+  if (rect.right > screen_size.x) return;
+
+  LONG min_right;
+  if (rect.left < 0)
+  {
+    if (rect.right < Min_Width)
+      min_right = rect.right;
+    else
+      min_right = Min_Width;
+  }
+  else
+    min_right = rect.left + Min_Width;
+  rect.right = std::clamp(rect.right + dx, min_right, static_cast<LONG>(screen_size.x));
+}
+
+void Window::bottom_offset(int dy) noexcept
+{
+  auto screen_size = get_screen_size();
+
+  if (rect.bottom > screen_size.y) return;
+
+  LONG min_bottom;
+  if (rect.top < 0)
+  {
+    if (rect.bottom < Min_Height)
+      min_bottom = rect.bottom;
+    else
+      min_bottom = Min_Height;
+  }
+  else
+    min_bottom = rect.top + Min_Height;
+  rect.bottom = std::clamp(rect.bottom + dy, min_bottom, static_cast<LONG>(screen_size.y));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+///                            Window System
+////////////////////////////////////////////////////////////////////////////////
 
 LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 {
@@ -254,7 +282,6 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
     {
       auto window = it.begin();
       lm_down_on_widnow_id = window->id;
-      SetWindowRgn(ws->handle(), nullptr, false);
 
       // move window to topest
       if (window + 1 != windows.end())
@@ -265,6 +292,8 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
 
       // resize
       resize_type = window->get_resize_type(last_pos);
+
+      SetCapture(ws->handle());
     }
     break;
   }
@@ -274,8 +303,10 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
     if (lm_down_on_widnow_id)
     {
       ws->_fullscreen_region_changed = true;
+      ws->_move_resize_state         = MoveResizeState::end;
       lm_down_on_widnow_id = {};
-      resize_type          = {};
+      resize_type          = {}; // TODO: custom cursor
+      ReleaseCapture();
     }
     break;
   }
@@ -296,7 +327,9 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
         it->move(cur_pos.x - last_pos.x, cur_pos.y - last_pos.y);
       last_pos = cur_pos;
 
-      ws->_window_resources_changed  = true;
+      ws->_window_resources_changed = true;
+      if (ws->_move_resize_state == WindowSystem::MoveResizeState::none)
+        ws->_move_resize_state = WindowSystem::MoveResizeState::begin;
     }
     break;
   }
@@ -365,18 +398,21 @@ void WindowSystem::send_message_to_renderer() noexcept
     _fullscreen_region_changed = false;
 
     // get new mouse interaction region of fullscreen window
-    auto rects = std::vector<RECT>(_window_resources.windows.size());
-    for (auto i = 0; i < rects.size(); ++i)
-    {
-      auto&       rect   = rects[i];
-      auto const& window = _window_resources.windows[i];
-    
-      rect.left   = window.x;
-      rect.right  = window.x + window.width;
-      rect.top    = window.y;
-      rect.bottom = window.y + window.height;
-    }
+    auto rects = std::vector<RECT>();
+    rects.reserve(_window_resources.windows.size());
+    std::ranges::for_each(_window_resources.windows, [&](auto const& window) { rects.emplace_back(window.rect); });
     renderer->push_message(Renderer::Message_Update_Fullscreen_Region{ get_window_region(_handle, rects) });
+  }
+
+  if (_move_resize_state == MoveResizeState::begin)
+  {
+    _move_resize_state = MoveResizeState::processing;
+    renderer->push_message(Renderer::Message_Desktop_Image_Copy{ true });
+  }
+  else if (_move_resize_state == MoveResizeState::end)
+  {
+    _move_resize_state = MoveResizeState::none;
+    renderer->push_message(Renderer::Message_Desktop_Image_Copy{ false });
   }
 }
 

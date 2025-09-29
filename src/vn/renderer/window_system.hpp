@@ -17,6 +17,7 @@ struct Window
   int      width;
   int      height;
   RECT     scissor_rect;
+  RECT     rect;
 
 public:
   Window(int x, int y, int width, int height);
@@ -25,6 +26,9 @@ public:
   
   static auto constexpr Resize_Width  = 10;
   static auto constexpr Resize_Height = 10;
+
+  static auto constexpr Min_Width  = 50;
+  static auto constexpr Min_Height = 50;
 
   enum class ResizeType
   {
@@ -48,10 +52,14 @@ private:
     return ++id;
   }
   
-  void left_offset(int dx) noexcept;
-  void top_offset(int dy) noexcept;
+  void left_offset(int dx)   noexcept;
+  void top_offset(int dy)    noexcept;
+  void right_offset(int dx)  noexcept;
+  void bottom_offset(int dy) noexcept;
 
-  void reset_scissor_rect() noexcept;
+  void update_scissor_rect() noexcept;
+  void update_rect()         noexcept;
+  void update_by_rect()      noexcept;
 };
 
 struct WindowResources
@@ -101,6 +109,15 @@ private:
   WindowResources       _window_resources;
   bool                  _window_resources_changed{};
   bool                  _fullscreen_region_changed{};
+  
+  enum class MoveResizeState
+  {
+    none,
+    begin,
+    processing,
+    end,
+  };
+  MoveResizeState _move_resize_state;
 };
   
 }}
