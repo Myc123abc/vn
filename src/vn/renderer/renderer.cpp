@@ -95,7 +95,12 @@ void Renderer::init() noexcept
     create_swapchain_resources();
     create_frame_resources();
 
-    capture_backdrop();
+    // attach desktop to renderer thread
+    auto desk = OpenInputDesktop(0, false, GENERIC_ALL);
+    err_if(!desk, "failed to get desktop");
+    err_if(SetThreadDesktop(desk) == 0, "failed to set desktop on renderer thread");
+    CloseDesktop(desk);
+    create_desktop_duplication();
 
     create_pipeline_resources();
     create_blur_pipeline();
@@ -340,6 +345,8 @@ void Renderer::run() noexcept
 
 void Renderer::update() noexcept
 {
+  capture_desktop_image();
+  
   for (auto const& window : _window_resources.windows)
   {
     _vertices.append_range(std::vector<Vertex>
@@ -445,15 +452,8 @@ void Renderer::render() noexcept
   Core::instance()->move_to_next_frame();
 }
 
-// TODO: in sleep screen then open, will get nothing from desktop duplication
-void Renderer::capture_backdrop() noexcept
+void Renderer::create_desktop_duplication() noexcept
 {
-  // attach desktop to renderer thread
-  auto desk = OpenInputDesktop(0, false, GENERIC_ALL);
-  err_if(!desk, "failed to get desktop");
-  err_if(SetThreadDesktop(desk) == 0, "failed to set desktop on renderer thread");
-  CloseDesktop(desk);
-
   // init d3d11 device
   ComPtr<ID3D11Device> device;  
   err_if(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr),
@@ -476,15 +476,52 @@ void Renderer::capture_backdrop() noexcept
   ComPtr<IDXGIOutput1> output1;
   err_if(output.As(&output1), "failed to get dxgi output1");
 
+retry_get_desktop_duplication:
   // create desktop duplicaiton
-  err_if(output1->DuplicateOutput(device.Get(), &_desk_dup), "failed to get desktop duplication");
+  auto hr = output1->DuplicateOutput(device.Get(), &_desk_dup);
+  if (hr == E_ACCESSDENIED)
+    goto retry_get_desktop_duplication;
+  else
+    err_if(hr, "failed to get desktop duplication");
+}
 
-  // read first frame of d3d11 texture
+void Renderer::capture_desktop_image() noexcept
+{
+  // release last frame desktop image
+  if (_desktop_image_is_captured)
+  {
+    _desktop_image_is_captured = false;
+    auto hr = _desk_dup->ReleaseFrame();
+    if (hr == DXGI_ERROR_ACCESS_LOST)
+    {
+      _desk_dup.Reset();
+      create_desktop_duplication();
+    }
+    else
+      err_if(hr, "failed to release capture backdrop");
+  }
+
+  // capture desktop image of current frame
   ComPtr<IDXGIResource>   desktop_resource;
   DXGI_OUTDUPL_FRAME_INFO frame_info{};
+retry_acquire_next_frame:
+  auto hr = _desk_dup->AcquireNextFrame(0, &frame_info, &desktop_resource);
+  if (hr == DXGI_ERROR_WAIT_TIMEOUT)
+    return;
+  else if (hr == DXGI_ERROR_ACCESS_LOST)
+  {
+    _desk_dup.Reset();
+    _desktop_image_is_captured = false;
+    create_desktop_duplication();
+    goto retry_acquire_next_frame;
+  }
+  else
+    err_if(hr, "failed to read first frame dropback");
+
+  _desktop_image_is_captured = true;
+
+  // convert to dx11 image
   ComPtr<ID3D11Texture2D> d3d11_texture;
-  err_if(_desk_dup->AcquireNextFrame(0, &frame_info, &desktop_resource), "failed to read first frame dropback");
-  err_if(_desk_dup->ReleaseFrame(), "failed to release capture backdrop");
   err_if(desktop_resource.As(&d3d11_texture), "failed to get d3d11 texture");
 
   // convert to dxgi resource
@@ -499,6 +536,10 @@ void Renderer::capture_backdrop() noexcept
   // get description of texture
   D3D11_TEXTURE2D_DESC desc{};
   d3d11_texture->GetDesc(&desc);
+
+  // save last frame image to destroy after gpu unuse
+  if (_desktop_image.handle())
+    add_current_frame_render_finish_proc([using_desktop_image = _desktop_image] {});
 
   // share with d3d12 resource
   _desktop_image.init(handle, desc.Width, desc.Height);

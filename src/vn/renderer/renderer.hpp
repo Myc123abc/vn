@@ -65,7 +65,8 @@ private:
   
   void acquire_render() noexcept { _render_acquire.release(); }
 
-  void capture_backdrop() noexcept;
+  void create_desktop_duplication() noexcept;
+  void capture_desktop_image() noexcept;
 
   void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
 
@@ -78,6 +79,8 @@ private:
   std::atomic_bool                  _exit{ false };
   std::binary_semaphore             _render_acquire{ 0 };
   WindowResources                   _window_resources{};
+
+  bool                              _desktop_image_is_captured{};
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Swaochain Resources
