@@ -109,15 +109,6 @@ private:
   WindowResources       _window_resources;
   bool                  _window_resources_changed{};
   bool                  _fullscreen_region_changed{};
-  
-  enum class MoveResizeState
-  {
-    none,
-    begin,
-    processing,
-    end,
-  };
-  MoveResizeState _move_resize_state;
 };
   
 }}

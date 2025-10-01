@@ -1,7 +1,6 @@
 #include "renderer.hpp"
 
 #include <dxcapi.h>
-#include <d3d11.h>
 
 #include <utf8.h>
 
@@ -100,10 +99,8 @@ void Renderer::init() noexcept
     err_if(!desk, "failed to get desktop");
     err_if(SetThreadDesktop(desk) == 0, "failed to set desktop on renderer thread");
     CloseDesktop(desk);
-    create_desktop_duplication();
 
     create_pipeline_resources();
-    create_blur_pipeline();
 
     run();
   }};
@@ -162,49 +159,7 @@ void Renderer::create_frame_resources() noexcept
     // get command allocator
     err_if(core->device()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&frame.command_allocator)),
         "failed to create command allocator");
-
-    // create backdrop image and blur backdrop image
-    frame.backdrop_image.init(size.x, size.y);
-    frame.blur_backdrop_image.init(size.x, size.y);
-
-    // create descriptors
-    frame.heap.init(2);
-    frame.backdrop_image.create_descriptor(frame.heap.pop_handle());
-    frame.blur_backdrop_image.create_descriptor(frame.heap.pop_handle());
   }
-}
-
-void Renderer::create_blur_pipeline() noexcept
-{
-  auto core = Core::instance();
-
-  // set root parameters
-  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 1>{};
-  auto des_ranges      = std::array<CD3DX12_DESCRIPTOR_RANGE1, 2>{};
-  des_ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-  des_ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-  root_parameters[0].InitAsDescriptorTable(2, des_ranges.data());
-
-  // set root signature desc
-  auto root_signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{};
-  root_signature_desc.Init_1_1(root_parameters.size(), root_parameters.data());
-
-  // serialize and create root signature
-  ComPtr<ID3DBlob> signature;
-  ComPtr<ID3DBlob> error;
-  err_if(D3DX12SerializeVersionedRootSignature(&root_signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
-          "failed to serialize root signature");
-  err_if(core->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_blur_root_signature)),
-          "failed to create root signature");
-
-  // create shader
-  auto shader = compile_comp("assets/blur.hlsl", "compute_main");
-
-  // create pipeline state
-  auto pipeline_state_desc = D3D12_COMPUTE_PIPELINE_STATE_DESC{};
-  pipeline_state_desc.pRootSignature = _blur_root_signature.Get();
-  pipeline_state_desc.CS = { shader->GetBufferPointer(), shader->GetBufferSize() };
-  core->device()->CreateComputePipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_blur_pipeline_state));
 }
 
 void Renderer::create_pipeline_resources() noexcept
@@ -345,8 +300,6 @@ void Renderer::run() noexcept
 
 void Renderer::update() noexcept
 {
-  capture_desktop_image();
-  
   for (auto const& window : _window_resources.windows)
   {
     _vertices.append_range(std::vector<Vertex>
@@ -378,21 +331,6 @@ void Renderer::render() noexcept
   // get current swapchain
   auto& swapchain_image = _swapchain_images[_swapchain->GetCurrentBackBufferIndex()];
 
-  if (_need_copy_desktop_image)
-    copy(cmd, _desktop_image, swapchain_image);
-
-  // copy backdrop image
-  for (auto const& window : _window_resources.windows)
-  {
-    auto const& rect = window.scissor_rect;
-    copy(cmd, _desktop_image, rect.left, rect.top, rect.right, rect.bottom, frame.backdrop_image, rect.left, rect.top);
-    
-    // TODO: convert backdrop image to blur backdrop image
-
-    // TODO: change to copy blur backdrop image to swapchain image
-    copy(cmd, frame.backdrop_image, rect.left, rect.top, rect.right, rect.bottom, swapchain_image, rect.left, rect.top);
-  }
-
   // set pipeline state
   cmd->SetPipelineState(_pipeline_state.Get());
 
@@ -411,8 +349,8 @@ void Renderer::render() noexcept
   cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
-  //float constexpr clear_color[4]{};
-  //cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  float constexpr clear_color[4]{};
+  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
 
   // set primitive topology
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -452,101 +390,6 @@ void Renderer::render() noexcept
   Core::instance()->move_to_next_frame();
 }
 
-void Renderer::create_desktop_duplication() noexcept
-{
-  // init d3d11 device
-  ComPtr<ID3D11Device> device;  
-  err_if(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr),
-          "failed to create d3d11 device");
-
-  // get dxgi device
-  ComPtr<IDXGIDevice> dxgI_device;
-  err_if(device.As(&dxgI_device), "failed to get dxgi device");
-
-  // get adapter
-  ComPtr<IDXGIAdapter> adapter;
-  err_if(dxgI_device->GetParent(IID_PPV_ARGS(&adapter)), "failed to get adapter from dxgi device");
-
-  // TODO: can get multiple monitors here
-  // get dxgi ouput
-  ComPtr<IDXGIOutput> output;
-  err_if(adapter->EnumOutputs(0, &output), "failed to get dxgi output");
-
-  // get dxgi output1
-  ComPtr<IDXGIOutput1> output1;
-  err_if(output.As(&output1), "failed to get dxgi output1");
-
-retry_get_desktop_duplication:
-  // create desktop duplicaiton
-  auto hr = output1->DuplicateOutput(device.Get(), &_desk_dup);
-  if (hr == E_ACCESSDENIED)
-    goto retry_get_desktop_duplication;
-  else
-    err_if(hr, "failed to get desktop duplication");
-}
-
-void Renderer::capture_desktop_image() noexcept
-{
-  // release last frame desktop image
-  if (_desktop_image_is_captured)
-  {
-    _desktop_image_is_captured = false;
-    auto hr = _desk_dup->ReleaseFrame();
-    if (hr == DXGI_ERROR_ACCESS_LOST)
-    {
-      _desk_dup.Reset();
-      create_desktop_duplication();
-    }
-    else
-      err_if(hr, "failed to release capture backdrop");
-  }
-
-  // capture desktop image of current frame
-  ComPtr<IDXGIResource>   desktop_resource;
-  DXGI_OUTDUPL_FRAME_INFO frame_info{};
-retry_acquire_next_frame:
-  auto hr = _desk_dup->AcquireNextFrame(0, &frame_info, &desktop_resource);
-  if (hr == DXGI_ERROR_WAIT_TIMEOUT)
-    return;
-  else if (hr == DXGI_ERROR_ACCESS_LOST)
-  {
-    _desk_dup.Reset();
-    _desktop_image_is_captured = false;
-    create_desktop_duplication();
-    goto retry_acquire_next_frame;
-  }
-  else
-    err_if(hr, "failed to read first frame dropback");
-
-  _desktop_image_is_captured = true;
-
-  // convert to dx11 image
-  ComPtr<ID3D11Texture2D> d3d11_texture;
-  err_if(desktop_resource.As(&d3d11_texture), "failed to get d3d11 texture");
-
-  // convert to dxgi resource
-  ComPtr<IDXGIResource1> texture_dxgi_resource;
-  err_if(d3d11_texture.As(&texture_dxgi_resource), "failed to conver to dxgi resource");
-
-  // share handle
-  HANDLE handle{};
-  err_if(texture_dxgi_resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ, nullptr, &handle),
-          "failed to create shared handle");
-
-  // get description of texture
-  D3D11_TEXTURE2D_DESC desc{};
-  d3d11_texture->GetDesc(&desc);
-
-  // save last frame image to destroy after gpu unuse
-  if (_desktop_image.handle())
-    add_current_frame_render_finish_proc([using_desktop_image = _desktop_image] {});
-
-  // share with d3d12 resource
-  _desktop_image.init(handle, desc.Width, desc.Height);
-
-  CloseHandle(handle);
-}
-
 void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept
 {
   _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->get_last_fence_value()]()
@@ -578,15 +421,6 @@ void Renderer::process_messages() noexcept
         {
           err_if(!SetWindowRgn(WindowSystem::instance()->handle(), region, false), "failed to set fullscreen region");
         });
-      }
-      else if constexpr (std::is_same_v<T, Message_Desktop_Image_Copy>)
-      {
-        _need_copy_desktop_image = data.start;
-        if (_need_copy_desktop_image)
-          add_current_frame_render_finish_proc([]
-          {
-            err_if(!SetWindowRgn(WindowSystem::instance()->handle(), nullptr, false), "failed to set fullscreen region");
-          });
       }
       else
         static_assert(false, "unexist message type of renderer");

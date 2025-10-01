@@ -303,7 +303,6 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
     if (lm_down_on_widnow_id)
     {
       ws->_fullscreen_region_changed = true;
-      ws->_move_resize_state         = MoveResizeState::end;
       lm_down_on_widnow_id = {};
       resize_type          = {}; // TODO: custom cursor
       ReleaseCapture();
@@ -328,8 +327,6 @@ LRESULT CALLBACK WindowSystem::wnd_proc(HWND handle, UINT msg, WPARAM w_param, L
       last_pos = cur_pos;
 
       ws->_window_resources_changed = true;
-      if (ws->_move_resize_state == WindowSystem::MoveResizeState::none)
-        ws->_move_resize_state = WindowSystem::MoveResizeState::begin;
     }
     break;
   }
@@ -402,17 +399,6 @@ void WindowSystem::send_message_to_renderer() noexcept
     rects.reserve(_window_resources.windows.size());
     std::ranges::for_each(_window_resources.windows, [&](auto const& window) { rects.emplace_back(window.rect); });
     renderer->push_message(Renderer::Message_Update_Fullscreen_Region{ get_window_region(_handle, rects) });
-  }
-
-  if (_move_resize_state == MoveResizeState::begin)
-  {
-    _move_resize_state = MoveResizeState::processing;
-    renderer->push_message(Renderer::Message_Desktop_Image_Copy{ true });
-  }
-  else if (_move_resize_state == MoveResizeState::end)
-  {
-    _move_resize_state = MoveResizeState::none;
-    renderer->push_message(Renderer::Message_Desktop_Image_Copy{ false });
   }
 }
 
