@@ -2,37 +2,26 @@
 
 #include "image.hpp"
 #include "memory_allocator.hpp"
-#include "window_system.hpp"
+#include "window_manager.hpp"
 
-#include <glm/glm.hpp>
+#include <windows.h>
+#include <directx/d3dx12.h>
+#include <dxgi1_6.h>
+
 #include <rigtorp/SPSCQueue.h>
+#include <glm/glm.hpp>
 
-#include <vector>
+#include <functional>
 #include <thread>
 #include <atomic>
 #include <semaphore>
-#include <functional>
 #include <deque>
 #include <variant>
-
-namespace vn { 
-
-void init()    noexcept;
-void destroy() noexcept;
-void render()  noexcept;
-  
-}
 
 namespace vn { namespace renderer {
 
 class Renderer
 {
-  friend void vn::init()    noexcept;
-  friend void vn::destroy() noexcept;
-  friend void vn::render()  noexcept;
-  
-  friend class FrameBuffer;
-  
 private:
   Renderer()                           = default;
   ~Renderer()                          = default;
@@ -48,66 +37,64 @@ public:
     return &instance;
   }
 
-private:
-  void init()    noexcept;
+  void init() noexcept;
   void destroy() noexcept;
 
-  void create_swapchain_resources() noexcept;
-  void create_frame_resources() noexcept;
-  void create_pipeline_resources() noexcept;
+  void create_pipeline_resource() noexcept;
 
   void run() noexcept;
 
   void update() noexcept;
   void render() noexcept;
-  
+
   void acquire_render() noexcept { _render_acquire.release(); }
 
   void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
 
-////////////////////////////////////////////////////////////////////////////////
-///                                  Misc
-////////////////////////////////////////////////////////////////////////////////
-
-  std::deque<std::function<bool()>> _current_frame_render_finish_procs;
+private:
   std::thread                       _thread;
   std::atomic_bool                  _exit{ false };
   std::binary_semaphore             _render_acquire{ 0 };
-  WindowResources                   _window_resources{};
+  std::deque<std::function<bool()>> _current_frame_render_finish_procs;
 
-////////////////////////////////////////////////////////////////////////////////
-///                            Swaochain Resources
-////////////////////////////////////////////////////////////////////////////////
-
-  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
-
-  Microsoft::WRL::ComPtr<IDXGISwapChain4>      _swapchain;
-  std::array<SwapchainImageType, Frame_Count>  _swapchain_images;
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtv_heap;
-  CD3DX12_VIEWPORT                             _viewport;
-  CD3DX12_RECT                                 _scissor;
-
-////////////////////////////////////////////////////////////////////////////////
-///                          Pipeline Resources
-////////////////////////////////////////////////////////////////////////////////
-
-  // sdf pipeline, for future
   Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;
   Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;
 
 ////////////////////////////////////////////////////////////////////////////////
-///                          Frame Resources
+///                          Window Resource
 ////////////////////////////////////////////////////////////////////////////////
 
-  struct FrameResource
+private:
+  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
+
+  struct WindowResource
   {
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator>  command_allocator;
+    Window window;
+
+    Microsoft::WRL::ComPtr<IDXGISwapChain4>      swapchain;
+    std::array<SwapchainImageType, Frame_Count>  swapchain_images;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap;
+    CD3DX12_VIEWPORT                             viewport;
+    CD3DX12_RECT                                 scissor;
+
+    std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, Frame_Count> command_allocators;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd;
+
+    FrameBuffer           frame_buffer;
+    std::vector<Vertex>   vertices;
+    std::vector<uint16_t> indices;
+    uint16_t              idx_beg{};
+
+    WindowResource() = default;
+    WindowResource(Window const& window) noexcept;
+
+    auto swapchain_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
+
+    void render() noexcept;
   };
-  std::array<FrameResource, Frame_Count> _frames;
-  FrameBuffer                            _frame_buffer;
-  std::vector<Vertex>                    _vertices;
-  std::vector<uint16_t>                  _indices;
-  uint16_t                               _idx_beg{};
+
+  std::vector<WindowResource> _window_resources;
+  WindowResource              _fullscreen_window_resource;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                          Message Process
@@ -115,21 +102,40 @@ private:
 
 public:
 
-  struct Message_Update_Window_Resource
+  struct Message_Create_Window_Render_Resource
   {
-    WindowResources window_resources;
+    Window window;
   };
-  struct Message_Update_Fullscreen_Region
+
+  struct Message_Destroy_Window_Render_Resource
   {
-    HRGN region;
+    HWND handle;
+  };
+
+  struct Message_Create_Fullscreen_Window_Render_Resource
+  {
+    Window window;
+  };
+
+  struct Message_Update_Window
+  {
+    Window window;
+  };
+
+  struct Message_Resize_Window
+  {
+    Window window;
   };
 
   using Message = std::variant<
-    Message_Update_Window_Resource,
-    Message_Update_Fullscreen_Region
+    Message_Create_Window_Render_Resource,
+    Message_Destroy_Window_Render_Resource,
+    Message_Create_Fullscreen_Window_Render_Resource,
+    Message_Update_Window,
+    Message_Resize_Window
   >;
 
-  void push_message(Message const& msg) noexcept { return _message_queue.push(msg); }
+  void send_message(Message const& msg) noexcept { return _message_queue.push(msg); }
 
 private:
   void process_messages() noexcept;

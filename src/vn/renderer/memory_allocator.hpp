@@ -30,9 +30,9 @@ class FrameBuffer
 public:
   FrameBuffer()                              = default;
   ~FrameBuffer()                             = default;
-  FrameBuffer(FrameBuffer const&)            = delete;
+  FrameBuffer(FrameBuffer const&)            = default;
   FrameBuffer(FrameBuffer&&)                 = delete;
-  FrameBuffer& operator=(FrameBuffer const&) = delete;
+  FrameBuffer& operator=(FrameBuffer const&) = default;
   FrameBuffer& operator=(FrameBuffer&&)      = delete;
 
   void init(uint32_t per_frame_capacity) noexcept;

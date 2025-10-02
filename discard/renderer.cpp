@@ -1,13 +1,11 @@
 #include "renderer.hpp"
-#include "core.hpp"
-#include "../util.hpp"
 
 #include <dxcapi.h>
 
 #include <utf8.h>
 
 #include <chrono>
-#include <algorithm>
+#include <array>
 
 using namespace Microsoft::WRL;
 
@@ -92,23 +90,84 @@ void Renderer::init() noexcept
   _thread = std::thread{[this]
   {
     Core::instance()->init();
-    create_pipeline_resource();
+
+    create_swapchain_resources();
+    create_frame_resources();
+
+    // attach desktop to renderer thread
+    auto desk = OpenInputDesktop(0, false, GENERIC_ALL);
+    err_if(!desk, "failed to get desktop");
+    err_if(SetThreadDesktop(desk) == 0, "failed to set desktop on renderer thread");
+    CloseDesktop(desk);
+
+    create_pipeline_resources();
+
     run();
   }};
 }
 
-void Renderer::destroy() noexcept
-{
-  _exit.store(true, std::memory_order_release);
-  _render_acquire.release();
-  _thread.join();
-  Core::instance()->wait_gpu_complete();
-  Core::instance()->destroy();
-}
-
-void Renderer::create_pipeline_resource() noexcept
+void Renderer::create_swapchain_resources() noexcept
 {
   auto core = Core::instance();
+  auto ws   = WindowSystem::instance();
+
+  auto size = ws->screen_size();
+
+  // set viewport and scissor
+  _viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(size.x), static_cast<float>(size.y) };
+  _scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(size.x), static_cast<LONG>(size.y) };
+
+  // create swapchain
+  ComPtr<IDXGISwapChain1> swapchain;
+  DXGI_SWAP_CHAIN_DESC1 swapchain_desc{};
+  swapchain_desc.BufferCount      = Frame_Count;
+  swapchain_desc.Width            = size.x;
+  swapchain_desc.Height           = size.y;
+  swapchain_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
+  swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+  swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+  swapchain_desc.SampleDesc.Count = 1;
+  err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), ws->handle(), &swapchain_desc, nullptr, nullptr, &swapchain),
+        "failed to create swapchain");
+  err_if(swapchain.As(&_swapchain), "failed to get swapchain4");
+
+  // create descriptor heaps
+  D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
+  rtv_heap_desc.NumDescriptors = Frame_Count;
+  rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+  err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&_rtv_heap)),
+    "failed to create render target view descriptor heap");
+}
+
+void Renderer::create_frame_resources() noexcept
+{
+  auto core = Core::instance();
+
+  auto size = WindowSystem::instance()->screen_size();
+
+  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ _rtv_heap->GetCPUDescriptorHandleForHeapStart() };
+  for (auto i = 0; i < Frame_Count; ++i)
+  {
+    auto& frame = _frames[i];
+
+    // get swapchain image
+    _swapchain_images[i].init(_swapchain.Get(), i)
+                        .create_descriptor(rtv_handle);
+    // offset next swapchain image
+    rtv_handle.Offset(1, RTV_Size);
+
+    // get command allocator
+    err_if(core->device()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&frame.command_allocator)),
+        "failed to create command allocator");
+  }
+}
+
+void Renderer::create_pipeline_resources() noexcept
+{
+  auto core = Core::instance();
+
+  // init frame buffer
+  _frame_buffer.init(1024);
 
   // create root signature
   auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 1>{};
@@ -158,18 +217,54 @@ void Renderer::create_pipeline_resource() noexcept
   pipeline_state_desc.SampleDesc.Count      = 1;
   err_if(core->device()->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
           "failed to create pipeline state");
+#if 0
+  // create texture
+  auto screen_size = WindowManager::screen_size();
+  D3D12_RESOURCE_DESC texture_desc{};
+  texture_desc.MipLevels        = 1;
+  texture_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
+  texture_desc.Width            = screen_size.x;
+  texture_desc.Height           = screen_size.y;
+  texture_desc.DepthOrArraySize = 1;
+  texture_desc.SampleDesc.Count = 1;
+  texture_desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+  auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_DEFAULT };
+
+  err_if(_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&_backdrop_image)),
+          "failed to create committed texture");
+  // create upload heap
+  ComPtr<ID3D12Resource> upload_heap;
+  heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
+  resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(GetRequiredIntermediateSize(_backdrop_image.Get(), 0, 1));
+  err_if(_device->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_heap)),
+          "failed to create upload heap");
+  upload_heap->SetName(L"upload heap");
+
+  // upload
+  auto data = std::vector<std::byte>(texture_desc.Width * texture_desc.Height * 4);
+  D3D12_SUBRESOURCE_DATA texture_data{};
+  texture_data.pData      = data.data();
+  texture_data.RowPitch   = texture_desc.Width * 4;
+  texture_data.SlicePitch = texture_data.RowPitch + texture_desc.Height;
+  UpdateSubresources(_command_list.Get(), _backdrop_image.Get(), upload_heap.Get(), 0, 0, 1, &texture_data);
+  auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_backdrop_image.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+  _command_list->ResourceBarrier(1, &barrier);
+  
+  // commit command list
+  _command_list->Close();
+  ID3D12CommandList* cmds[] = { _command_list.Get() };
+  _command_queue->ExecuteCommandLists(_countof(cmds), cmds);
+  wait_gpu_complete();
+#endif
 }
 
-void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept
+void Renderer::destroy() noexcept
 {
-  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->get_last_fence_value()]()
-  {
-    auto fence_value = Core::instance()->fence()->GetCompletedValue();
-    err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
-    auto render_complete = fence_value >= last_fence_value;
-    if (render_complete) func();
-    return render_complete;
-  });
+  _exit.store(true, std::memory_order_release);
+  _render_acquire.release();
+  _thread.join();
+  Core::instance()->wait_gpu_complete();
+  Core::instance()->destroy();
 }
 
 void Renderer::run() noexcept
@@ -205,69 +300,52 @@ void Renderer::run() noexcept
 
 void Renderer::update() noexcept
 {
-  for (auto& window_resource : _window_resources)
+  for (auto const& window : _window_resources.windows)
   {
-    auto& window = window_resource.window;
-    window_resource.vertices.append_range(std::vector<Vertex>
+    _vertices.append_range(std::vector<Vertex>
     {
-      { { window.width / 2, 0             }, {}, 0x00ff00ff },
-      { { window.width,     window.height }, {}, 0x0000ffff },
-      { { 0,                window.height }, {}, 0x00ffffff },
+      { { window.x + window.width / 2, window.y                 }, {}, 0x00ff00ff },
+      { { window.x + window.width,     window.y + window.height }, {}, 0x0000ffff },
+      { { window.x,                    window.y + window.height }, {}, 0x00ffffff },
     });
-    window_resource.indices.append_range(std::vector<uint16_t>
+    _indices.append_range(std::vector<uint16_t>
     {
-      static_cast<uint16_t>(window_resource.idx_beg + 0),
-      static_cast<uint16_t>(window_resource.idx_beg + 1),
-      static_cast<uint16_t>(window_resource.idx_beg + 2),
+      static_cast<uint16_t>(_idx_beg + 0),
+      static_cast<uint16_t>(_idx_beg + 1),
+      static_cast<uint16_t>(_idx_beg + 2),
     });
-    window_resource.idx_beg += 3;
+    _idx_beg += 3;
   }
 }
 
 void Renderer::render() noexcept
 {
-  std::ranges::for_each(_window_resources, [](auto& window_resource) { window_resource.render(); });
-
-  // execute command list
-  auto cmds = std::vector<ID3D12CommandList*>{};
-  cmds.reserve(_window_resources.size());
-  std::ranges::for_each(_window_resources, [&](auto const& window_resource) { cmds.emplace_back(window_resource.cmd.Get()); });
-  Core::instance()->command_queue()->ExecuteCommandLists(cmds.size(), cmds.data());
-
-  // present swapchain
-  std::ranges::for_each(_window_resources, [](auto const& window_resource)
-  {
-    err_if(window_resource.swapchain->Present(1, 0), "failed to present swapchain");
-  });
-
-  Core::instance()->move_to_next_frame();
-}
-
-void Renderer::WindowResource::render() noexcept
-{
-  auto core      = Core::instance();
-  auto renderer  = Renderer::instance();
-  auto cmd_alloc = command_allocators[core->frame_index()].Get();
+  auto  core  = Core::instance();
+  auto  cmd   = core->cmd();
+  auto& frame = _frames[core->frame_index()];
 
   // reset command allocator and command list
-  err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
-  err_if(cmd->Reset(cmd_alloc, nullptr), "failed to reset command list");
+  err_if(frame.command_allocator->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(cmd->Reset(frame.command_allocator.Get(), nullptr), "failed to reset command list");
+
+  // get current swapchain
+  auto& swapchain_image = _swapchain_images[_swapchain->GetCurrentBackBufferIndex()];
 
   // set pipeline state
-  cmd->SetPipelineState(renderer->_pipeline_state.Get());
+  cmd->SetPipelineState(_pipeline_state.Get());
 
   // set root signature
-  cmd->SetGraphicsRootSignature(renderer->_root_signature.Get());
+  cmd->SetGraphicsRootSignature(_root_signature.Get());
 
   // set viewport and scissor rectangle
-  cmd->RSSetViewports(1, &viewport);
-  cmd->RSSetScissorRects(1, &scissor);
+  cmd->RSSetViewports(1, &_viewport);
+  cmd->RSSetScissorRects(1, &_scissor);
 
   // convert render target view from present type to render target type
-  swapchain_image()->set_state<ImageState::render_target>(cmd.Get());
+  swapchain_image.set_state<ImageState::render_target>(cmd);
 
   // set render target view
-  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtv_heap->GetCPUDescriptorHandleForHeapStart(), swapchain->GetCurrentBackBufferIndex(), RTV_Size);
+  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(_rtv_heap->GetCPUDescriptorHandleForHeapStart(), _swapchain->GetCurrentBackBufferIndex(), RTV_Size);
   cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
@@ -278,29 +356,50 @@ void Renderer::WindowResource::render() noexcept
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
   // clear frame buffer
-  frame_buffer.clear();
+  _frame_buffer.clear();
 
   // upload vertices and indices
-  frame_buffer.upload(cmd.Get(), vertices, indices);
+  _frame_buffer.upload(cmd, _vertices, _indices);
 
   // set constant
   auto constants = Constants{};
-  constants.window_extent = { window.width, window.height };
+  constants.window_extent = WindowSystem::instance()->screen_size();
   cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
 
   // draw
-  cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
+  cmd->DrawIndexedInstanced(_indices.size(), 1, 0, 0, 0);
 
   // clear vertices and indices
-  vertices.clear();
-  indices.clear();
-  idx_beg = {};
+  _vertices.clear();
+  _indices.clear();
+  _idx_beg = {};
 
   // record finish, change render target view type to present
-  swapchain_image()->set_state<ImageState::present>(cmd.Get());
+  swapchain_image.set_state<ImageState::present>(cmd);
 
   // close command list
   err_if(cmd->Close(), "failed to close command list");
+
+  // execute command list
+  ID3D12CommandList* cmds[] = { cmd };
+  core->command_queue()->ExecuteCommandLists(_countof(cmds), cmds);
+
+  // present swapchain
+  err_if(_swapchain->Present(1, 0), "failed to present swapchain");
+
+  Core::instance()->move_to_next_frame();
+}
+
+void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept
+{
+  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->get_last_fence_value()]()
+  {
+    auto fence_value = Core::instance()->fence()->GetCompletedValue();
+    err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
+    auto render_complete = fence_value >= last_fence_value;
+    if (render_complete) func();
+    return render_complete;
+  });
 }
 
 void Renderer::process_messages() noexcept
@@ -312,43 +411,16 @@ void Renderer::process_messages() noexcept
     std::visit([this](auto&& data)
     {
       using T = std::decay_t<decltype(data)>;
-      if constexpr (std::is_same_v<T, Message_Create_Window_Render_Resource>)
+      if constexpr (std::is_same_v<T, Message_Update_Window_Resource>)
       {
-        _window_resources.emplace_back(data.window);
+        _window_resources = data.window_resources;
       }
-      else if constexpr (std::is_same_v<T, Message_Destroy_Window_Render_Resource>)
+      else if constexpr (std::is_same_v<T, Message_Update_Fullscreen_Region>)
       {
-        err_if(std::erase_if(_window_resources, [&](auto const& window_resource)
-        { 
-          if (window_resource.window.handle == data.handle)
-          {
-            add_current_frame_render_finish_proc([old_window_resource = window_resource] {});
-            return true;            
-          }
-          return false;
-        }) != 1
-        ,"not found destroied window resource");
-      }
-      else if constexpr (std::is_same_v<T, Message_Create_Fullscreen_Window_Render_Resource>)
-      {
-        _fullscreen_window_resource = { data.window };
-      }
-      else if constexpr (std::is_same_v<T, Message_Update_Window>)
-      {
-        auto it = std::ranges::find_if(_window_resources, [&](auto& window_resource)
+        add_current_frame_render_finish_proc([region = data.region]
         {
-          if (window_resource.window.handle == data.window.handle)
-          {
-            std::swap(window_resource.window, data.window);
-            return true;
-          }
-          return false;
+          err_if(!SetWindowRgn(WindowSystem::instance()->handle(), region, false), "failed to set fullscreen region");
         });
-        err_if(it == _window_resources.end(), "failed to find updated window");
-      }
-      else if constexpr (std::is_same_v<T, Message_Resize_Window>)
-      {
-        
       }
       else
         static_assert(false, "unexist message type of renderer");
@@ -356,64 +428,6 @@ void Renderer::process_messages() noexcept
 
     _message_queue.pop();
   }
-}
-
-Renderer::WindowResource::WindowResource(Window const& window) noexcept
-{
-  auto core = Core::instance();
-
-  this->window = window;
-  
-  // set viewport and scissor
-  viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(window.width), static_cast<float>(window.height) };
-  scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(window.width), static_cast<LONG>(window.height) };
-
-  // create swapchain
-  ComPtr<IDXGISwapChain1> swapchain;
-  DXGI_SWAP_CHAIN_DESC1 swapchain_desc{};
-  swapchain_desc.BufferCount      = Frame_Count;
-  swapchain_desc.Width            = window.width;
-  swapchain_desc.Height           = window.height;
-  swapchain_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
-  swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-  swapchain_desc.SampleDesc.Count = 1;
-  err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), window.handle, &swapchain_desc, nullptr, nullptr, &swapchain),
-        "failed to create swapchain");
-  err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
-
-  // create descriptor heaps
-  D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
-  rtv_heap_desc.NumDescriptors = Frame_Count;
-  rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-  err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&rtv_heap)),
-    "failed to create render target view descriptor heap");
-
-  // create frame resources
-  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
-  for (auto i = 0; i < Frame_Count; ++i)
-  {
-    // get swapchain image
-    swapchain_images[i].init(swapchain.Get(), i)
-                       .create_descriptor(rtv_handle);
-    // offset next swapchain image
-    rtv_handle.Offset(1, RTV_Size);
-
-    // get command allocator
-    err_if(core->device()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocators[i])),
-        "failed to create command allocator");
-  }
-
-  // create command list
-  err_if(core->device()->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, command_allocators[0].Get(), nullptr, IID_PPV_ARGS(&cmd)),
-          "failed to create command list");
-  err_if(cmd->Close(), "failed to close command list");
-
-  // init frame buffer
-  frame_buffer.init(1024);
-
-  // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle] { ShowWindow(handle, SW_SHOW); });
 }
 
 }}
