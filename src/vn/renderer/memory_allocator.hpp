@@ -15,14 +15,15 @@ namespace vn { namespace renderer {
 
 struct Vertex
 {
-  glm::vec2 pos;
-  glm::vec2 uv;
-	uint32_t  color;
+  glm::vec2 pos{};
+  glm::vec2 uv{};
+	uint32_t  color{};
 };
 
 struct Constants
 {
-  glm::vec<2, uint32_t> window_extent;
+  glm::vec<2, uint32_t> window_extent{};
+  glm::vec<2, int32_t>  window_pos{};
 };
 
 class FrameBuffer

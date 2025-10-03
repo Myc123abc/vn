@@ -8,6 +8,7 @@ struct PSInput
 struct Constants
 {
   uint2 window_extent;
+  int2  window_pos;
 };
 ConstantBuffer<Constants> constants : register(b0);
 
@@ -23,7 +24,7 @@ float4 to_float4(uint32_t color)
 PSInput vs(float2 pos: POSITION, float2 uv: TEXCOORD, uint32_t color : COLOR)
 {
   PSInput result;
-  result.pos   = float4(pos / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
+  result.pos   = float4((pos + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
   result.uv    = uv;
   result.color = to_float4(color);
   return result;

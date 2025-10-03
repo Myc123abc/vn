@@ -1,13 +1,13 @@
 #include "renderer.hpp"
 #include "core.hpp"
 #include "../util.hpp"
+#include "message_queue.hpp"
 
 #include <dxcapi.h>
 
 #include <utf8.h>
 
 #include <chrono>
-#include <algorithm>
 
 using namespace Microsoft::WRL;
 
@@ -187,7 +187,8 @@ void Renderer::run() noexcept
     for (auto it = _current_frame_render_finish_procs.begin(); it != _current_frame_render_finish_procs.end();)
       (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
 
-    process_messages();
+    MessageQueue::instance()->process_messages();
+
     update();
     render();
 
@@ -205,215 +206,54 @@ void Renderer::run() noexcept
 
 void Renderer::update() noexcept
 {
-  for (auto& window_resource : _window_resources)
+  for (auto& [k, v] : _window_resources)
   {
-    auto& window = window_resource.window;
-    window_resource.vertices.append_range(std::vector<Vertex>
+    auto& window         = v.window;
+    auto& frame_resource = v.frame_resource;
+    
+    frame_resource.vertices.append_range(std::vector<Vertex>
     {
       { { window.width / 2, 0             }, {}, 0x00ff00ff },
       { { window.width,     window.height }, {}, 0x0000ffff },
       { { 0,                window.height }, {}, 0x00ffffff },
     });
-    window_resource.indices.append_range(std::vector<uint16_t>
+    frame_resource.indices.append_range(std::vector<uint16_t>
     {
-      static_cast<uint16_t>(window_resource.idx_beg + 0),
-      static_cast<uint16_t>(window_resource.idx_beg + 1),
-      static_cast<uint16_t>(window_resource.idx_beg + 2),
+      static_cast<uint16_t>(frame_resource.idx_beg + 0),
+      static_cast<uint16_t>(frame_resource.idx_beg + 1),
+      static_cast<uint16_t>(frame_resource.idx_beg + 2),
     });
-    window_resource.idx_beg += 3;
+    frame_resource.idx_beg += 3;
   }
 }
 
 void Renderer::render() noexcept
 {
-  std::ranges::for_each(_window_resources, [](auto& window_resource) { window_resource.render(); });
+  for (auto& [k, v] : _window_resources) v.render();
 
   // execute command list
-  auto cmds = std::vector<ID3D12CommandList*>{};
-  cmds.reserve(_window_resources.size());
-  std::ranges::for_each(_window_resources, [&](auto const& window_resource) { cmds.emplace_back(window_resource.cmd.Get()); });
+  auto cmds_view = _window_resources | std::views::values
+                                     | std::views::transform([] (auto const& wr) { return wr.frame_resource.cmd.Get(); });
+  auto cmds      = std::vector<ID3D12CommandList*>{ cmds_view.begin(), cmds_view.end() };
   Core::instance()->command_queue()->ExecuteCommandLists(cmds.size(), cmds.data());
 
   // present swapchain
-  std::ranges::for_each(_window_resources, [](auto const& window_resource)
+  for (auto const& [k, wr] : _window_resources)
   {
-    err_if(window_resource.swapchain->Present(1, 0), "failed to present swapchain");
-  });
-
-  Core::instance()->move_to_next_frame();
-}
-
-void Renderer::WindowResource::render() noexcept
-{
-  auto core      = Core::instance();
-  auto renderer  = Renderer::instance();
-  auto cmd_alloc = command_allocators[core->frame_index()].Get();
-
-  // reset command allocator and command list
-  err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
-  err_if(cmd->Reset(cmd_alloc, nullptr), "failed to reset command list");
-
-  // set pipeline state
-  cmd->SetPipelineState(renderer->_pipeline_state.Get());
-
-  // set root signature
-  cmd->SetGraphicsRootSignature(renderer->_root_signature.Get());
-
-  // set viewport and scissor rectangle
-  cmd->RSSetViewports(1, &viewport);
-  cmd->RSSetScissorRects(1, &scissor);
-
-  // convert render target view from present type to render target type
-  swapchain_image()->set_state<ImageState::render_target>(cmd.Get());
-
-  // set render target view
-  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtv_heap->GetCPUDescriptorHandleForHeapStart(), swapchain->GetCurrentBackBufferIndex(), RTV_Size);
-  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
-
-  // clear color
-  float constexpr clear_color[4]{};
-  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
-
-  // set primitive topology
-  cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-  // clear frame buffer
-  frame_buffer.clear();
-
-  // upload vertices and indices
-  frame_buffer.upload(cmd.Get(), vertices, indices);
-
-  // set constant
-  auto constants = Constants{};
-  constants.window_extent = { window.width, window.height };
-  cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
-
-  // draw
-  cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
-
-  // clear vertices and indices
-  vertices.clear();
-  indices.clear();
-  idx_beg = {};
-
-  // record finish, change render target view type to present
-  swapchain_image()->set_state<ImageState::present>(cmd.Get());
-
-  // close command list
-  err_if(cmd->Close(), "failed to close command list");
-}
-
-void Renderer::process_messages() noexcept
-{
-  while (!_message_queue.empty())
-  {
-    auto msg = *_message_queue.front();
-
-    std::visit([this](auto&& data)
-    {
-      using T = std::decay_t<decltype(data)>;
-      if constexpr (std::is_same_v<T, Message_Create_Window_Render_Resource>)
-      {
-        _window_resources.emplace_back(data.window);
-      }
-      else if constexpr (std::is_same_v<T, Message_Destroy_Window_Render_Resource>)
-      {
-        err_if(std::erase_if(_window_resources, [&](auto const& window_resource)
-        { 
-          if (window_resource.window.handle == data.handle)
-          {
-            add_current_frame_render_finish_proc([old_window_resource = window_resource] {});
-            return true;            
-          }
-          return false;
-        }) != 1
-        ,"not found destroied window resource");
-      }
-      else if constexpr (std::is_same_v<T, Message_Create_Fullscreen_Window_Render_Resource>)
-      {
-        _fullscreen_window_resource = { data.window };
-      }
-      else if constexpr (std::is_same_v<T, Message_Update_Window>)
-      {
-        auto it = std::ranges::find_if(_window_resources, [&](auto& window_resource)
-        {
-          if (window_resource.window.handle == data.window.handle)
-          {
-            std::swap(window_resource.window, data.window);
-            return true;
-          }
-          return false;
-        });
-        err_if(it == _window_resources.end(), "failed to find updated window");
-      }
-      else if constexpr (std::is_same_v<T, Message_Resize_Window>)
-      {
-        
-      }
-      else
-        static_assert(false, "unexist message type of renderer");
-    }, msg);
-
-    _message_queue.pop();
+    //if (wr.resizing)
+    //{
+    //  err_if(_fullscreen_window_resource.swapchain->Present(1, 0), "failed to present swapchain");
+    //  // after resized window render finish, redisplay new window region
+    //  add_current_frame_render_finish_proc([handle = _fullscreen_window_resource.window.handle, rect = wr.window.rect]
+    //  {
+    //    SetWindowRgn(handle, CreateRectRgnIndirect(&rect), false);
+    //  });
+    //}
+    //else
+      err_if(wr.swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
   }
-}
-
-Renderer::WindowResource::WindowResource(Window const& window) noexcept
-{
-  auto core = Core::instance();
-
-  this->window = window;
   
-  // set viewport and scissor
-  viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(window.width), static_cast<float>(window.height) };
-  scissor  = CD3DX12_RECT{ 0, 0, static_cast<LONG>(window.width), static_cast<LONG>(window.height) };
-
-  // create swapchain
-  ComPtr<IDXGISwapChain1> swapchain;
-  DXGI_SWAP_CHAIN_DESC1 swapchain_desc{};
-  swapchain_desc.BufferCount      = Frame_Count;
-  swapchain_desc.Width            = window.width;
-  swapchain_desc.Height           = window.height;
-  swapchain_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
-  swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-  swapchain_desc.SampleDesc.Count = 1;
-  err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), window.handle, &swapchain_desc, nullptr, nullptr, &swapchain),
-        "failed to create swapchain");
-  err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
-
-  // create descriptor heaps
-  D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
-  rtv_heap_desc.NumDescriptors = Frame_Count;
-  rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-  err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&rtv_heap)),
-    "failed to create render target view descriptor heap");
-
-  // create frame resources
-  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
-  for (auto i = 0; i < Frame_Count; ++i)
-  {
-    // get swapchain image
-    swapchain_images[i].init(swapchain.Get(), i)
-                       .create_descriptor(rtv_handle);
-    // offset next swapchain image
-    rtv_handle.Offset(1, RTV_Size);
-
-    // get command allocator
-    err_if(core->device()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocators[i])),
-        "failed to create command allocator");
-  }
-
-  // create command list
-  err_if(core->device()->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, command_allocators[0].Get(), nullptr, IID_PPV_ARGS(&cmd)),
-          "failed to create command list");
-  err_if(cmd->Close(), "failed to close command list");
-
-  // init frame buffer
-  frame_buffer.init(1024);
-
-  // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle] { ShowWindow(handle, SW_SHOW); });
+  Core::instance()->move_to_next_frame();
 }
 
 }}

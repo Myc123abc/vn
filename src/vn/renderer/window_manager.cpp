@@ -1,20 +1,15 @@
 #include "window_manager.hpp"
 #include "../util.hpp"
 #include "renderer.hpp"
-
-#include <algorithm>
+#include "message_queue.hpp"
 
 namespace
 {
 
-constexpr wchar_t Class_Name[] = L"vn::renderer::WindowManager";
+constexpr wchar_t Fullscreen_Class[] = L"vn::WindowManager::Fullscreen";
+constexpr wchar_t Window_Class[]     = L"vn::WindowManager::Window";
 
 constexpr auto Msg_Create_Window = WM_APP + 0;
-
-auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
-{
-  return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
-}
 
 auto to_64_bits(uint32_t x, uint32_t y) noexcept
 {
@@ -30,196 +25,6 @@ auto to_32_bits(uint64_t x) noexcept -> std::pair<uint32_t, uint32_t>
 
 namespace vn { namespace renderer {
 
-////////////////////////////////////////////////////////////////////////////////
-///                               Window
-////////////////////////////////////////////////////////////////////////////////
-
-Window::Window(HWND handle, int x, int y, int width, int height)
-  : handle(handle), x(x), y(y), width(width), height(height)
-{
-  update_rect();
-}
-
-void Window::update_rect() noexcept
-{
-  rect.left   = x;
-  rect.top    = y;
-  rect.right  = x + width;
-  rect.bottom = y + height;
-}
-
-void Window::update_by_rect() noexcept
-{
-  x      = rect.left;
-  y      = rect.top;
-  width  = rect.right  - rect.left;
-  height = rect.bottom - rect.top;
-}
-
-void Window::move(int32_t x, int32_t y) noexcept
-{
-  this->x += x;
-  this->y += y;
-  update_rect();
-}
-
-void Window::resize(ResizeType type, int dx, int dy) noexcept
-{
-  using enum Window::ResizeType;
-  switch (type)
-  {
-  case none:
-    return;
-
-  case left_top:
-    left_offset(dx);
-    top_offset(dy);
-    break;
-
-  case right_top:
-    right_offset(dx);
-    top_offset(dy);
-    break;
-
-  case left_bottom:
-    left_offset(dx);
-    bottom_offset(dy);
-    break;
-  
-  case right_bottom:
-    right_offset(dx);
-    bottom_offset(dy);
-    break;
-
-  case left:
-    left_offset(dx);
-    break;
-
-  case right:
-    right_offset(dx);
-    break;
-
-  case top:
-    top_offset(dy);
-    break;
-
-  case bottom:
-    bottom_offset(dy);
-    break;
-  }
-  update_by_rect();
-}
-
-auto Window::get_resize_type(POINT const& p) const noexcept
-{
-  using enum ResizeType;
-
-  if (p.x < rect.left || p.x > rect.right  ||
-      p.y < rect.top  || p.y > rect.bottom)
-    return none;
-
-  bool left_side   = p.x > rect.left                   && p.x < rect.left + Resize_Width;
-  bool right_side  = p.x > rect.right - Resize_Width   && p.x < rect.right;
-  bool top_side    = p.y > rect.top                    && p.y < rect.top + Resize_Height;
-  bool bottom_side = p.y > rect.bottom - Resize_Height && p.y < rect.bottom;
-
-  if (top_side)
-  {
-    if (left_side)  return left_top;
-    if (right_side) return right_top;
-    return top;
-  }
-  if (bottom_side)
-  {
-    if (left_side)  return left_bottom;
-    if (right_side) return right_bottom;
-    return bottom;
-  }
-  if (left_side)  return left;
-  if (right_side) return right;
-  return none;
-}
-
-void Window::left_offset(int dx) noexcept
-{
-  auto screen_size = get_screen_size();
-
-  if (rect.left < 0) return;
-  
-  LONG max_left;
-  if (rect.right > screen_size.x)
-  {
-    if (screen_size.x - rect.left < Min_Width)
-      max_left = rect.left;
-    else
-      max_left = screen_size.x - Min_Width;
-  }
-  else
-    max_left = rect.right - Min_Width;
-  rect.left = std::clamp(rect.left + dx, 0l, max_left);
-}
-
-void Window::top_offset(int dy) noexcept
-{
-  auto screen_size = get_screen_size();
-
-  if (rect.top < 0) return;
-
-  LONG max_top;
-  if (rect.bottom > screen_size.y)
-  {
-    if (screen_size.y - rect.top < Min_Height)
-      max_top = rect.top;
-    else
-      max_top = screen_size.y - Min_Height;
-  }
-  else
-    max_top = rect.bottom - Min_Height;
-  rect.top = std::clamp(rect.top + dy, 0l, max_top);
-}
-
-void Window::right_offset(int dx) noexcept
-{
-  auto screen_size = get_screen_size();
-  
-  if (rect.right > screen_size.x) return;
-
-  LONG min_right;
-  if (rect.left < 0)
-  {
-    if (rect.right < Min_Width)
-      min_right = rect.right;
-    else
-      min_right = Min_Width;
-  }
-  else
-    min_right = rect.left + Min_Width;
-  rect.right = std::clamp(rect.right + dx, min_right, static_cast<LONG>(screen_size.x));
-}
-
-void Window::bottom_offset(int dy) noexcept
-{
-  auto screen_size = get_screen_size();
-
-  if (rect.bottom > screen_size.y) return;
-
-  LONG min_bottom;
-  if (rect.top < 0)
-  {
-    if (rect.bottom < Min_Height)
-      min_bottom = rect.bottom;
-    else
-      min_bottom = Min_Height;
-  }
-  else
-    min_bottom = rect.top + Min_Height;
-  rect.bottom = std::clamp(rect.bottom + dy, min_bottom, static_cast<LONG>(screen_size.y));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-///                           Window Manager
-////////////////////////////////////////////////////////////////////////////////
-
 void WindowManager::init() noexcept
 {
   _thread = std::thread([this]
@@ -228,22 +33,24 @@ void WindowManager::init() noexcept
 
     // register window class
     WNDCLASSEXW wnd_class{};
-    wnd_class.lpszClassName = Class_Name;
+    wnd_class.lpszClassName = Fullscreen_Class;
     wnd_class.cbSize        = sizeof(wnd_class);
     wnd_class.hInstance     = GetModuleHandleW(nullptr);
+    wnd_class.lpfnWndProc   = DefWindowProcW;
+    err_if(!RegisterClassExW(&wnd_class), "failed register class");
+    wnd_class.lpszClassName = Window_Class;
     wnd_class.lpfnWndProc   = wnd_proc;
     err_if(!RegisterClassExW(&wnd_class), "failed register class");
-
+    
     // create fullscreen
     auto screen_size = get_screen_size();
-    auto handle = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP, Class_Name, nullptr, WS_POPUP,
+    auto handle = CreateWindowExW(WS_EX_TOOLWINDOW, Fullscreen_Class, nullptr, WS_POPUP,
       0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
     err_if(!handle,  "failed to create window");
     auto rect   = RECT{};
     auto region = CreateRectRgnIndirect(&rect);
     SetWindowRgn(handle, region, false);
-    ShowWindow(handle, SW_SHOW);
-    Renderer::instance()->send_message(Renderer::Message_Create_Fullscreen_Window_Render_Resource{ Window(handle, 0, 0, screen_size.x, screen_size.y) });
+    MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ handle, 0, 0, screen_size.x, screen_size.y } });
     
     // create message queue
     PeekMessageW(nullptr, nullptr, 0, 0, PM_NOREMOVE);
@@ -270,20 +77,23 @@ void WindowManager::destroy() noexcept
 
 LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept
 {
-  auto wm       = WindowManager::instance();
-  auto renderer = Renderer::instance();
+  static auto wm        = WindowManager::instance();
+  static auto renderer  = Renderer::instance();
+  static auto msg_queue = MessageQueue::instance();
 
   static POINT              last_pos{};
-  static bool               moving{};
   static Window::ResizeType resize_type{};
+  static bool               lm_down{};
+  static bool               moving{};
+  static HWND               moving_window{};
 
   switch (msg)
   {
   case WM_DESTROY:
   {
-    renderer->send_message(Renderer::Message_Destroy_Window_Render_Resource{ handle });
+    msg_queue->send_message(MessageQueue::Message_Destroy_Window_Render_Resource{ handle });
     wm->_window_count.fetch_sub(1, std::memory_order_relaxed);
-    std::erase_if(wm->_windows, [handle](auto const& window) { return window.handle == handle; });
+    wm->_windows.erase(handle);
     return 0;
   }
 
@@ -291,38 +101,61 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   {
     SetCapture(handle);
     GetCursorPos(&last_pos);
-    auto it = std::ranges::find_if(wm->_windows, [handle](auto const& window) { return window.handle == handle; });
-    err_if(it == wm->_windows.end(), "failed to find mouse down window");
-    resize_type = it->get_resize_type(last_pos);
-    moving = true;
+    resize_type = wm->_windows[handle].get_resize_type(last_pos);
+    lm_down = true;
     break;
   }
 
   case WM_LBUTTONUP:
   {
     ReleaseCapture();
+    lm_down = false;
+    
     if (moving)
     {
-      moving = false;
-      auto it = std::ranges::find_if(wm->_windows, [handle](auto const& window) { return window.handle == handle; });
-      err_if(it == wm->_windows.end(), "failed to find mouse up window");
-      renderer->send_message(Renderer::Message_Update_Window{ *it });
+      moving        = {};
+      moving_window = {};
+      msg_queue->send_message(MessageQueue::Message_End_Moving_Window{});
+    }
+    else if (resize_type != Window::ResizeType::none)
+    {
+
     }
     break;
   }
 
   case WM_MOUSEMOVE:
   {
-    if (moving)
+    if (lm_down)
     {
       POINT pos;
       GetCursorPos(&pos);
       auto offset_x = pos.x - last_pos.x;
       auto offset_y = pos.y - last_pos.y;
 
-      auto it = std::ranges::find_if(wm->_windows, [handle](auto const& window) { return window.handle == handle; });
-      err_if(it == wm->_windows.end(), "failed to find mouse up window");
-      
+      // window moving
+      if (resize_type == Window::ResizeType::none)
+      {
+        // first moving
+        if (!moving)
+        {
+          wm->_windows[handle].move(offset_x, offset_y);
+          msg_queue->send_message(MessageQueue::Message_Begin_Moving_Window{ wm->_windows[handle] });
+          moving_window = handle;
+        }
+        // continuely moving
+        else
+        {
+          wm->_windows[moving_window].move(offset_x, offset_y);
+          msg_queue->send_message(MessageQueue::Message_Moving_Window{ wm->_windows[moving_window] });
+        }
+      }
+      // window resizing
+      else
+      {
+
+      }
+      #if 0
       // window move
       if (resize_type == Window::ResizeType::none)
       {
@@ -336,6 +169,7 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
         it->resize(resize_type, offset_x, offset_y);
         renderer->send_message(Renderer::Message_Resize_Window{ *it });  
       }
+      #endif
       last_pos = pos;
     }
     break;
@@ -365,11 +199,12 @@ void WindowManager::create_window(int x, int y, uint32_t width, uint32_t height)
 
 void WindowManager::process_message_create_window(int x, int y, uint32_t width, uint32_t height) noexcept
 {
-  auto handle = CreateWindowExW(0, Class_Name, nullptr, WS_POPUP,
+  auto handle = CreateWindowExW(0, Window_Class, nullptr, WS_POPUP,
     x, y, width, height, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!handle,  "failed to create window");
-  _windows.emplace_back(handle, x, y, width, height);
-  Renderer::instance()->send_message(Renderer::Message_Create_Window_Render_Resource{ _windows.back() });
+  auto window = Window{ handle, x, y, width, height };
+  _windows.emplace(handle, window);
+  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window });
 }
 
 }}

@@ -181,6 +181,7 @@ public:
   auto handle() const noexcept { return _handle.Get(); }
   auto width()  const noexcept { return _width;        }
   auto height() const noexcept { return _height;       }
+  auto extent() const noexcept { return glm::vec<2, uint32_t>{ _width, _height }; }
 
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;
