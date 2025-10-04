@@ -46,7 +46,7 @@ void WindowManager::init() noexcept
     
     // create fullscreen
     auto screen_size = get_screen_size();
-    _fullscreen_window_handle = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, Fullscreen_Class, nullptr, WS_POPUP,
+    _fullscreen_window_handle = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,
       0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
     err_if(!_fullscreen_window_handle,  "failed to create window");
     MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, 0, 0, screen_size.x, screen_size.y } });
