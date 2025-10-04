@@ -29,6 +29,7 @@ void Window::update_by_rect() noexcept
 
 void Window::move(int32_t x, int32_t y) noexcept
 {
+  moving   = true;
   this->x += x;
   this->y += y;
   update_rect();
@@ -36,6 +37,8 @@ void Window::move(int32_t x, int32_t y) noexcept
 
 void Window::resize(ResizeType type, int dx, int dy) noexcept
 {
+  resizing = true;
+  
   using enum Window::ResizeType;
   switch (type)
   {

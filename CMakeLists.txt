@@ -28,7 +28,7 @@ target_compile_definitions(test PRIVATE
   UTF_CPP_CPLUSPLUS=202002L
 )
 target_link_libraries(test PRIVATE
-  d3d12 dxgi d3d11 dxcompiler
+  d3d12 dxgi dxcompiler dcomp
   DirectX-Headers
   SPSCQueue
 )

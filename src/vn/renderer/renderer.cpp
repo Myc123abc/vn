@@ -229,7 +229,7 @@ void Renderer::update() noexcept
 
 void Renderer::render() noexcept
 {
-  for (auto& [k, v] : _window_resources) v.render();
+  for (auto& [k, wr] : _window_resources) wr.render();
 
   // execute command list
   auto cmds_view = _window_resources | std::views::values
@@ -240,16 +240,9 @@ void Renderer::render() noexcept
   // present swapchain
   for (auto const& [k, wr] : _window_resources)
   {
-    //if (wr.resizing)
-    //{
-    //  err_if(_fullscreen_window_resource.swapchain->Present(1, 0), "failed to present swapchain");
-    //  // after resized window render finish, redisplay new window region
-    //  add_current_frame_render_finish_proc([handle = _fullscreen_window_resource.window.handle, rect = wr.window.rect]
-    //  {
-    //    SetWindowRgn(handle, CreateRectRgnIndirect(&rect), false);
-    //  });
-    //}
-    //else
+    if (wr.window.moving || wr.window.resizing)
+      err_if(_fullscreen_swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
+    else
       err_if(wr.swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
   }
   

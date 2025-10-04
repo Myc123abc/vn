@@ -1,12 +1,14 @@
 #include "message_queue.hpp"
 #include "renderer.hpp"
+#include "window_manager.hpp"
 
 namespace vn { namespace renderer {
 
 void MessageQueue::process_messages() noexcept
 {
-  auto  renderer = Renderer::instance();
-  auto& wr       = renderer->_window_resources;
+  static auto  renderer = Renderer::instance();
+  static auto& wr       = renderer->_window_resources;
+  static auto  wm       = WindowManager::instance();
 
   while (!_message_queue.empty())
   {
@@ -26,24 +28,48 @@ void MessageQueue::process_messages() noexcept
       }
       else if constexpr (std::is_same_v<T, Message_Create_Fullscreen_Window_Render_Resource>)
       {
-        renderer->_fullscreen_window_resource.init(data.window);
+        renderer->_fullscreen_swapchain_resource.init(data.window.handle, data.window.width, data.window.height, true);
       }
       else if constexpr (std::is_same_v<T, Message_Begin_Moving_Window>)
       {
-        //std::swap(window, data.window);
-        //it->moving     = true;
-        //_moving_window = data.window.handle;
+        renderer->add_current_frame_render_finish_proc([&]
+        {
+          wm->begin_moving_window();
+        });
+        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
       }
       else if constexpr (std::is_same_v<T, Message_Moving_Window>)
       {
-        //auto it = find_window(data.window.handle);
-        //std::swap(it->window, data.window);
+        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
       }
       else if constexpr (std::is_same_v<T, Message_End_Moving_Window>)
       {
-        //auto it = find_window(_moving_window);
-        //it->moving     = {};
-        //_moving_window = {};
+        renderer->add_current_frame_render_finish_proc([&]
+        {
+          wm->end_moving_window();
+        });
+        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
+      }
+      else if constexpr (std::is_same_v<T, Message_Begin_Resizing_Window>)
+      {
+        renderer->add_current_frame_render_finish_proc([&]
+        {
+          wm->begin_resizing_window();
+        });
+        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
+      }
+      else if constexpr (std::is_same_v<T, Message_Resizing_Window>)
+      {
+        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
+      }
+      else if constexpr (std::is_same_v<T, Message_End_Resizing_Window>)
+      {
+        renderer->add_current_frame_render_finish_proc([&]
+        {
+          wm->end_resizing_window();
+        });
+        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
+        renderer->_window_resources[data.window.handle].swapchain_resource.resize(data.window.width, data.window.height);
       }
       else
         static_assert(false, "unexist message type of renderer");

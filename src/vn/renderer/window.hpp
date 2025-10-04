@@ -16,6 +16,8 @@ struct Window
   uint32_t width;
   uint32_t height;
   RECT     rect;
+  bool     moving{};
+  bool     resizing{};
 
 public:
   Window() = default;

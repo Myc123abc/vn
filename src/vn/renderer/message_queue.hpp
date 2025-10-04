@@ -40,9 +40,12 @@ public:
     Window window;
   };
 
-  struct Message_Begin_Moving_Window { Window window; };
-  struct Message_Moving_Window       { Window window; };
-  struct Message_End_Moving_Window   {                };
+  struct Message_Begin_Moving_Window   { Window window; };
+  struct Message_Moving_Window         { Window window; };
+  struct Message_End_Moving_Window     { Window window; };
+  struct Message_Begin_Resizing_Window { Window window; };
+  struct Message_Resizing_Window       { Window window; };
+  struct Message_End_Resizing_Window   { Window window; };
 
   using Message = std::variant<
     Message_Create_Window_Render_Resource,
@@ -50,7 +53,10 @@ public:
     Message_Create_Fullscreen_Window_Render_Resource,
     Message_Begin_Moving_Window,
     Message_Moving_Window,
-    Message_End_Moving_Window
+    Message_End_Moving_Window,
+    Message_Begin_Resizing_Window,
+    Message_Resizing_Window,
+    Message_End_Resizing_Window
   >;
 
   void send_message(Message const& msg) noexcept { return _message_queue.push(msg); }

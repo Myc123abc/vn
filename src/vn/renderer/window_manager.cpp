@@ -9,7 +9,11 @@ namespace
 constexpr wchar_t Fullscreen_Class[] = L"vn::WindowManager::Fullscreen";
 constexpr wchar_t Window_Class[]     = L"vn::WindowManager::Window";
 
-constexpr auto Msg_Create_Window = WM_APP + 0;
+constexpr auto Msg_Create_Window         = WM_APP + 0;
+constexpr auto Msg_Begin_Moving_Window   = WM_APP + 1;
+constexpr auto Msg_End_Moving_Window     = WM_APP + 2;
+constexpr auto Msg_Begin_Resizing_Window = WM_APP + 3;
+constexpr auto Msg_End_Resizing_Window   = WM_APP + 4;
 
 auto to_64_bits(uint32_t x, uint32_t y) noexcept
 {
@@ -44,13 +48,10 @@ void WindowManager::init() noexcept
     
     // create fullscreen
     auto screen_size = get_screen_size();
-    auto handle = CreateWindowExW(WS_EX_TOOLWINDOW, Fullscreen_Class, nullptr, WS_POPUP,
+    _fullscreen_window_handle = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, Fullscreen_Class, nullptr, WS_POPUP,
       0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
-    err_if(!handle,  "failed to create window");
-    auto rect   = RECT{};
-    auto region = CreateRectRgnIndirect(&rect);
-    SetWindowRgn(handle, region, false);
-    MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ handle, 0, 0, screen_size.x, screen_size.y } });
+    err_if(!_fullscreen_window_handle,  "failed to create window");
+    MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, 0, 0, screen_size.x, screen_size.y } });
     
     // create message queue
     PeekMessageW(nullptr, nullptr, 0, 0, PM_NOREMOVE);
@@ -84,8 +85,6 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   static POINT              last_pos{};
   static Window::ResizeType resize_type{};
   static bool               lm_down{};
-  static bool               moving{};
-  static HWND               moving_window{};
 
   switch (msg)
   {
@@ -111,15 +110,19 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
     ReleaseCapture();
     lm_down = false;
     
-    if (moving)
+    auto& window = wm->_windows[handle];
+
+    if (window.moving)
     {
-      moving        = {};
-      moving_window = {};
-      msg_queue->send_message(MessageQueue::Message_End_Moving_Window{});
+      window.moving      = {};
+      wm->_moving_window = window;
+      msg_queue->send_message(MessageQueue::Message_End_Moving_Window{ window });
     }
     else if (resize_type != Window::ResizeType::none)
     {
-
+      window.resizing      = {};
+      wm->_resizing_window = window;
+      msg_queue->send_message(MessageQueue::Message_End_Resizing_Window{ window });
     }
     break;
   }
@@ -133,43 +136,42 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
       auto offset_x = pos.x - last_pos.x;
       auto offset_y = pos.y - last_pos.y;
 
+      auto& window = wm->_windows.at(handle);
+
       // window moving
       if (resize_type == Window::ResizeType::none)
       {
         // first moving
-        if (!moving)
+        if (!window.moving)
         {
-          wm->_windows[handle].move(offset_x, offset_y);
-          msg_queue->send_message(MessageQueue::Message_Begin_Moving_Window{ wm->_windows[handle] });
-          moving_window = handle;
+          window.move(offset_x, offset_y);
+          wm->_moving_window = window;
+          msg_queue->send_message(MessageQueue::Message_Begin_Moving_Window{ window });
         }
         // continuely moving
         else
         {
-          wm->_windows[moving_window].move(offset_x, offset_y);
-          msg_queue->send_message(MessageQueue::Message_Moving_Window{ wm->_windows[moving_window] });
+          window.move(offset_x, offset_y);
+          msg_queue->send_message(MessageQueue::Message_Moving_Window{ window });
         }
       }
       // window resizing
       else
       {
-
+        // first resizing
+        if (!window.resizing)
+        {
+          window.resize(resize_type, offset_x, offset_y);
+          wm->_resizing_window = window;
+          msg_queue->send_message(MessageQueue::Message_Begin_Resizing_Window{ window });
+        }
+        // continuely resizing
+        else
+        {
+          window.resize(resize_type, offset_x, offset_y);
+          msg_queue->send_message(MessageQueue::Message_Resizing_Window{ window });
+        }
       }
-      #if 0
-      // window move
-      if (resize_type == Window::ResizeType::none)
-      {
-        it->move(offset_x, offset_y);
-        // TODO: is use render in fullscreen can have more better fps?
-        SetWindowPos(handle, HWND_TOP, it->x, it->y, 0, 0, SWP_NOSIZE);
-      }
-      // window resize
-      else
-      {
-        it->resize(resize_type, offset_x, offset_y);
-        renderer->send_message(Renderer::Message_Resize_Window{ *it });  
-      }
-      #endif
       last_pos = pos;
     }
     break;
@@ -183,10 +185,36 @@ void WindowManager::process_message(MSG const& msg) noexcept
   switch (msg.message)
   {
   case Msg_Create_Window:
+  {
     auto [x, y]          = to_32_bits(msg.wParam);
     auto [width, height] = to_32_bits(msg.lParam);
     process_message_create_window(x, y, width, height);
     break;
+  }
+
+  case Msg_Begin_Moving_Window:
+  {
+    process_begin_moving_window();
+    break;
+  }
+
+  case Msg_End_Moving_Window:
+  {
+    process_end_moving_window();
+    break;
+  }
+
+  case Msg_Begin_Resizing_Window:
+  {
+    process_begin_resizing_window();
+    break;
+  }
+
+  case Msg_End_Resizing_Window:
+  {
+    process_end_resizing_window();
+    break;
+  }
   }
 }
 
@@ -205,6 +233,52 @@ void WindowManager::process_message_create_window(int x, int y, uint32_t width, 
   auto window = Window{ handle, x, y, width, height };
   _windows.emplace(handle, window);
   MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window });
+}
+
+void WindowManager::begin_moving_window() const noexcept
+{
+  PostThreadMessageW(_thread_id, Msg_Begin_Moving_Window, 0, 0);
+}
+
+void WindowManager::end_moving_window() const noexcept
+{
+  PostThreadMessageW(_thread_id, Msg_End_Moving_Window, 0, 0);
+}
+
+void WindowManager::begin_resizing_window() const noexcept
+{
+  PostThreadMessageW(_thread_id, Msg_Begin_Resizing_Window, 0, 0);
+}
+
+void WindowManager::end_resizing_window() const noexcept
+{
+  PostThreadMessageW(_thread_id, Msg_End_Resizing_Window, 0, 0);
+}
+
+void WindowManager::process_begin_moving_window() noexcept
+{
+  ShowWindow(_fullscreen_window_handle, SW_SHOW);
+  ShowWindow(_moving_window.handle, SW_HIDE);
+}
+
+void WindowManager::process_end_moving_window() noexcept
+{
+  SetWindowPos(_moving_window.handle, 0, _moving_window.x, _moving_window.y, _moving_window.width, _moving_window.height, 0);
+  ShowWindow(_moving_window.handle, SW_SHOW);
+  ShowWindow(_fullscreen_window_handle, SW_HIDE);
+}
+
+void WindowManager::process_begin_resizing_window() noexcept
+{
+  ShowWindow(_fullscreen_window_handle, SW_SHOW);
+  ShowWindow(_resizing_window.handle, SW_HIDE);
+}
+
+void WindowManager::process_end_resizing_window() noexcept
+{
+  SetWindowPos(_resizing_window.handle, 0, _resizing_window.x, _resizing_window.y, _resizing_window.width, _resizing_window.height, 0);
+  ShowWindow(_resizing_window.handle, SW_SHOW);
+  ShowWindow(_fullscreen_window_handle, SW_HIDE);
 }
 
 }}

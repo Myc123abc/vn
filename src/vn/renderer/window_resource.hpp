@@ -4,6 +4,8 @@
 #include "memory_allocator.hpp"
 #include "window.hpp"
 
+#include <dcomp.h>
+
 namespace vn { namespace renderer {
 
 struct SwapchainResource
@@ -15,8 +17,17 @@ struct SwapchainResource
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap;
   CD3DX12_VIEWPORT                             viewport;
   CD3DX12_RECT                                 scissor;
+  HWND                                         handle;
+  bool                                         transparent;
 
-  void init(HWND handle, uint32_t width, uint32_t height) noexcept;
+private:
+  Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
+  Microsoft::WRL::ComPtr<IDCompositionTarget>  _comp_target;
+  Microsoft::WRL::ComPtr<IDCompositionVisual>  _comp_visual;
+
+public:
+
+  void init(HWND handle, uint32_t width, uint32_t height, bool transparent = false) noexcept;
 
   auto current_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
 
@@ -27,6 +38,8 @@ struct SwapchainResource
       static_cast<int>(swapchain->GetCurrentBackBufferIndex()),
       RTV_Size};
   }
+
+  void resize(uint32_t width, uint32_t height) noexcept;
 };
 
 struct FrameResource

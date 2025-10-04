@@ -54,8 +54,7 @@ private:
   Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;
 
   std::unordered_map<HWND, WindowResource>    _window_resources;
-  WindowResource                              _fullscreen_window_resource;
-  HWND                                        _moving_window{};
+  SwapchainResource                           _fullscreen_swapchain_resource;
 };
 
 }}

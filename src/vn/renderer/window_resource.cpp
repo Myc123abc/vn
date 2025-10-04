@@ -5,8 +5,11 @@ using namespace Microsoft::WRL;
 
 namespace vn { namespace renderer {
 
-void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height) noexcept
+void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool transparent) noexcept
 {
+  this->handle      = handle;
+  this->transparent = transparent;
+  
   auto core = Core::instance();
 
   // set viewport and scissor
@@ -23,8 +26,29 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height) noexc
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
-        "failed to create swapchain");
+  if (transparent)
+  {
+    swapchain_desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+    err_if(core->factory()->CreateSwapChainForComposition(core->command_queue(), &swapchain_desc, nullptr, &swapchain),
+            "failed to create swapchain for composition");
+
+    // create composition
+    err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
+            "failed to create composition device");
+    err_if(_comp_device->CreateTargetForHwnd(handle, true, &_comp_target),
+            "failed to create composition target");
+    err_if(_comp_device->CreateVisual(&_comp_visual),
+            "failed to create composition visual");
+    err_if(_comp_visual->SetContent(swapchain.Get()),
+            "failed to bind swapchain to composition visual");
+    err_if(_comp_target->SetRoot(_comp_visual.Get()),
+            "failed to bind composition visual to target");
+    err_if(_comp_device->Commit(),
+            "failed to commit composition device");
+  }  
+  else
+    err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
+            "failed to create swapchain");
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
 
   // create descriptor heaps
@@ -34,6 +58,48 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height) noexc
   err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&rtv_heap)),
     "failed to create render target view descriptor heap");
 
+  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
+  for (auto i = 0; i < Frame_Count; ++i)
+  {
+    // get swapchain image
+    swapchain_images[i].init(swapchain.Get(), i)
+                       .create_descriptor(rtv_handle);
+    // offset next swapchain image
+    rtv_handle.Offset(1, RTV_Size);
+  }
+}
+
+void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
+{
+  auto core = Core::instance();
+
+  // set viewport and scissor
+  viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(width), static_cast<float>(height) };
+  scissor  = CD3DX12_RECT{     0,   0,   static_cast<LONG>(width),  static_cast<LONG>(height)  };
+
+  // wait gpu finish
+  core->wait_gpu_complete();
+
+  // reset swapchain relation resources
+  for (auto i = 0; i < Frame_Count; ++i)
+    swapchain_images[i].destroy();
+  if (transparent)
+    _comp_visual->SetContent(nullptr);
+
+  // resize swapchain
+  err_if(swapchain->ResizeBuffers(Frame_Count, width, height, DXGI_FORMAT_UNKNOWN, 0),
+          "failed to resize swapchain");
+
+  if (transparent)
+  {
+    // rebind composition resources
+    err_if(_comp_visual->SetContent(swapchain.Get()),
+            "failed to bind swapchain to composition visual");
+    err_if(_comp_device->Commit(),
+            "failed to commit composition device");
+  }
+
+  // reget swapchain images
   CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
   for (auto i = 0; i < Frame_Count; ++i)
   {
@@ -82,13 +148,9 @@ void WindowResource::render() noexcept
   auto cmd_alloc = frame_resource.command_allocators[core->frame_index()].Get();
   auto cmd       = frame_resource.cmd.Get();
 
-  // if window is resiving, use fullscreen's swapchain and rtv heap
-  //auto swapchain_image = resizing ? renderer->_fullscreen_window_resource.current_swapchain_image() : current_swapchain_image();
-  //auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(
-  //  (resizing ? renderer->_fullscreen_window_resource.rtv_heap  : rtv_heap)->GetCPUDescriptorHandleForHeapStart(),
-  //  (resizing ? renderer->_fullscreen_window_resource.swapchain : swapchain)->GetCurrentBackBufferIndex(), RTV_Size);
-  auto swapchain_image = swapchain_resource.current_image();
-  auto rtv_handle      = swapchain_resource.rtv();
+  auto& swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : this->swapchain_resource;
+  auto  swapchain_image    = swapchain_resource.current_image();
+  auto  rtv_handle         = swapchain_resource.rtv();
   
   // reset command allocator and command list
   err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
@@ -126,8 +188,8 @@ void WindowResource::render() noexcept
   // set constant
   auto constants = Constants{};
   constants.window_extent = swapchain_image->extent();
-  //if (resizing)
-  //  constants.window_pos = window.pos();
+  if (window.moving || window.resizing)
+    constants.window_pos = window.pos();
   cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
 
   // draw
