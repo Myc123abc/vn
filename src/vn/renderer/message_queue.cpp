@@ -30,45 +30,28 @@ void MessageQueue::process_messages() noexcept
       {
         renderer->_fullscreen_swapchain_resource.init(data.window.handle, data.window.width, data.window.height, true);
       }
-      else if constexpr (std::is_same_v<T, Message_Begin_Moving_Window>)
+      else if constexpr (std::is_same_v<T, Message_Begin_Use_Fullscreen_Window>)
       {
         renderer->add_current_frame_render_finish_proc([&]
         {
-          wm->begin_moving_window();
+          wm->begin_use_fullscreen_window();
         });
         std::swap(renderer->_window_resources[data.window.handle].window, data.window);
       }
-      else if constexpr (std::is_same_v<T, Message_Moving_Window>)
+      else if constexpr (std::is_same_v<T, Message_Update_Window>)
       {
         std::swap(renderer->_window_resources[data.window.handle].window, data.window);
       }
-      else if constexpr (std::is_same_v<T, Message_End_Moving_Window>)
+      else if constexpr (std::is_same_v<T, Message_End_Use_Fullscreen_Window>)
       {
         renderer->add_current_frame_render_finish_proc([&]
         {
-          wm->end_moving_window();
+          wm->end_use_fullscreen_window();
         });
         std::swap(renderer->_window_resources[data.window.handle].window, data.window);
       }
-      else if constexpr (std::is_same_v<T, Message_Begin_Resizing_Window>)
+      else if constexpr (std::is_same_v<T, Message_Resize_window>)
       {
-        renderer->add_current_frame_render_finish_proc([&]
-        {
-          wm->begin_resizing_window();
-        });
-        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
-      }
-      else if constexpr (std::is_same_v<T, Message_Resizing_Window>)
-      {
-        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
-      }
-      else if constexpr (std::is_same_v<T, Message_End_Resizing_Window>)
-      {
-        renderer->add_current_frame_render_finish_proc([&]
-        {
-          wm->end_resizing_window();
-        });
-        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
         renderer->_window_resources[data.window.handle].swapchain_resource.resize(data.window.width, data.window.height);
       }
       else

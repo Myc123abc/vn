@@ -9,11 +9,9 @@ namespace
 constexpr wchar_t Fullscreen_Class[] = L"vn::WindowManager::Fullscreen";
 constexpr wchar_t Window_Class[]     = L"vn::WindowManager::Window";
 
-constexpr auto Msg_Create_Window         = WM_APP + 0;
-constexpr auto Msg_Begin_Moving_Window   = WM_APP + 1;
-constexpr auto Msg_End_Moving_Window     = WM_APP + 2;
-constexpr auto Msg_Begin_Resizing_Window = WM_APP + 3;
-constexpr auto Msg_End_Resizing_Window   = WM_APP + 4;
+constexpr auto Msg_Create_Window               = WM_APP + 0;
+constexpr auto Msg_Begin_Use_Fullscreen_Window = WM_APP + 1;
+constexpr auto Msg_End_Use_Fullscreen_Window   = WM_APP + 2;
 
 auto to_64_bits(uint32_t x, uint32_t y) noexcept
 {
@@ -115,14 +113,15 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
     if (window.moving)
     {
       window.moving      = {};
-      wm->_moving_window = window;
-      msg_queue->send_message(MessageQueue::Message_End_Moving_Window{ window });
+      wm->_moving_or_resizing_window = window;
+      msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
     }
     else if (resize_type != Window::ResizeType::none)
     {
       window.resizing      = {};
-      wm->_resizing_window = window;
-      msg_queue->send_message(MessageQueue::Message_End_Resizing_Window{ window });
+      wm->_moving_or_resizing_window = window;
+      msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
+      msg_queue->send_message(MessageQueue::Message_Resize_window{ window });
     }
     break;
   }
@@ -145,14 +144,14 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
         if (!window.moving)
         {
           window.move(offset_x, offset_y);
-          wm->_moving_window = window;
-          msg_queue->send_message(MessageQueue::Message_Begin_Moving_Window{ window });
+          wm->_moving_or_resizing_window = window;
+          msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
         }
         // continuely moving
         else
         {
           window.move(offset_x, offset_y);
-          msg_queue->send_message(MessageQueue::Message_Moving_Window{ window });
+          msg_queue->send_message(MessageQueue::Message_Update_Window{ window });
         }
       }
       // window resizing
@@ -162,14 +161,14 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
         if (!window.resizing)
         {
           window.resize(resize_type, offset_x, offset_y);
-          wm->_resizing_window = window;
-          msg_queue->send_message(MessageQueue::Message_Begin_Resizing_Window{ window });
+          wm->_moving_or_resizing_window = window;
+          msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
         }
         // continuely resizing
         else
         {
           window.resize(resize_type, offset_x, offset_y);
-          msg_queue->send_message(MessageQueue::Message_Resizing_Window{ window });
+          msg_queue->send_message(MessageQueue::Message_Update_Window{ window });
         }
       }
       last_pos = pos;
@@ -192,27 +191,15 @@ void WindowManager::process_message(MSG const& msg) noexcept
     break;
   }
 
-  case Msg_Begin_Moving_Window:
+  case Msg_Begin_Use_Fullscreen_Window:
   {
-    process_begin_moving_window();
+    process_begin_use_fullscreen_window();
     break;
   }
 
-  case Msg_End_Moving_Window:
+  case Msg_End_Use_Fullscreen_Window:
   {
-    process_end_moving_window();
-    break;
-  }
-
-  case Msg_Begin_Resizing_Window:
-  {
-    process_begin_resizing_window();
-    break;
-  }
-
-  case Msg_End_Resizing_Window:
-  {
-    process_end_resizing_window();
+    process_end_use_fullscreen_window();
     break;
   }
   }
@@ -235,49 +222,26 @@ void WindowManager::process_message_create_window(int x, int y, uint32_t width, 
   MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window });
 }
 
-void WindowManager::begin_moving_window() const noexcept
+void WindowManager::begin_use_fullscreen_window() const noexcept
 {
-  PostThreadMessageW(_thread_id, Msg_Begin_Moving_Window, 0, 0);
+  PostThreadMessageW(_thread_id, Msg_Begin_Use_Fullscreen_Window, 0, 0);
 }
 
-void WindowManager::end_moving_window() const noexcept
+void WindowManager::end_use_fullscreen_window() const noexcept
 {
-  PostThreadMessageW(_thread_id, Msg_End_Moving_Window, 0, 0);
+  PostThreadMessageW(_thread_id, Msg_End_Use_Fullscreen_Window, 0, 0);
 }
 
-void WindowManager::begin_resizing_window() const noexcept
-{
-  PostThreadMessageW(_thread_id, Msg_Begin_Resizing_Window, 0, 0);
-}
-
-void WindowManager::end_resizing_window() const noexcept
-{
-  PostThreadMessageW(_thread_id, Msg_End_Resizing_Window, 0, 0);
-}
-
-void WindowManager::process_begin_moving_window() noexcept
+void WindowManager::process_begin_use_fullscreen_window() noexcept
 {
   ShowWindow(_fullscreen_window_handle, SW_SHOW);
-  ShowWindow(_moving_window.handle, SW_HIDE);
+  ShowWindow(_moving_or_resizing_window.handle, SW_HIDE);
 }
 
-void WindowManager::process_end_moving_window() noexcept
+void WindowManager::process_end_use_fullscreen_window() noexcept
 {
-  SetWindowPos(_moving_window.handle, 0, _moving_window.x, _moving_window.y, _moving_window.width, _moving_window.height, 0);
-  ShowWindow(_moving_window.handle, SW_SHOW);
-  ShowWindow(_fullscreen_window_handle, SW_HIDE);
-}
-
-void WindowManager::process_begin_resizing_window() noexcept
-{
-  ShowWindow(_fullscreen_window_handle, SW_SHOW);
-  ShowWindow(_resizing_window.handle, SW_HIDE);
-}
-
-void WindowManager::process_end_resizing_window() noexcept
-{
-  SetWindowPos(_resizing_window.handle, 0, _resizing_window.x, _resizing_window.y, _resizing_window.width, _resizing_window.height, 0);
-  ShowWindow(_resizing_window.handle, SW_SHOW);
+  SetWindowPos(_moving_or_resizing_window.handle, 0, _moving_or_resizing_window.x, _moving_or_resizing_window.y, _moving_or_resizing_window.width, _moving_or_resizing_window.height, 0);
+  ShowWindow(_moving_or_resizing_window.handle, SW_SHOW);
   ShowWindow(_fullscreen_window_handle, SW_HIDE);
 }
 
