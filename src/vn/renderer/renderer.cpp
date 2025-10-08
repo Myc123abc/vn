@@ -2,85 +2,32 @@
 #include "core.hpp"
 #include "../util.hpp"
 #include "message_queue.hpp"
+#include "shader_compiler.hpp"
 
-#include <dxcapi.h>
+#include <glm/glm.hpp>
 
-#include <utf8.h>
-
+#include <span>
 #include <chrono>
 
+using namespace vn;
+using namespace vn::renderer;
 using namespace Microsoft::WRL;
 
 namespace
 {
 
-#ifdef _WIN32
-auto to_wstring(std::string_view str) noexcept -> std::wstring
+auto create_shader_module(std::span<uint32_t> shader) noexcept
 {
-  auto u16str = utf8::utf8to16(str);
-  return { reinterpret_cast<wchar_t*>(u16str.data()), u16str.size() };
-}
-#endif
+  auto core = Core::instance();
 
-auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer, std::string_view main, std::string_view profile) noexcept
-{
-  auto args = ComPtr<IDxcCompilerArgs>{};
-  vn::err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), nullptr, 0, nullptr, 0, args.GetAddressOf()),
-              "failed to create dxc args");
-  
-  auto result = ComPtr<IDxcResult>{};
-  vn::err_if(compiler->Compile(&buffer, args->GetArguments(), args->GetCount(), nullptr, IID_PPV_ARGS(&result)),
-              "failed to compile {}", main);
-  
-  auto hr = HRESULT{};
-  result->GetStatus(&hr);
-  if (FAILED(hr))
-  {
-    auto msg = ComPtr<IDxcBlobUtf8>{};
-    vn::err_if(result->GetOutput(DXC_OUT_ERRORS,  IID_PPV_ARGS(&msg), nullptr), "failed to get error ouput of dxc");
-    vn::err_if(true, "failed to compile {}\n{}", main, msg->GetStringPointer());
-  }
+  auto shader_module             = VkShaderModule{};
+  auto shader_module_create_info = VkShaderModuleCreateInfo{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+  shader_module_create_info.codeSize = shader.size_bytes();
+  shader_module_create_info.pCode    = shader.data();
+  err_if(vkCreateShaderModule(core->device(), &shader_module_create_info, nullptr, &shader_module) != VK_SUCCESS,
+          "failed to create shader module");
 
-  auto cso = ComPtr<IDxcBlob>{};
-  vn::err_if(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&cso), nullptr), "failed to get compile result");
-
-  return cso;
-}
-
-auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::string_view pixel_main) noexcept -> std::pair<ComPtr<IDxcBlob>, ComPtr<IDxcBlob>>
-{
-  auto compiler = ComPtr<IDxcCompiler3>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
-              "failed to create dxc compiler");
-
-  DxcBuffer buffer{};
-  auto data       = vn::read_file(path);
-  buffer.Ptr      = data.data();
-  buffer.Size     = data.size();
-  buffer.Encoding = DXC_CP_UTF8;
-
-  auto utils = ComPtr<IDxcUtils>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
-              "failed to create dxc utils");
-  return { compile_shader(compiler.Get(), utils.Get(), buffer, vert_main, "vs_6_0"), compile_shader(compiler.Get(), utils.Get(), buffer, pixel_main, "ps_6_0") };
-}
-
-auto compile_comp(std::string_view path, std::string_view comp_main) noexcept
-{
-  auto compiler = ComPtr<IDxcCompiler3>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
-              "failed to create dxc compiler");
-
-  DxcBuffer buffer{};
-  auto data       = vn::read_file(path);
-  buffer.Ptr      = data.data();
-  buffer.Size     = data.size();
-  buffer.Encoding = DXC_CP_UTF8;
-
-  auto utils = ComPtr<IDxcUtils>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
-              "failed to create dxc utils");
-  return compile_shader(compiler.Get(), utils.Get(), buffer, comp_main, "cs_6_0");
+  return shader_module;
 }
 
 }
@@ -92,6 +39,7 @@ void Renderer::init() noexcept
   _thread = std::thread{[this]
   {
     Core::instance()->init();
+    ShaderCompiler::instance()->init();
     create_pipeline_resource();
     run();
   }};
@@ -99,10 +47,20 @@ void Renderer::init() noexcept
 
 void Renderer::destroy() noexcept
 {
+  // exit render thread
   _exit.store(true, std::memory_order_release);
   _render_acquire.release();
   _thread.join();
+
+  // wait gpu render complete
   Core::instance()->wait_gpu_complete();
+
+  // destroy resources
+  process_frame_render_finish_procs(true);
+  destroy_pipeline_resource();
+  for (auto& [_, v] : _window_resources) v.destroy(); // TODO: use ranges destroy?
+  _fullscreen_swapchain_resource.destroy();
+  ShaderCompiler::instance()->destroy();
   Core::instance()->destroy();
 }
 
@@ -110,63 +68,141 @@ void Renderer::create_pipeline_resource() noexcept
 {
   auto core = Core::instance();
 
-  // create root signature
-  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 1>{};
-  root_parameters[0].InitAsConstants(sizeof(Constants), 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-  //auto des_range = CD3DX12_DESCRIPTOR_RANGE1{};
-  //des_range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
-  //root_parameters[1].InitAsDescriptorTable(1, &des_range, D3D12_SHADER_VISIBILITY_PIXEL);
-  
-  //auto sampler_desc = D3D12_STATIC_SAMPLER_DESC{};
-  //sampler_desc.AddressU         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  //sampler_desc.AddressV         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  //sampler_desc.AddressW         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  //sampler_desc.ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER;
-  //sampler_desc.MaxLOD           = D3D12_FLOAT32_MAX;
-  //sampler_desc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+  // create descriptor set layout
+  auto descriptor_set_layout_create_info = VkDescriptorSetLayoutCreateInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+  err_if(vkCreateDescriptorSetLayout(core->device(), &descriptor_set_layout_create_info, nullptr, &_descriptor_set_layout),
+          "failed to create descriptor set layout");
 
-  //auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{ root_parameters.size(), root_parameters.data(), 1, &sampler_desc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
-  auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{ root_parameters.size(), root_parameters.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};
-  ComPtr<ID3DBlob> signature;
-  ComPtr<ID3DBlob> error;
-  err_if(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
-          "failed to serialize root signature");
-  err_if(core->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
-          "failed to create root signature");
-  
-  // create shaders
-  auto [vertex_shader, pixel_shader] = compile_vert_pixel("assets/shader.hlsl", "vs", "ps");
+  //
+  // create pipeline layout
+  //
 
-  // create pipeline state
-  D3D12_INPUT_ELEMENT_DESC layout[]
+  auto pipeline_layout_create_info = VkPipelineLayoutCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+  auto descriptor_set_layouts      = { _descriptor_set_layout };
+  auto push_constant               = VkPushConstantRange{};
+
+  // fill push constant
+  push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+  push_constant.size       = sizeof(PushConstant);
+
+  // make push constants
+  auto push_constants = { push_constant };
+  
+  // fill pipeline layout create info
+  pipeline_layout_create_info.setLayoutCount         = static_cast<uint32_t>(descriptor_set_layouts.size());
+  pipeline_layout_create_info.pSetLayouts            = descriptor_set_layouts.begin();
+  pipeline_layout_create_info.pushConstantRangeCount = static_cast<uint32_t>(push_constants.size());
+  pipeline_layout_create_info.pPushConstantRanges    = push_constants.begin();
+  
+  // create pipeline layout
+  err_if(vkCreatePipelineLayout(core->device(), &pipeline_layout_create_info, nullptr, &_pipeline_layout) != VK_SUCCESS,
+           "failed to create pipeline layout");
+
+  //
+  // create pipeline
+  //
+
+  auto rendering_info = VkPipelineRenderingCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+  rendering_info.colorAttachmentCount    = 1;
+  rendering_info.pColorAttachmentFormats = &Swapchain_Image_Format_Vulkan;
+
+  auto shaders       = ShaderCompiler::instance()->compile_graphics_shaders("assets/shader.vert", "assets/shader.frag");
+  auto shader_stages = std::vector<VkPipelineShaderStageCreateInfo>{ 2, { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO } };
+  shader_stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
+  shader_stages[0].module = create_shader_module(shaders.first);
+  shader_stages[0].pName  = "main";
+  shader_stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+  shader_stages[1].module = create_shader_module(shaders.second);
+  shader_stages[1].pName  = "main";
+
+  auto vertex_input_state = VkPipelineVertexInputStateCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+
+  auto input_assembly_state = VkPipelineInputAssemblyStateCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+  input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+  auto viewport_state = VkPipelineViewportStateCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+  viewport_state.viewportCount = 1;
+  viewport_state.scissorCount  = 1;
+
+  auto rasterization_state = VkPipelineRasterizationStateCreateInfo { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+  rasterization_state.polygonMode = VK_POLYGON_MODE_FILL;
+  rasterization_state.cullMode    = VK_CULL_MODE_BACK_BIT;
+  rasterization_state.frontFace   = VK_FRONT_FACE_CLOCKWISE;
+  rasterization_state.lineWidth   = 1.f;
+
+  auto multisample_state = VkPipelineMultisampleStateCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+  multisample_state.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+  multisample_state.minSampleShading     = 1.f;
+
+  auto depth_stencil_state = VkPipelineDepthStencilStateCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+  
+  auto color_blend_attachment = VkPipelineColorBlendAttachmentState{};
+  color_blend_attachment.blendEnable         = true,
+  color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+  color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+  color_blend_attachment.colorBlendOp        = VK_BLEND_OP_ADD,
+  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+  color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+  color_blend_attachment.alphaBlendOp        = VK_BLEND_OP_ADD,
+  color_blend_attachment.colorWriteMask      = VK_COLOR_COMPONENT_R_BIT |
+                                               VK_COLOR_COMPONENT_G_BIT |
+                                               VK_COLOR_COMPONENT_B_BIT |
+                                               VK_COLOR_COMPONENT_A_BIT;
+  auto color_blend_state = VkPipelineColorBlendStateCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+  color_blend_state.attachmentCount = 1;
+  color_blend_state.pAttachments    = &color_blend_attachment;
+
+  auto dynamics = std::vector<VkDynamicState>
   {
-    {  "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    {  "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    {  "COLOR",    0, DXGI_FORMAT_R32_UINT,     0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    VK_DYNAMIC_STATE_VIEWPORT,
+    VK_DYNAMIC_STATE_SCISSOR,
   };
-  D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline_state_desc{};
-  pipeline_state_desc.InputLayout           = { layout, _countof(layout) };
-  pipeline_state_desc.pRootSignature        = _root_signature.Get();
-  pipeline_state_desc.VS                    = CD3DX12_SHADER_BYTECODE{ vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize() };
-  pipeline_state_desc.PS                    = CD3DX12_SHADER_BYTECODE{ pixel_shader->GetBufferPointer(),  pixel_shader->GetBufferSize()  };
-  pipeline_state_desc.RasterizerState       = CD3DX12_RASTERIZER_DESC{ D3D12_DEFAULT };
-  pipeline_state_desc.BlendState            = CD3DX12_BLEND_DESC{ D3D12_DEFAULT };
-  pipeline_state_desc.SampleMask            = UINT_MAX;
-  pipeline_state_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-  pipeline_state_desc.NumRenderTargets      = 1;
-  pipeline_state_desc.RTVFormats[0]         = DXGI_FORMAT_B8G8R8A8_UNORM;
-  pipeline_state_desc.SampleDesc.Count      = 1;
-  err_if(core->device()->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
-          "failed to create pipeline state");
+  auto dynamic_state = VkPipelineDynamicStateCreateInfo{ VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+  dynamic_state.dynamicStateCount = (uint32_t)dynamics.size();
+  dynamic_state.pDynamicStates    = dynamics.data();
+
+  auto graphics_pipeline_create_info = VkGraphicsPipelineCreateInfo{ VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+  graphics_pipeline_create_info.pNext               = &rendering_info;
+  graphics_pipeline_create_info.stageCount          = static_cast<uint32_t>(shader_stages.size());
+  graphics_pipeline_create_info.pStages             = shader_stages.data();
+  graphics_pipeline_create_info.pVertexInputState   = &vertex_input_state;
+  graphics_pipeline_create_info.pInputAssemblyState = &input_assembly_state;
+  graphics_pipeline_create_info.pTessellationState  = nullptr;
+  graphics_pipeline_create_info.pViewportState      = &viewport_state;
+  graphics_pipeline_create_info.pRasterizationState = &rasterization_state;
+  graphics_pipeline_create_info.pMultisampleState   = &multisample_state;
+  graphics_pipeline_create_info.pDepthStencilState  = &depth_stencil_state;
+  graphics_pipeline_create_info.pColorBlendState    = &color_blend_state;
+  graphics_pipeline_create_info.pDynamicState       = &dynamic_state;
+  graphics_pipeline_create_info.layout              = _pipeline_layout;
+
+  err_if(vkCreateGraphicsPipelines(core->device(), nullptr, 1, &graphics_pipeline_create_info, nullptr, &_pipeline) != VK_SUCCESS,
+          "failed to create pipeline");
+
+  // destroy shader modules
+  vkDestroyShaderModule(core->device(), shader_stages[0].module, nullptr);
+  vkDestroyShaderModule(core->device(), shader_stages[1].module, nullptr);
+}
+
+void Renderer::destroy_pipeline_resource() const noexcept
+{
+  auto core = Core::instance();
+
+  vkDestroyPipeline(core->device(), _pipeline, nullptr);
+  vkDestroyPipelineLayout(core->device(), _pipeline_layout, nullptr);
+  vkDestroyDescriptorSetLayout(core->device(), _descriptor_set_layout, nullptr);
 }
 
 void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept
 {
-  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->get_last_fence_value()]()
+  auto core = Core::instance();
+  _current_frame_render_finish_procs.emplace_back(
+  [func, last_fence_value = core->get_last_fence_value(), frame_index = core->frame_index()]
+  (bool directly_destroy)
   {
     auto fence_value = Core::instance()->fence()->GetCompletedValue();
     err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
-    auto render_complete = fence_value >= last_fence_value;
+    auto render_complete = fence_value >= last_fence_value && Core::instance()->frame_index() == frame_index || directly_destroy;
     if (render_complete) func();
     return render_complete;
   });
@@ -184,8 +220,7 @@ void Renderer::run() noexcept
       return;
 
     // process last render finish processes
-    for (auto it = _current_frame_render_finish_procs.begin(); it != _current_frame_render_finish_procs.end();)
-      (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
+    process_frame_render_finish_procs(false);
 
     MessageQueue::instance()->process_messages();
 
@@ -210,6 +245,11 @@ void Renderer::update() noexcept
   {
     auto& window         = v.window;
     auto& frame_resource = v.frame_resource;
+
+    // clear vertices and indices
+    frame_resource.vertices.clear();
+    frame_resource.indices.clear();
+    frame_resource.idx_beg = {};
     
     frame_resource.vertices.append_range(std::vector<Vertex>
     {
@@ -229,24 +269,44 @@ void Renderer::update() noexcept
 
 void Renderer::render() noexcept
 {
-  for (auto& [k, wr] : _window_resources) wr.render();
+  auto core = Core::instance();
 
-  // execute command list
-  auto cmds_view = _window_resources | std::views::values
-                                     | std::views::transform([] (auto const& wr) { return wr.frame_resource.cmd.Get(); });
-  auto cmds      = std::vector<ID3D12CommandList*>{ cmds_view.begin(), cmds_view.end() };
-  Core::instance()->command_queue()->ExecuteCommandLists(cmds.size(), cmds.data());
+  if (!core->current_frame_available()) return;
+
+  auto cmds = std::vector<VkCommandBuffer>{};
+  cmds.reserve(_window_resources.size());
+  for (auto& [_, wr] : _window_resources)
+  {
+    wr.render();
+    cmds.emplace_back(wr.frame_resource.cmds[core->frame_index()]);
+  }
+
+  // submit queue
+  auto submit_info = VkSubmitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
+  submit_info.commandBufferCount = cmds.size();
+  submit_info.pCommandBuffers    = cmds.data();
+  err_if(vkQueueSubmit(core->queue(), 1, &submit_info, core->queue_fence()), "failed to submit commands");
+
+  // TODO: why initialize so slow...
+  // TODO: move and resize has problem
+  // TODO: the transparent of triangle problem also exist, use vulkan is not resolve... maybe is window style problem?
+  //       in vk-transparent-window, it's not have the nvidia tag in start program...
+  // TODO: check destroy old resources have any problem?
 
   // present swapchain
   for (auto const& [k, wr] : _window_resources)
   {
+    // TODO: https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present
+    //       use present1, and fullscreen optionmal also have
+    //       and sometimes block, to read Multithreading Considerations. in above link
+    //       see variable frame rate in above link
     if (wr.window.moving || wr.window.resizing)
-      err_if(_fullscreen_swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
+      err_if(_fullscreen_swapchain_resource.swapchain->Present(0, 0), "failed to present swapchain");
     else
-      err_if(wr.swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
+      err_if(wr.swapchain_resource.swapchain->Present(0, 0), "failed to present swapchain");
   }
   
-  Core::instance()->move_to_next_frame();
+  core->move_to_next_frame();
 }
 
 }}

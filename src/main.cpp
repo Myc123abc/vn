@@ -16,7 +16,7 @@ int main()
 
   std::thread([&]
   { 
-    std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+    std::this_thread::sleep_until(std::chrono::steady_clock::now() + std::chrono::seconds(5));
     wm->create_window(150, 150, 250, 250);
   }).detach();
 

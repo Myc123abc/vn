@@ -33,28 +33,37 @@ public:
   void init() noexcept;
   void destroy() noexcept;
 
+  void acquire_render() noexcept { _render_acquire.release(); }
+
+private:
   void create_pipeline_resource() noexcept;
+  void destroy_pipeline_resource() const noexcept;
 
   void run() noexcept;
 
   void update() noexcept;
   void render() noexcept;
 
-  void acquire_render() noexcept { _render_acquire.release(); }
-
   void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
+  
+  void process_frame_render_finish_procs(bool directly_destroy) noexcept
+  {
+    for (auto it = _current_frame_render_finish_procs.begin(); it != _current_frame_render_finish_procs.end();)
+      (*it)(directly_destroy) ? it = _current_frame_render_finish_procs.erase(it) : ++it;
+  }
 
 private:
-  std::thread                                 _thread;
-  std::atomic_bool                            _exit{ false };
-  std::binary_semaphore                       _render_acquire{ 0 };
-  std::deque<std::function<bool()>>           _current_frame_render_finish_procs;
+  std::thread                              _thread;
+  std::atomic_bool                         _exit{ false };
+  std::binary_semaphore                    _render_acquire{ 0 };
+  std::deque<std::function<bool(bool)>>    _current_frame_render_finish_procs;
 
-  Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;
-  Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;
+  VkDescriptorSetLayout                    _descriptor_set_layout{};
+  VkPipelineLayout                         _pipeline_layout{};
+  VkPipeline                               _pipeline{};
 
-  std::unordered_map<HWND, WindowResource>    _window_resources;
-  SwapchainResource                           _fullscreen_swapchain_resource;
+  std::unordered_map<HWND, WindowResource> _window_resources;
+  SwapchainResource                        _fullscreen_swapchain_resource;
 };
 
 }}
