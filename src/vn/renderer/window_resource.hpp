@@ -1,23 +1,24 @@
 #pragma once
 
-#include "config.hpp"
+#include "image.hpp"
 #include "memory_allocator.hpp"
 #include "window.hpp"
 
-#include <wrl/client.h>
 #include <dcomp.h>
-
-#include <vulkan/vulkan.h>
-
-#include <array>
 
 namespace vn { namespace renderer {
 
 struct SwapchainResource
 {
-  Microsoft::WRL::ComPtr<IDXGISwapChain4> swapchain{};
-  std::array<Image, Frame_Count>          images{};
-  bool                                    transparent{};
+  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
+
+  Microsoft::WRL::ComPtr<IDXGISwapChain4>      swapchain;
+  std::array<SwapchainImageType, Frame_Count>  swapchain_images;
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap;
+  CD3DX12_VIEWPORT                             viewport;
+  CD3DX12_RECT                                 scissor;
+  HWND                                         handle;
+  bool                                         transparent;
 
 private:
   Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
@@ -25,24 +26,33 @@ private:
   Microsoft::WRL::ComPtr<IDCompositionVisual>  _comp_visual;
 
 public:
-  void init(HWND handle, uint32_t width, uint32_t height, bool transparent = false) noexcept;
-  void destroy() noexcept;
 
-  auto current_image() noexcept { return &images[swapchain->GetCurrentBackBufferIndex()]; }
+  void init(HWND handle, uint32_t width, uint32_t height, bool transparent = false) noexcept;
+
+  auto current_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
+
+  auto rtv() const noexcept
+  { 
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE{
+      rtv_heap->GetCPUDescriptorHandleForHeapStart(),
+      static_cast<int>(swapchain->GetCurrentBackBufferIndex()),
+      RTV_Size};
+  }
 
   void resize(uint32_t width, uint32_t height) noexcept;
 };
 
 struct FrameResource
 {
-  std::array<VkCommandBuffer, Frame_Count> cmds;
-  FrameBuffer                              buffer;
-  std::vector<Vertex>                      vertices;
-  std::vector<uint16_t>                    indices;
-  uint16_t                                 idx_beg{};
+  std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, Frame_Count> command_allocators;
+  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd;
+
+  FrameBuffer           frame_buffer;
+  std::vector<Vertex>   vertices;
+  std::vector<uint16_t> indices;
+  uint16_t              idx_beg{};
 
   void init() noexcept;
-  void destroy() const noexcept;
 };
 
 struct WindowResource
@@ -52,12 +62,6 @@ struct WindowResource
   FrameResource     frame_resource;
 
   void init(Window const& window) noexcept;
-
-  void destroy() noexcept
-  {
-    swapchain_resource.destroy();
-    frame_resource.destroy();
-  }
 
   void render() noexcept;
 };

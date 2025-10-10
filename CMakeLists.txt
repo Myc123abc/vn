@@ -3,17 +3,13 @@ project(vn)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 ################################################################################
 ###                                Dependencies
 ################################################################################
 
-find_package(Vulkan)
-
-add_subdirectory(vendor/vma)
-add_subdirectory(vendor/glslang)
+add_subdirectory(vendor/DirectX-Headers)
 add_subdirectory(vendor/glm)
 add_subdirectory(vendor/SPSCQueue)
 
@@ -29,19 +25,16 @@ add_executable(test ${SRC})
 target_compile_definitions(test PRIVATE
   WIN32_LEAN_AND_MEAN
   NOMINMAX
-  GLM_FORCE_DEPTH_ZERO_TO_ONE
-  GLM_FORCE_RADIANS
+  UTF_CPP_CPLUSPLUS=202002L
 )
 target_link_libraries(test PRIVATE
-  Vulkan::Vulkan
-  GPUOpen::VulkanMemoryAllocator
-  glslang::glslang
-  glslang::glslang-default-resource-limits
-  d3d12 dxgi dcomp
+  d3d12 dxgi dxcompiler dcomp
+  DirectX-Headers
   SPSCQueue
 )
 target_include_directories(test PRIVATE
   vendor/glm
+  vendor/utfcpp/source
 )
 
 ################################################################################

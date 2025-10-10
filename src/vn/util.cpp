@@ -4,7 +4,7 @@
 
 namespace vn {
 
-auto read_file(std::string_view path) noexcept -> std::string
+auto read_file(std::string_view path) noexcept -> std::vector<std::byte>
 {
   FILE* file{};
   fopen_s(&file, path.data(), "rb");
@@ -14,8 +14,7 @@ auto read_file(std::string_view path) noexcept -> std::string
   auto size = ftell(file);
   rewind(file);
 
-  auto data = std::string{};
-  data.resize(size);
+  auto data = std::vector<std::byte>(size);
   fread(data.data(), 1, size, file);
   fclose(file);
 

@@ -1,11 +1,5 @@
 #include "window_resource.hpp"
 #include "renderer.hpp"
-#include "core.hpp"
-#include "../util.hpp"
-
-#include <vulkan/vulkan_win32.h>
-
-#include <algorithm>
 
 using namespace Microsoft::WRL;
 
@@ -13,17 +7,22 @@ namespace vn { namespace renderer {
 
 void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool transparent) noexcept
 {
+  this->handle      = handle;
   this->transparent = transparent;
-
+  
   auto core = Core::instance();
 
-  // create dxgi swapchain
-  auto swapchain = ComPtr<IDXGISwapChain1>{};
-  auto swapchain_desc = DXGI_SWAP_CHAIN_DESC1{};
+  // set viewport and scissor
+  viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(width), static_cast<float>(height) };
+  scissor  = CD3DX12_RECT{     0,   0,   static_cast<LONG>(width),  static_cast<LONG>(height)  };
+
+  // create swapchain
+  ComPtr<IDXGISwapChain1> swapchain;
+  DXGI_SWAP_CHAIN_DESC1 swapchain_desc{};
   swapchain_desc.BufferCount      = Frame_Count;
   swapchain_desc.Width            = width;
   swapchain_desc.Height           = height;
-  swapchain_desc.Format           = Swapchain_Image_Format_DXGI;
+  swapchain_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
@@ -50,30 +49,40 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   else
     err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
             "failed to create swapchain");
-  err_if(swapchain.As(&this->swapchain), "failed to get swapchain");
+  err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
 
+  // create descriptor heaps
+  D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
+  rtv_heap_desc.NumDescriptors = Frame_Count;
+  rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+  err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&rtv_heap)),
+    "failed to create render target view descriptor heap");
+
+  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
   for (auto i = 0; i < Frame_Count; ++i)
   {
-    auto resource = ComPtr<ID3D12Resource>{};
-    err_if(swapchain->GetBuffer(i, IID_PPV_ARGS(&resource)), "failed to get dxgi swapchain image");
-    images[i].init(resource.Get(), width, height, Swapchain_Image_Format_Vulkan);
+    // get swapchain image
+    swapchain_images[i].init(swapchain.Get(), i)
+                       .create_descriptor(rtv_handle);
+    // offset next swapchain image
+    rtv_handle.Offset(1, RTV_Size);
   }
-}
-
-void SwapchainResource::destroy() noexcept
-{
-  std::ranges::for_each(images, [](auto& image) { image.destroy(); });
 }
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 {
   auto core = Core::instance();
 
+  // set viewport and scissor
+  viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(width), static_cast<float>(height) };
+  scissor  = CD3DX12_RECT{     0,   0,   static_cast<LONG>(width),  static_cast<LONG>(height)  };
+
   // wait gpu finish
   core->wait_gpu_complete();
 
   // reset swapchain relation resources
-  std::ranges::for_each(images, [](auto& image) { image.destroy(); });
+  for (auto i = 0; i < Frame_Count; ++i)
+    swapchain_images[i].destroy();
   if (transparent)
     _comp_visual->SetContent(nullptr);
 
@@ -90,12 +99,15 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
             "failed to commit composition device");
   }
 
-  // get swapchain images
+  // reget swapchain images
+  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
   for (auto i = 0; i < Frame_Count; ++i)
   {
-    auto resource = ComPtr<ID3D12Resource>{};
-    err_if(swapchain->GetBuffer(i, IID_PPV_ARGS(&resource)), "failed to get dxgi swapchain image");
-    images[i].init(resource.Get(), width, height, Swapchain_Image_Format_Vulkan);
+    // get swapchain image
+    swapchain_images[i].init(swapchain.Get(), i)
+                       .create_descriptor(rtv_handle);
+    // offset next swapchain image
+    rtv_handle.Offset(1, RTV_Size);
   }
 }
 
@@ -103,108 +115,96 @@ void FrameResource::init() noexcept
 {
   auto core = Core::instance();
 
-  // create command buffers
-  auto command_buffer_allocate_info = VkCommandBufferAllocateInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-  command_buffer_allocate_info.commandPool        = core->command_pool();
-  command_buffer_allocate_info.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  command_buffer_allocate_info.commandBufferCount = cmds.size();
-  err_if(vkAllocateCommandBuffers(core->device(), &command_buffer_allocate_info, cmds.data()) != VK_SUCCESS,
-          "failed to create command buffers");
+  for (auto i = 0; i < Frame_Count; ++i)
+  {
+    // get command allocator
+    err_if(core->device()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocators[i])),
+        "failed to create command allocator");
+  }
+
+  // create command list
+  err_if(core->device()->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, command_allocators[0].Get(), nullptr, IID_PPV_ARGS(&cmd)),
+          "failed to create command list");
+  err_if(cmd->Close(), "failed to close command list");
 
   // init frame buffer
-  buffer.init(1024); // TODO: test dynamic raise up buffer
-}
-
-void FrameResource::destroy() const noexcept
-{
-  buffer.destroy();
+  frame_buffer.init(1024);
 }
 
 void WindowResource::init(Window const& window) noexcept
 {
   this->window = window;
-
   swapchain_resource.init(window.handle, window.width, window.height);
   frame_resource.init();
 
   // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle]
-  { 
-    ShowWindow(handle, SW_SHOW);
-    UpdateWindow(handle);
-  });
+  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle] { ShowWindow(handle, SW_SHOW); });
 }
 
 void WindowResource::render() noexcept
 {
-  auto  core               = Core::instance();
-  auto  renderer           = Renderer::instance();
-  auto  cmd                = frame_resource.cmds[core->frame_index()];
+  auto core      = Core::instance();
+  auto renderer  = Renderer::instance();
+  auto cmd_alloc = frame_resource.command_allocators[core->frame_index()].Get();
+  auto cmd       = frame_resource.cmd.Get();
+
   auto& swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : this->swapchain_resource;
   auto  swapchain_image    = swapchain_resource.current_image();
-
-  // reset command buffer
-  err_if(vkResetCommandBuffer(cmd, 0), "failed to reset command buffer");
+  auto  rtv_handle         = swapchain_resource.rtv();
   
-  // start to record commands
-  auto command_buffer_begin_info = VkCommandBufferBeginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-  command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  err_if(vkBeginCommandBuffer(cmd, &command_buffer_begin_info), "failed to begin record command");
+  // reset command allocator and command list
+  err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(cmd->Reset(cmd_alloc, nullptr), "failed to reset command list");
 
-  // render begin
-  swapchain_image->set_layout(cmd, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+  // set pipeline state
+  cmd->SetPipelineState(renderer->_pipeline_state.Get());
 
-  auto color_attachment_info = VkRenderingAttachmentInfo{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-  color_attachment_info.imageView   = swapchain_image->view();
-  color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  color_attachment_info.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  color_attachment_info.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+  // set root signature
+  cmd->SetGraphicsRootSignature(renderer->_root_signature.Get());
 
-  auto rendering_info = VkRenderingInfo{ VK_STRUCTURE_TYPE_RENDERING_INFO };
-  rendering_info.renderArea.extent    = swapchain_image->extent();
-  rendering_info.layerCount           = 1;
-  rendering_info.colorAttachmentCount = 1;
-  rendering_info.pColorAttachments    = &color_attachment_info;
+  // set viewport and scissor rectangle
+  cmd->RSSetViewports(1, &swapchain_resource.viewport);
+  cmd->RSSetScissorRects(1, &swapchain_resource.scissor);
 
-  vkCmdBeginRendering(cmd, &rendering_info);
+  // convert render target view from present type to render target type
+  swapchain_image->set_state<ImageState::render_target>(cmd);
 
-  //
-  // render window
-  //
-  
-  // set scissor and viewport
-  auto scissor = VkRect2D{};
-  scissor.extent = swapchain_image->extent();
-  vkCmdSetScissor(cmd, 0, 1, &scissor);
-  auto viewport = VkViewport{};
-  viewport.width    = static_cast<float>(scissor.extent.width);
-  viewport.height   = static_cast<float>(scissor.extent.height);
-  viewport.maxDepth = 1.f;
-  vkCmdSetViewport(cmd, 0, 1, &viewport);
+  // set render target view
+  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
-  // bind and set pipeline
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->_pipeline);
-  //vkCmdBindDescriptorSets(frame->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->_pipeline_layout, 0, 0, nullptr, 0, nullptr);
-  auto pc = PushConstant{};
-  pc.vertices         = frame_resource.buffer.address(core->frame_index());
-  pc.window_extent    = { scissor.extent.width, scissor.extent.height };
+  // clear color
+  float constexpr clear_color[4]{};
+  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+
+  // set primitive topology
+  cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+  // clear frame buffer
+  frame_resource.frame_buffer.clear();
+
+  // upload vertices and indices
+  frame_resource.frame_buffer.upload(cmd, frame_resource.vertices, frame_resource.indices);
+
+  // set constant
+  auto constants = Constants{};
+  constants.window_extent = swapchain_image->extent();
   if (window.moving || window.resizing)
-    pc.window_pos = window.pos();
-  vkCmdPushConstants(cmd, renderer->_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+    constants.window_pos = window.pos();
+  cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
 
-  // upload buffer
-  frame_resource.buffer.clear();
-  frame_resource.buffer.upload(cmd, frame_resource.vertices, frame_resource.indices);
-  
   // draw
-  vkCmdDrawIndexed(cmd, frame_resource.indices.size(), 1, 0, 0, 0);
+  cmd->DrawIndexedInstanced(frame_resource.indices.size(), 1, 0, 0, 0);
 
-  // render end
-  vkCmdEndRendering(cmd);
+  // clear vertices and indices
+  frame_resource.vertices.clear();
+  frame_resource.indices.clear();
+  frame_resource.idx_beg = {};
 
-  // end command buffer
-  swapchain_image->set_layout(cmd, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
-  err_if(vkEndCommandBuffer(cmd), "failed to end command buffer");
+  // record finish, change render target view type to present
+  swapchain_image->set_state<ImageState::present>(cmd);
+
+  // close command list
+  err_if(cmd->Close(), "failed to close command list");
 }
 
 }}

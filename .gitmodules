@@ -1,12 +1,12 @@
+[submodule "vendor/DirectX-Headers"]
+	path = vendor/DirectX-Headers
+	url = https://github.com/microsoft/DirectX-Headers.git
 [submodule "vendor/glm"]
 	path = vendor/glm
 	url = https://github.com/g-truc/glm
+[submodule "vendor/utfcpp"]
+	path = vendor/utfcpp
+	url = https://github.com/nemtrif/utfcpp.git
 [submodule "vendor/SPSCQueue"]
 	path = vendor/SPSCQueue
 	url = https://github.com/rigtorp/SPSCQueue.git
-[submodule "vendor/vma"]
-	path = vendor/vma
-	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-[submodule "vendor/glslang"]
-	path = vendor/glslang
-	url = https://github.com/KhronosGroup/glslang

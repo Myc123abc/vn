@@ -23,7 +23,7 @@ void MessageQueue::process_messages() noexcept
       }
       else if constexpr (std::is_same_v<T, Message_Destroy_Window_Render_Resource>)
       {
-        renderer->add_current_frame_render_finish_proc([old_window_resource = wr[data.handle]] mutable { old_window_resource.destroy(); });
+        renderer->add_current_frame_render_finish_proc([old_window_resource = wr[data.handle]] {});
         wr.erase(data.handle);
       }
       else if constexpr (std::is_same_v<T, Message_Create_Fullscreen_Window_Render_Resource>)

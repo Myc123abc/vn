@@ -3,13 +3,13 @@
 ## TODO
 
 ### Core Systems
-- [ ] Renderer
-- [ ] Window Manager
-- [ ] SDF Rendering
-- [ ] UI System
-- [ ] Text Engine
-- [ ] Audio Engine
-- [ ] Video Engine
+- [ ] Renderer (dx12)
+- [ ] Window Manager (win32)
+- [ ] SDF Rendering (HLSL)
+- [ ] UI System (Immediate Mode GUI)
+- [ ] Text Engine (FreeType, HarfBuzz, utfcpp)
+- [ ] Audio Engine (FFmpeg, miniaudio)
+- [ ] Video Engine (FFmpeg)
 - [ ] Script System
 - [ ] Advanced Effects
 
@@ -23,7 +23,7 @@
 
 | Library | License | Link |
 |--|--|--|
-|VulkanMemoryAllocator|MIT|https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator|
-|glslang|MIT|https://github.com/KhronosGroup/glslang|
+|DirectX-Headers|MIT|https://github.com/microsoft/DirectX-Headers|
 |glm|MIT|https://github.com/g-truc/glm|
+|utfcpp|MIT|https://github.com/nemtrif/utfcpp|
 |SPSCQueue|MIT|https://github.com/rigtorp/SPSCQueue|

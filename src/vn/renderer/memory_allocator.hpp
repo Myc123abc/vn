@@ -1,26 +1,29 @@
 #pragma once
 
-#include <d3d12.h>
+#include "core.hpp"
+#include "../util.hpp"
 
-#include <vk_mem_alloc.h>
+#include <d3d12.h>
+#include <wrl/client.h>
+#include <directx/d3dx12.h>
+
 #include <glm/glm.hpp>
 
 #include <ranges>
 
 namespace vn { namespace renderer {
 
-struct alignas(8) Vertex
+struct Vertex
 {
   glm::vec2 pos{};
   glm::vec2 uv{};
-  uint32_t  color{};
+	uint32_t  color{};
 };
 
-struct PushConstant
+struct Constants
 {
-  VkDeviceAddress       vertices{};
   glm::vec<2, uint32_t> window_extent{};
-  glm::vec<2, int>      window_pos{};
+  glm::vec<2, int32_t>  window_pos{};
 };
 
 class FrameBuffer
@@ -34,13 +37,14 @@ public:
   FrameBuffer& operator=(FrameBuffer&&)      = delete;
 
   void init(uint32_t per_frame_capacity) noexcept;
-  void destroy() const noexcept;
 
-  void clear() noexcept { _size = {}; }
+  void clear() noexcept
+  {
+    _size          = 0;
+    _window_offset = 0;
+  }
 
-  void upload(VkCommandBuffer cmd, std::span<Vertex> vertices, std::span<uint16_t> indices) noexcept;
-
-  auto address(uint32_t frame_index) const noexcept { return _address + frame_index * _per_frame_capacity; }
+  void upload(ID3D12GraphicsCommandList* command_list, std::span<Vertex> vertices, std::span<uint16_t> indices) noexcept;
 
 private:
   auto append(void const* data, uint32_t size) noexcept -> uint32_t;
@@ -52,43 +56,91 @@ private:
     return append(std::ranges::data(values), std::ranges::size(values) * sizeof(std::ranges::range_value_t<T>));
   }
 
-  auto get_buffer_pointer(uint32_t frame_index) const noexcept -> std::byte*;
+  inline auto get_current_frame_buffer_pointer() const noexcept -> std::byte*;
+  inline auto get_current_frame_buffer_address() const noexcept -> D3D12_GPU_VIRTUAL_ADDRESS;
 
 private:
-  VkBuffer        _buffer{};
-  VmaAllocation   _allocation{};
-  VkDeviceAddress _address{};
-  void*           _data{};
-  uint32_t        _per_frame_capacity{};
-  uint32_t        _size{};
+  Microsoft::WRL::ComPtr<ID3D12Resource> _buffer;
+  std::byte*                             _pointer{};
+  uint32_t                               _per_frame_capacity{};
+  uint32_t                               _size{};
+  uint32_t                               _window_offset{};
 };
 
-class Image
+enum class DescriptorHeapType
+{
+  cbv_srv_uav,
+};
+
+template <DescriptorHeapType T>
+auto constexpr dx12_descriptor_heap_type()
+{
+  if constexpr (T == DescriptorHeapType::cbv_srv_uav)
+    return D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  else
+    static_assert(false, "unsupport descriptor heap type now");
+}
+
+template <DescriptorHeapType T>
+auto constexpr dx12_descriptor_heap_flags()
+{
+  if constexpr (T == DescriptorHeapType::cbv_srv_uav)
+    return D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+  else
+    static_assert(false, "unsupport descriptor heap flags now");
+}
+
+template <DescriptorHeapType T>
+auto constexpr dx12_descriptor_size()
+{
+  if constexpr (T == DescriptorHeapType::cbv_srv_uav)
+    return CBV_SRV_UAV_Size;
+  else
+    static_assert(false, "unsupport descriptor size now");
+}
+
+template <DescriptorHeapType Type>
+class DescriptorHeap
 {
 public:
-  Image()                        = default;
-  ~Image()                       = default;
-  Image(Image const&)            = default;
-  Image(Image&&)                 = delete;
-  Image& operator=(Image const&) = default;
-  Image& operator=(Image&&)      = delete;
+  DescriptorHeap()                                 = default;
+  ~DescriptorHeap()                                = default;
+  DescriptorHeap(DescriptorHeap const&)            = default;
+  DescriptorHeap(DescriptorHeap&&)                 = delete;
+  DescriptorHeap& operator=(DescriptorHeap const&) = default;
+  DescriptorHeap& operator=(DescriptorHeap&&)      = delete;
 
-  void init(VkImage image, uint32_t width, uint32_t height, VkFormat format) noexcept;
-  void init(ID3D12Resource* resource, uint32_t width, uint32_t height, VkFormat format) noexcept;
-  void destroy() noexcept;
+  void init(uint32_t size) noexcept
+  {
+    _size     = 0;
+    _capacity = size;
 
-  void set_layout(VkCommandBuffer cmd, VkImageLayout layout) noexcept;
+    auto heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
+    heap_desc.NumDescriptors = size;
+    heap_desc.Type           = dx12_descriptor_heap_type<Type>();
+    heap_desc.Flags          = dx12_descriptor_heap_flags<Type>();
+    err_if(Core::instance()->device()->CreateDescriptorHeap(&heap_desc, IID_PPV_ARGS(&_heap)), "failed to create descriptor heap");
+    _current_handle = _heap->GetCPUDescriptorHandleForHeapStart();
+  }
 
-  auto view()   const noexcept { return _view;   }
-  auto extent() const noexcept { return _extent; }
+  auto pop_handle() noexcept
+  {
+    err_if(_size + 1 > _capacity, "TODO: dynamic expand heap");
+    ++_size;
+    auto handle = _current_handle;
+    _current_handle.Offset(dx12_descriptor_size<Type>());
+    return handle;
+  }
+
+  auto handle() const noexcept { return _heap.Get(); }
+
+  auto gpu_handle() const noexcept { return _heap->GetGPUDescriptorHandleForHeapStart(); }
 
 private:
-  VkImage       _image{};
-  VmaAllocation _allocation{};
-  VkImageView   _view{};
-  VkExtent2D    _extent{};
-  VkFormat      _format{};
-  VkImageLayout _layout{};
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>                 _heap;
+  uint32_t                                                     _capacity{};
+  uint32_t                                                     _size{};
+  CD3DX12_CPU_DESCRIPTOR_HANDLE                                _current_handle{};
 };
 
 }}
