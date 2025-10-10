@@ -28,38 +28,6 @@ auto to_32_bits(uint64_t x) noexcept -> std::pair<uint32_t, uint32_t>
 
 namespace vn { namespace renderer {
 
-void WindowManager::init() noexcept
-{
-  // register window class
-  WNDCLASSEXW wnd_class{};
-  wnd_class.lpszClassName = Fullscreen_Class;
-  wnd_class.cbSize        = sizeof(wnd_class);
-  wnd_class.hInstance     = GetModuleHandleW(nullptr);
-  wnd_class.lpfnWndProc   = DefWindowProcW;
-  err_if(!RegisterClassExW(&wnd_class), "failed register class");
-  wnd_class.lpszClassName = Window_Class;
-  wnd_class.lpfnWndProc   = wnd_proc;
-  err_if(!RegisterClassExW(&wnd_class), "failed register class");
-    
-  // create fullscreen
-  auto screen_size = get_screen_size();
-  _fullscreen_window_handle = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,
-    0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
-  err_if(!_fullscreen_window_handle,  "failed to create window");
-  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, 0, 0, screen_size.x, screen_size.y } });
-}
-
-void WindowManager::message_process() noexcept
-{
-  MSG msg{};
-  while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
-  {
-    process_message(msg);
-    TranslateMessage(&msg);
-    DispatchMessageW(&msg);
-  }
-}
-
 LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept
 {
   static auto wm        = WindowManager::instance();
@@ -70,8 +38,42 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   static auto resize_type = Window::ResizeType{};
   static auto lm_down     = bool{};
 
+  auto finish_window_moving_or_resizing = [&]
+  {
+    if (lm_down)
+    {
+      ReleaseCapture();
+      lm_down = false;
+        
+      auto& window = wm->_windows[handle];
+
+      if (window.moving)
+      {
+        window.moving = {};
+        wm->_moving_or_resizing_window = window;
+        msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
+      }
+      else if (resize_type != Window::ResizeType::none)
+      {
+        window.resizing = {};
+        wm->_moving_or_resizing_window = window;
+        msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
+        msg_queue->send_message(MessageQueue::Message_Resize_window{ window });
+      }
+    }
+  };
+
   switch (msg)
   {
+  case WM_CANCELMODE:
+  {
+    if (LOWORD(w_param) == WA_INACTIVE)
+    {
+      finish_window_moving_or_resizing();
+    }
+    break;
+  }
+
   case WM_DESTROY:
   {
     msg_queue->send_message(MessageQueue::Message_Destroy_Window_Render_Resource{ handle });
@@ -90,24 +92,7 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
 
   case WM_LBUTTONUP:
   {
-    ReleaseCapture();
-    lm_down = false;
-    
-    auto& window = wm->_windows[handle];
-
-    if (window.moving)
-    {
-      window.moving      = {};
-      wm->_moving_or_resizing_window = window;
-      msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
-    }
-    else if (resize_type != Window::ResizeType::none)
-    {
-      window.resizing      = {};
-      wm->_moving_or_resizing_window = window;
-      msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
-      msg_queue->send_message(MessageQueue::Message_Resize_window{ window });
-    }
+    finish_window_moving_or_resizing();
     break;
   }
 
@@ -166,6 +151,38 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   return DefWindowProcW(handle, msg, w_param, l_param);
 }
 
+void WindowManager::init() noexcept
+{
+  // register window class
+  WNDCLASSEXW wnd_class{};
+  wnd_class.lpszClassName = Fullscreen_Class;
+  wnd_class.cbSize        = sizeof(wnd_class);
+  wnd_class.hInstance     = GetModuleHandleW(nullptr);
+  wnd_class.lpfnWndProc   = DefWindowProcW;
+  err_if(!RegisterClassExW(&wnd_class), "failed register class");
+  wnd_class.lpszClassName = Window_Class;
+  wnd_class.lpfnWndProc   = wnd_proc;
+  err_if(!RegisterClassExW(&wnd_class), "failed register class");
+    
+  // create fullscreen
+  auto screen_size = get_screen_size();
+  _fullscreen_window_handle = CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,
+    0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
+  err_if(!_fullscreen_window_handle,  "failed to create window");
+  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, 0, 0, screen_size.x, screen_size.y } });
+}
+
+void WindowManager::message_process() noexcept
+{
+  MSG msg{};
+  while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+  {
+    process_message(msg);
+    TranslateMessage(&msg);
+    DispatchMessageW(&msg);
+  }
+}
+
 void WindowManager::process_message(MSG const& msg) noexcept
 {
   switch (msg.message)
@@ -207,13 +224,14 @@ void WindowManager::end_use_fullscreen_window() const noexcept
 void WindowManager::process_begin_use_fullscreen_window() noexcept
 {
   ShowWindow(_fullscreen_window_handle, SW_SHOW);
-  ShowWindow(_moving_or_resizing_window.handle, SW_HIDE);
+  auto rect = RECT{};
+  SetWindowRgn(_moving_or_resizing_window.handle, CreateRectRgnIndirect(&rect), false);
 }
 
 void WindowManager::process_end_use_fullscreen_window() noexcept
 {
   SetWindowPos(_moving_or_resizing_window.handle, 0, _moving_or_resizing_window.x, _moving_or_resizing_window.y, _moving_or_resizing_window.width, _moving_or_resizing_window.height, 0);
-  ShowWindow(_moving_or_resizing_window.handle, SW_SHOW);
+  SetWindowRgn(_moving_or_resizing_window.handle, nullptr, false);
   ShowWindow(_fullscreen_window_handle, SW_HIDE);
 }
 
