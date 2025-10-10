@@ -13,7 +13,7 @@
 
 namespace vn { namespace renderer {
 
-struct Vertex
+struct alignas(8) Vertex
 {
   glm::vec2 pos{};
   glm::vec2 uv{};
@@ -38,11 +38,7 @@ public:
 
   void init(uint32_t per_frame_capacity) noexcept;
 
-  void clear() noexcept
-  {
-    _size          = 0;
-    _window_offset = 0;
-  }
+  void clear() noexcept { _size = {}; }
 
   void upload(ID3D12GraphicsCommandList* command_list, std::span<Vertex> vertices, std::span<uint16_t> indices) noexcept;
 
@@ -64,7 +60,6 @@ private:
   std::byte*                             _pointer{};
   uint32_t                               _per_frame_capacity{};
   uint32_t                               _size{};
-  uint32_t                               _window_offset{};
 };
 
 enum class DescriptorHeapType

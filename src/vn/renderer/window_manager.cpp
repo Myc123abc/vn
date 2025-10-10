@@ -3,15 +3,16 @@
 #include "renderer.hpp"
 #include "message_queue.hpp"
 
+using namespace vn::renderer;
+
 namespace
 {
 
 constexpr wchar_t Fullscreen_Class[] = L"vn::WindowManager::Fullscreen";
 constexpr wchar_t Window_Class[]     = L"vn::WindowManager::Window";
 
-constexpr auto Msg_Create_Window               = WM_APP + 0;
-constexpr auto Msg_Begin_Use_Fullscreen_Window = WM_APP + 1;
-constexpr auto Msg_End_Use_Fullscreen_Window   = WM_APP + 2;
+constexpr auto Msg_Begin_Use_Fullscreen_Window = WM_APP + 0;
+constexpr auto Msg_End_Use_Fullscreen_Window   = WM_APP + 1;
 
 auto to_64_bits(uint32_t x, uint32_t y) noexcept
 {
@@ -29,49 +30,34 @@ namespace vn { namespace renderer {
 
 void WindowManager::init() noexcept
 {
-  _thread = std::thread([this]
-  {
-    _thread_id = GetCurrentThreadId();
-
-    // register window class
-    WNDCLASSEXW wnd_class{};
-    wnd_class.lpszClassName = Fullscreen_Class;
-    wnd_class.cbSize        = sizeof(wnd_class);
-    wnd_class.hInstance     = GetModuleHandleW(nullptr);
-    wnd_class.lpfnWndProc   = DefWindowProcW;
-    err_if(!RegisterClassExW(&wnd_class), "failed register class");
-    wnd_class.lpszClassName = Window_Class;
-    wnd_class.lpfnWndProc   = wnd_proc;
-    err_if(!RegisterClassExW(&wnd_class), "failed register class");
+  // register window class
+  WNDCLASSEXW wnd_class{};
+  wnd_class.lpszClassName = Fullscreen_Class;
+  wnd_class.cbSize        = sizeof(wnd_class);
+  wnd_class.hInstance     = GetModuleHandleW(nullptr);
+  wnd_class.lpfnWndProc   = DefWindowProcW;
+  err_if(!RegisterClassExW(&wnd_class), "failed register class");
+  wnd_class.lpszClassName = Window_Class;
+  wnd_class.lpfnWndProc   = wnd_proc;
+  err_if(!RegisterClassExW(&wnd_class), "failed register class");
     
-    // create fullscreen
-    auto screen_size = get_screen_size();
-    _fullscreen_window_handle = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,
-      0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
-    err_if(!_fullscreen_window_handle,  "failed to create window");
-    MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, 0, 0, screen_size.x, screen_size.y } });
-    
-    // create message queue
-    PeekMessageW(nullptr, nullptr, 0, 0, PM_NOREMOVE);
-    _message_queue_create_complete.count_down();
-    
-    // message loop
-    MSG msg{};
-    while (GetMessageW(&msg, nullptr, 0, 0))
-    {
-      if (msg.message == WM_QUIT)
-        return;
-      process_message(msg);
-      TranslateMessage(&msg);
-      DispatchMessageW(&msg);
-    }
-  });
+  // create fullscreen
+  auto screen_size = get_screen_size();
+  _fullscreen_window_handle = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,
+    0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
+  err_if(!_fullscreen_window_handle,  "failed to create window");
+  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, 0, 0, screen_size.x, screen_size.y } });
 }
 
-void WindowManager::destroy() noexcept
+void WindowManager::message_process() noexcept
 {
-  PostThreadMessageW(_thread_id, WM_QUIT, 0, 0);
-  _thread.join();
+  MSG msg{};
+  while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE))
+  {
+    process_message(msg);
+    TranslateMessage(&msg);
+    DispatchMessageW(&msg);
+  }
 }
 
 LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept
@@ -80,16 +66,15 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   static auto renderer  = Renderer::instance();
   static auto msg_queue = MessageQueue::instance();
 
-  static POINT              last_pos{};
-  static Window::ResizeType resize_type{};
-  static bool               lm_down{};
+  static auto last_pos    = POINT{};
+  static auto resize_type = Window::ResizeType{};
+  static auto lm_down     = bool{};
 
   switch (msg)
   {
   case WM_DESTROY:
   {
     msg_queue->send_message(MessageQueue::Message_Destroy_Window_Render_Resource{ handle });
-    wm->_window_count.fetch_sub(1, std::memory_order_relaxed);
     wm->_windows.erase(handle);
     return 0;
   }
@@ -157,6 +142,8 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
       // window resizing
       else
       {
+        window.adjust_offset(resize_type, pos, offset_x, offset_y);
+
         // first resizing
         if (!window.resizing)
         {
@@ -183,14 +170,6 @@ void WindowManager::process_message(MSG const& msg) noexcept
 {
   switch (msg.message)
   {
-  case Msg_Create_Window:
-  {
-    auto [x, y]          = to_32_bits(msg.wParam);
-    auto [width, height] = to_32_bits(msg.lParam);
-    process_message_create_window(x, y, width, height);
-    break;
-  }
-
   case Msg_Begin_Use_Fullscreen_Window:
   {
     process_begin_use_fullscreen_window();
@@ -207,13 +186,6 @@ void WindowManager::process_message(MSG const& msg) noexcept
 
 void WindowManager::create_window(int x, int y, uint32_t width, uint32_t height) noexcept
 {
-  _message_queue_create_complete.wait();
-  PostThreadMessageW(_thread_id, Msg_Create_Window, to_64_bits(x, y), to_64_bits(width, height));
-  _window_count.fetch_add(1, std::memory_order_relaxed);
-}
-
-void WindowManager::process_message_create_window(int x, int y, uint32_t width, uint32_t height) noexcept
-{
   auto handle = CreateWindowExW(0, Window_Class, nullptr, WS_POPUP,
     x, y, width, height, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!handle,  "failed to create window");
@@ -224,12 +196,12 @@ void WindowManager::process_message_create_window(int x, int y, uint32_t width, 
 
 void WindowManager::begin_use_fullscreen_window() const noexcept
 {
-  PostThreadMessageW(_thread_id, Msg_Begin_Use_Fullscreen_Window, 0, 0);
+  PostMessageW(_windows.begin()->first, Msg_Begin_Use_Fullscreen_Window, 0, 0);
 }
 
 void WindowManager::end_use_fullscreen_window() const noexcept
 {
-  PostThreadMessageW(_thread_id, Msg_End_Use_Fullscreen_Window, 0, 0);
+  PostMessageW(_windows.begin()->first, Msg_End_Use_Fullscreen_Window, 0, 0);
 }
 
 void WindowManager::process_begin_use_fullscreen_window() noexcept

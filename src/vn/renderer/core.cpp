@@ -68,6 +68,9 @@ void Core::wait_gpu_complete() noexcept
   // signal fence
   err_if(_command_queue->Signal(_fence.Get(), fence_value), "failed to signal fence");
 
+  // move to next frame
+  _frame_index = ++_frame_index % Frame_Count;
+
   if (_fence->GetCompletedValue() < fence_value)
   {
     // wait until frame is finished
@@ -75,8 +78,6 @@ void Core::wait_gpu_complete() noexcept
     WaitForSingleObjectEx(_fence_event, INFINITE, false);
   }
 
-  // advance frame
-  _frame_index = ++_frame_index % Frame_Count;
   // advance fence
   _fence_values[_frame_index] = fence_value + 1;
 }
@@ -87,8 +88,7 @@ void Core::move_to_next_frame() noexcept
   auto const fence_value = _fence_values[_frame_index];
 
   // signal fence
-  err_if(_command_queue->Signal(_fence.Get(), fence_value),
-          "failed to signal fence");
+  err_if(_command_queue->Signal(_fence.Get(), fence_value), "failed to signal fence");
       
   // move to next frame
   _frame_index = ++_frame_index % Frame_Count;
@@ -96,8 +96,7 @@ void Core::move_to_next_frame() noexcept
   // wait if next fence not ready
   if (_fence->GetCompletedValue() < _fence_values[_frame_index])
   {
-    err_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event),
-            "failed to set event on completion");
+    err_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event), "failed to set event on completion");
     WaitForSingleObjectEx(_fence_event, INFINITE, false);
   }
 

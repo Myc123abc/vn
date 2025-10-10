@@ -2,8 +2,7 @@
 
 #include "window.hpp"
 
-#include <rigtorp/SPSCQueue.h>
-
+#include <queue>
 #include <variant>
 
 namespace vn { namespace renderer {
@@ -55,11 +54,11 @@ public:
     Message_Resize_window
   >;
 
-  void send_message(Message const& msg) noexcept { return _message_queue.push(msg); }
+  void send_message(Message const& msg) noexcept { _message_queue.push(msg); }
   void process_messages() noexcept;
 
 private:
-  rigtorp::SPSCQueue<Message> _message_queue{ 10 };
+  std::queue<Message> _message_queue;
 };
 
 }}

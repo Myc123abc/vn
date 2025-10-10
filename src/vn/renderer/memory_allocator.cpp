@@ -8,9 +8,9 @@
 
 namespace {
 
-inline auto align(uint32_t value, uint32_t size)
+auto align(uint32_t value, uint32_t alignment) noexcept
 {
-  return (value + size - 1) & ~(size - 1);
+  return (value + alignment - 1) / alignment * alignment;
 }
 
 auto calculate_capacity(uint32_t old_capacity, uint32_t need_capacity)
@@ -37,8 +37,8 @@ namespace vn { namespace renderer {
 
 void FrameBuffer::init(uint32_t per_frame_capacity) noexcept
 {
-  _size               = 0;
-  _per_frame_capacity = align(per_frame_capacity, 256);
+  _size               = {};
+  _per_frame_capacity = align(per_frame_capacity, 8);
 
   // create buffer
   auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
@@ -104,7 +104,7 @@ void FrameBuffer::upload(ID3D12GraphicsCommandList* command_list, std::span<Vert
   auto indices_offset  = append_range(indices);
 
   // get current buffer gpu address
-  auto address = get_current_frame_buffer_address() + _window_offset;
+  auto address = get_current_frame_buffer_address();
 
   // set vertex buffer view
   D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view{};
@@ -124,9 +124,6 @@ void FrameBuffer::upload(ID3D12GraphicsCommandList* command_list, std::span<Vert
   command_list->IASetIndexBuffer(&index_buffer_view);
 
   // TODO: add indices offset for other data like shape properties
-
-  // set window offset
-  _window_offset = _size;
 }
 
 }}

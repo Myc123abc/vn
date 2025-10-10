@@ -4,8 +4,6 @@
 
 #include <glm/glm.hpp>
 
-#include <cstdint>
-
 namespace vn { namespace renderer {
 
 struct Window
@@ -25,7 +23,7 @@ public:
 
   auto pos() const noexcept { return glm::vec<2, int32_t>{ x, y }; }
 
-  void move(int x, int y) noexcept;
+  void move(int dx, int dy) noexcept;
   
   static auto constexpr Resize_Width  = 10;
   static auto constexpr Resize_Height = 10;
@@ -45,8 +43,14 @@ public:
     top,
     bottom,
   };
-  void resize(ResizeType type, int x, int y) noexcept;
+
+  void resize(ResizeType type, int dx, int dy) noexcept;
+
   auto get_resize_type(POINT const& p) const noexcept -> ResizeType;
+
+  auto point_on(POINT const& p) const noexcept -> bool;
+
+  void adjust_offset(ResizeType type, POINT const& point, LONG& dx, LONG& dy) const noexcept;
 
 private:
   void left_offset(int dx)   noexcept;

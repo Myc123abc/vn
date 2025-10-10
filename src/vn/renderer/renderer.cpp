@@ -7,8 +7,6 @@
 
 #include <utf8.h>
 
-#include <chrono>
-
 using namespace Microsoft::WRL;
 
 namespace
@@ -89,19 +87,13 @@ namespace vn { namespace renderer {
 
 void Renderer::init() noexcept
 {
-  _thread = std::thread{[this]
-  {
-    Core::instance()->init();
-    create_pipeline_resource();
-    run();
-  }};
+  Core::instance()->init();
+  create_pipeline_resource();
+  run();
 }
 
 void Renderer::destroy() noexcept
 {
-  _exit.store(true, std::memory_order_release);
-  _render_acquire.release();
-  _thread.join();
   Core::instance()->wait_gpu_complete();
   Core::instance()->destroy();
 }
@@ -174,38 +166,21 @@ void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func
 
 void Renderer::run() noexcept
 {
-  auto beg = std::chrono::steady_clock ::now();
-  uint32_t count{};
-  while (true)
-  {
-    // wait render acquire
-    _render_acquire.acquire();
-    if (_exit.load(std::memory_order_acquire)) [[unlikely]]
-      return;
+  // process last render finish processes
+  for (auto it = _current_frame_render_finish_procs.begin(); it != _current_frame_render_finish_procs.end();)
+    (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
 
-    // process last render finish processes
-    for (auto it = _current_frame_render_finish_procs.begin(); it != _current_frame_render_finish_procs.end();)
-      (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
+  MessageQueue::instance()->process_messages();
 
-    MessageQueue::instance()->process_messages();
-
-    update();
-    render();
-
-    ++count;
-    auto now = std::chrono::steady_clock ::now();
-    auto dur = std::chrono::duration<float>(now - beg).count();
-    if (dur >= 1.f)
-    {
-      info("[fps] {}", count / dur);
-      count = 0;
-      beg = now;
-    }
-  }
+  update();
+  render();
 }
 
 void Renderer::update() noexcept
 {
+  float offsets[] = { 0, 1.f/2, 1};
+  float offsets2[] = { 1, 1.f/2, 0};
+  auto i = 0;
   for (auto& [k, v] : _window_resources)
   {
     auto& window         = v.window;
@@ -213,9 +188,9 @@ void Renderer::update() noexcept
     
     frame_resource.vertices.append_range(std::vector<Vertex>
     {
-      { { window.width / 2, 0             }, {}, 0x00ff00ff },
-      { { window.width,     window.height }, {}, 0x0000ffff },
-      { { 0,                window.height }, {}, 0x00ffffff },
+      { { window.width * offsets[i], 0             }, {}, 0x00ff00ff },
+      { { window.width * offsets2[i],     window.height }, {}, 0x0000ffff },
+      { { 0,                window.height * offsets2[i] }, {}, 0x00ffffff },
     });
     frame_resource.indices.append_range(std::vector<uint16_t>
     {
@@ -224,28 +199,14 @@ void Renderer::update() noexcept
       static_cast<uint16_t>(frame_resource.idx_beg + 2),
     });
     frame_resource.idx_beg += 3;
+
+    ++i;
   }
 }
 
 void Renderer::render() noexcept
 {
   for (auto& [k, wr] : _window_resources) wr.render();
-
-  // execute command list
-  auto cmds_view = _window_resources | std::views::values
-                                     | std::views::transform([] (auto const& wr) { return wr.frame_resource.cmd.Get(); });
-  auto cmds      = std::vector<ID3D12CommandList*>{ cmds_view.begin(), cmds_view.end() };
-  Core::instance()->command_queue()->ExecuteCommandLists(cmds.size(), cmds.data());
-
-  // present swapchain
-  for (auto const& [k, wr] : _window_resources)
-  {
-    if (wr.window.moving || wr.window.resizing)
-      err_if(_fullscreen_swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
-    else
-      err_if(wr.swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
-  }
-  
   Core::instance()->move_to_next_frame();
 }
 

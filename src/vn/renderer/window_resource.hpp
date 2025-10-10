@@ -17,7 +17,6 @@ struct SwapchainResource
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap;
   CD3DX12_VIEWPORT                             viewport;
   CD3DX12_RECT                                 scissor;
-  HWND                                         handle;
   bool                                         transparent;
 
 private:

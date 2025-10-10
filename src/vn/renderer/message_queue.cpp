@@ -12,7 +12,7 @@ void MessageQueue::process_messages() noexcept
 
   while (!_message_queue.empty())
   {
-    auto msg = *_message_queue.front();
+    auto& msg = _message_queue.front();
 
     std::visit([&](auto&& data)
     {

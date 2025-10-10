@@ -15,12 +15,16 @@ void init() noexcept
 void destroy() noexcept
 {
   Renderer::instance()->destroy();
-  WindowManager::instance()->destroy();
+}
+
+void message_process() noexcept
+{
+  WindowManager::instance()->message_process();
 }
 
 void render() noexcept
 {
-  Renderer::instance()->acquire_render();
+  Renderer::instance()->run();
 }
 
 }

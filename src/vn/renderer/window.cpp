@@ -1,5 +1,6 @@
 #include "window.hpp"
 #include "window_manager.hpp"
+#include "../util.hpp"
 
 #include <algorithm>
 
@@ -8,6 +9,7 @@ namespace vn { namespace renderer {
 Window::Window(HWND handle, int x, int y, uint32_t width, uint32_t height)
   : handle(handle), x(x), y(y), width(width), height(height)
 {
+  err_if(width < Min_Width || height < Min_Height, "too small window!");
   update_rect();
 }
 
@@ -27,19 +29,71 @@ void Window::update_by_rect() noexcept
   height = rect.bottom - rect.top;
 }
 
-void Window::move(int32_t x, int32_t y) noexcept
+void Window::move(int32_t dx, int32_t dy) noexcept
 {
   moving   = true;
-  this->x += x;
-  this->y += y;
+  this->x += dx;
+  this->y += dy;
   update_rect();
+}
+
+auto Window::point_on(POINT const& p) const noexcept -> bool
+{
+  return p.x > rect.left && p.x < rect.right  &&
+         p.y > rect.top  && p.y < rect.bottom;
+}
+
+void Window::adjust_offset(ResizeType type, POINT const& point, LONG& dx, LONG& dy) const noexcept
+{
+  using enum ResizeType;
+  switch (type)
+  {
+  case none:
+    break;
+
+  case left_top:
+    if (width == Min_Width && point.x > rect.left) dx = 0;
+    if (height == Min_Height && point.y > rect.top) dy = 0;
+    break;
+
+  case right_top:
+    if (width == Min_Width && point.x < rect.right) dx = 0;
+    if (height == Min_Height && point.y > rect.top) dy = 0;
+    break;
+
+  case left_bottom:
+    if (width == Min_Width && point.x > rect.left) dx = 0;
+    if (height == Min_Height && point.y < rect.bottom) dy = 0;
+    break;
+  
+  case right_bottom:
+    if (width == Min_Width && point.x < rect.right) dx = 0;
+    if (height == Min_Height && point.y < rect.bottom) dy = 0;
+    break;
+
+  case left:
+    if (width == Min_Width && point.x > rect.left) dx = 0;
+    break;
+
+  case right:
+    if (width == Min_Width && point.x < rect.right) dx = 0;
+    break;
+
+  case top:
+    if (height == Min_Height && point.y > rect.top) dy = 0;
+    break;
+
+  case bottom:
+    if (height == Min_Height && point.y < rect.bottom) dy = 0;
+    break;
+  }
 }
 
 void Window::resize(ResizeType type, int dx, int dy) noexcept
 {
   resizing = true;
   
-  using enum Window::ResizeType;
+  using enum ResizeType;
   switch (type)
   {
   case none:

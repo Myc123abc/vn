@@ -3,9 +3,6 @@
 #include "window_resource.hpp"
 
 #include <functional>
-#include <thread>
-#include <atomic>
-#include <semaphore>
 #include <deque>
 
 namespace vn { namespace renderer {
@@ -33,21 +30,17 @@ public:
   void init() noexcept;
   void destroy() noexcept;
 
-  void create_pipeline_resource() noexcept;
+  void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
 
   void run() noexcept;
+
+private:
+  void create_pipeline_resource() noexcept;
 
   void update() noexcept;
   void render() noexcept;
 
-  void acquire_render() noexcept { _render_acquire.release(); }
-
-  void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
-
 private:
-  std::thread                                 _thread;
-  std::atomic_bool                            _exit{ false };
-  std::binary_semaphore                       _render_acquire{ 0 };
   std::deque<std::function<bool()>>           _current_frame_render_finish_procs;
 
   Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;

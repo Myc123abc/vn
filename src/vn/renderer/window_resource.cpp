@@ -1,13 +1,14 @@
 #include "window_resource.hpp"
 #include "renderer.hpp"
 
+#include <algorithm>
+
 using namespace Microsoft::WRL;
 
 namespace vn { namespace renderer {
 
 void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool transparent) noexcept
 {
-  this->handle      = handle;
   this->transparent = transparent;
   
   auto core = Core::instance();
@@ -81,8 +82,7 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
   core->wait_gpu_complete();
 
   // reset swapchain relation resources
-  for (auto i = 0; i < Frame_Count; ++i)
-    swapchain_images[i].destroy();
+  std::ranges::for_each(swapchain_images, [](auto& image) { image.destroy(); });
   if (transparent)
     _comp_visual->SetContent(nullptr);
 
@@ -138,7 +138,11 @@ void WindowResource::init(Window const& window) noexcept
   frame_resource.init();
 
   // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle] { ShowWindow(handle, SW_SHOW); });
+  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle]
+  { 
+    ShowWindow(handle, SW_SHOW);
+    UpdateWindow(handle);
+  });
 }
 
 void WindowResource::render() noexcept
@@ -205,6 +209,13 @@ void WindowResource::render() noexcept
 
   // close command list
   err_if(cmd->Close(), "failed to close command list");
+
+  // submit command
+  auto cmds = std::array<ID3D12CommandList*, 1>{ cmd };
+  Core::instance()->command_queue()->ExecuteCommandLists(cmds.size(), cmds.data());
+
+  // present
+  err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
 }
 
 }}
