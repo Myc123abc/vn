@@ -5,8 +5,7 @@
 
 using namespace vn::renderer;
 
-namespace
-{
+namespace {
 
 constexpr wchar_t Fullscreen_Class[] = L"vn::WindowManager::Fullscreen";
 constexpr wchar_t Window_Class[]     = L"vn::WindowManager::Window";

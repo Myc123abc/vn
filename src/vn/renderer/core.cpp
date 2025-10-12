@@ -53,12 +53,18 @@ void Core::init() noexcept
           "failed to create command allocator");
   err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _command_allocator.Get(), nullptr, IID_PPV_ARGS(&_command_list)),
           "failed to create command list");
-  err_if(_command_list->Close(), "failed to close command list");
 }
 
 void Core::destroy() const noexcept
 {
   CloseHandle(_fence_event);
+}
+
+void Core::submit(ID3D12GraphicsCommandList * cmd) const noexcept
+{
+  err_if(cmd->Close(), "failed to close command list");
+  auto cmds = std::array<ID3D12CommandList*, 1>{ cmd };
+  _command_queue->ExecuteCommandLists(cmds.size(), cmds.data());
 }
 
 void Core::wait_gpu_complete() noexcept

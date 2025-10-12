@@ -27,7 +27,7 @@ public:
     return &instance;
   }
 
-  void init() noexcept;
+  void init()    noexcept;
   void destroy() noexcept;
 
   void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
@@ -37,14 +37,28 @@ public:
 private:
   void create_pipeline_resource() noexcept;
 
+  void load_cursor_images() noexcept;
+
   void update() noexcept;
   void render() noexcept;
 
 private:
-  std::deque<std::function<bool()>>           _current_frame_render_finish_procs;
+  std::deque<std::function<bool()>> _current_frame_render_finish_procs;
 
-  Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;
-  Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;
+  enum class CursorType
+  {
+    arrow,
+    up_down,
+    left_rigtht,
+    diagonal,
+    anti_diagonal,
+    Number
+  };
+  using CursorImage = Image<ImageType::srv, ImageFormat::rgba8_unorm>;
+  std::unordered_map<CursorType, CursorImage>     _cursor_images;
+  DescriptorHeap<DescriptorHeapType::cbv_srv_uav> _srv_heap;
+  Microsoft::WRL::ComPtr<ID3D12PipelineState>     _pipeline_state;
+  Microsoft::WRL::ComPtr<ID3D12RootSignature>     _root_signature;
 
   std::unordered_map<HWND, WindowResource>    _window_resources;
   SwapchainResource                           _fullscreen_swapchain_resource;

@@ -22,6 +22,7 @@ enum class ImageType
 enum class ImageFormat
 {
   bgra8_unorm,
+  rgba8_unorm,
 };
 
 enum class ImageState
@@ -32,6 +33,7 @@ enum class ImageState
   unorder_access,
   common,
   render_target,
+  pixel_shader_resource,
 };
 
 template <ImageFormat T>
@@ -39,6 +41,8 @@ auto constexpr dx12_image_format() noexcept
 {
   if constexpr (T == ImageFormat::bgra8_unorm)
     return DXGI_FORMAT_B8G8R8A8_UNORM;
+  else if constexpr (T == ImageFormat::rgba8_unorm)
+    return DXGI_FORMAT_R8G8B8A8_UNORM;
   else
     static_assert(false, "unsupport image format now");
 }
@@ -84,6 +88,8 @@ auto constexpr dx12_image_state() noexcept
     return D3D12_RESOURCE_STATE_COMMON;
   else if constexpr (T == ImageState::render_target)
     return D3D12_RESOURCE_STATE_RENDER_TARGET;
+  else if constexpr (T == ImageState::pixel_shader_resource)
+    return D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
   else
     static_assert(false, "unsupport image state now");
 }
@@ -220,6 +226,19 @@ inline void copy(
   Image<DstType, DstFormat>& dst) noexcept
 {
   copy(cmd, src, 0, 0, src.width(), src.height(), dst);
+}
+
+template <ImageType Type, ImageFormat Format>
+inline void copy(
+  ID3D12GraphicsCommandList* cmd,
+  Image<Type, Format>&       image,
+  ID3D12Resource*            upload_heap,
+  uint32_t                   offset,
+  D3D12_SUBRESOURCE_DATA&    data
+)
+{
+  image.template set_state<ImageState::copy_dst>(cmd);
+  UpdateSubresources(cmd, image.handle(), upload_heap, offset, 0, 1, &data);
 }
 
 }}

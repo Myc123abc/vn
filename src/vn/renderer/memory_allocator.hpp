@@ -24,6 +24,7 @@ struct Constants
 {
   glm::vec<2, uint32_t> window_extent{};
   glm::vec<2, int32_t>  window_pos{};
+  int                   cursor_index{ -1 };
 };
 
 class FrameBuffer
@@ -130,6 +131,8 @@ public:
   auto handle() const noexcept { return _heap.Get(); }
 
   auto gpu_handle() const noexcept { return _heap->GetGPUDescriptorHandleForHeapStart(); }
+
+  auto capacity() const noexcept { return _capacity; }
 
 private:
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>                 _heap;

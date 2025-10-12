@@ -93,4 +93,9 @@ inline void err_if(HRESULT hr, std::format_string<T...> const fmt, T&&... args) 
 
 auto read_file(std::string_view path) noexcept -> std::string;
 
+inline auto align(uint32_t value, uint32_t alignment) noexcept
+{
+  return (value + alignment - 1) / alignment * alignment;
+}
+
 }

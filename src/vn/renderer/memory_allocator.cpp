@@ -6,12 +6,9 @@
 
 #include <directx/d3dx12.h>
 
-namespace {
+using namespace vn;
 
-auto align(uint32_t value, uint32_t alignment) noexcept
-{
-  return (value + alignment - 1) / alignment * alignment;
-}
+namespace {
 
 auto calculate_capacity(uint32_t old_capacity, uint32_t need_capacity)
 {

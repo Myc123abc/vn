@@ -30,6 +30,8 @@ public:
   void init() noexcept;
   void destroy() const noexcept;
 
+  void submit(ID3D12GraphicsCommandList * cmd) const noexcept;
+
   void wait_gpu_complete()  noexcept;
   void move_to_next_frame() noexcept;
 

@@ -9,8 +9,11 @@ struct Constants
 {
   uint2 window_extent;
   int2  window_pos;
+  int   cursor_index;
 };
-ConstantBuffer<Constants> constants : register(b0);
+ConstantBuffer<Constants> constants         : register(b0);
+SamplerState              g_sampler         : register(s0);
+Texture2D                 cursor_textures[] : register(t0);
 
 float4 to_float4(uint32_t color)
 {
@@ -32,5 +35,8 @@ PSInput vs(float2 pos: POSITION, float2 uv: TEXCOORD, uint32_t color : COLOR)
 
 float4 ps(PSInput input) : SV_TARGET
 {
-  return input.color;
+  if (constants.cursor_index >= 0)
+    return cursor_textures[constants.cursor_index].Sample(g_sampler, input.uv);
+  else
+    return input.color;
 }

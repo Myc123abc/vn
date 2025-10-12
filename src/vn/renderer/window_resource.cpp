@@ -52,6 +52,9 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
             "failed to create swapchain");
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
 
+  // disable alt-enter fullscreen
+  err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER), "failed to disable alt-enter");
+
   // create descriptor heaps
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
   rtv_heap_desc.NumDescriptors = Frame_Count;
@@ -194,7 +197,13 @@ void WindowResource::render() noexcept
   constants.window_extent = swapchain_image->extent();
   if (window.moving || window.resizing)
     constants.window_pos = window.pos();
+  constants.cursor_index = 3;
   cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
+
+  // set cursor texture
+  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_srv_heap.handle() };
+  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
+  cmd->SetGraphicsRootDescriptorTable(1, renderer->_srv_heap.gpu_handle());
 
   // draw
   cmd->DrawIndexedInstanced(frame_resource.indices.size(), 1, 0, 0, 0);
@@ -207,12 +216,8 @@ void WindowResource::render() noexcept
   // record finish, change render target view type to present
   swapchain_image->set_state<ImageState::present>(cmd);
 
-  // close command list
-  err_if(cmd->Close(), "failed to close command list");
-
   // submit command
-  auto cmds = std::array<ID3D12CommandList*, 1>{ cmd };
-  Core::instance()->command_queue()->ExecuteCommandLists(cmds.size(), cmds.data());
+  core->submit(cmd);
 
   // present
   err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");

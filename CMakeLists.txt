@@ -28,7 +28,7 @@ target_compile_definitions(test PRIVATE
   UTF_CPP_CPLUSPLUS=202002L
 )
 target_link_libraries(test PRIVATE
-  d3d12 dxgi dxcompiler dcomp
+  d3d12 dxgi dxcompiler dcomp dxguid
   DirectX-Headers
 )
 target_include_directories(test PRIVATE
