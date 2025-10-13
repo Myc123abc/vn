@@ -33,9 +33,10 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   static auto renderer  = Renderer::instance();
   static auto msg_queue = MessageQueue::instance();
 
-  static auto last_pos    = POINT{};
-  static auto resize_type = Window::ResizeType{};
-  static auto lm_down     = bool{};
+  static auto last_pos           = POINT{};
+  static auto last_resize_type   = Window::ResizeType{};
+  static auto lm_downresize_type = Window::ResizeType{};
+  static auto lm_down            = bool{};
 
   auto finish_window_moving_or_resizing = [&]
   {
@@ -52,9 +53,10 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
         wm->_moving_or_resizing_window = window;
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
       }
-      else if (resize_type != Window::ResizeType::none)
+      else if (lm_downresize_type != Window::ResizeType::none)
       {
-        window.resizing = {};
+        window.resizing    = {};
+        window.cursor_type = {};
         wm->_moving_or_resizing_window = window;
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
         msg_queue->send_message(MessageQueue::Message_Resize_window{ window });
@@ -68,6 +70,8 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   {
     if (LOWORD(w_param) == WA_INACTIVE)
     {
+      // reset curosr
+      set_cursor();
       finish_window_moving_or_resizing();
     }
     break;
@@ -84,7 +88,7 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   {
     SetCapture(handle);
     GetCursorPos(&last_pos);
-    resize_type = wm->_windows[handle].get_resize_type(last_pos);
+    lm_downresize_type = wm->_windows[handle].get_resize_type(last_pos);
     lm_down = true;
     break;
   }
@@ -97,6 +101,17 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
 
   case WM_MOUSEMOVE:
   {
+    // set cursor if can resize
+    auto cursor_pos = POINT{};
+    GetCursorPos(&cursor_pos);
+    if (auto type = wm->_windows[handle].get_resize_type(cursor_pos);
+        type != last_resize_type)
+    {
+      last_resize_type = type;
+      set_cursor(last_resize_type);
+    }
+
+    // move or resize window
     if (lm_down)
     {
       POINT pos;
@@ -107,7 +122,7 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
       auto& window = wm->_windows.at(handle);
 
       // window moving
-      if (resize_type == Window::ResizeType::none)
+      if (lm_downresize_type == Window::ResizeType::none)
       {
         // first moving
         if (!window.moving)
@@ -126,19 +141,19 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
       // window resizing
       else
       {
-        window.adjust_offset(resize_type, pos, offset_x, offset_y);
+        window.adjust_offset(lm_downresize_type, pos, offset_x, offset_y);
 
         // first resizing
         if (!window.resizing)
         {
-          window.resize(resize_type, offset_x, offset_y);
+          window.resize(lm_downresize_type, offset_x, offset_y);
           wm->_moving_or_resizing_window = window;
           msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
         }
         // continuely resizing
         else
         {
-          window.resize(resize_type, offset_x, offset_y);
+          window.resize(lm_downresize_type, offset_x, offset_y);
           msg_queue->send_message(MessageQueue::Message_Update_Window{ window });
         }
       }
@@ -222,6 +237,7 @@ void WindowManager::end_use_fullscreen_window() const noexcept
 
 void WindowManager::process_begin_use_fullscreen_window() noexcept
 {
+  err_if(ShowCursor(false) >= 0, "failed to hide cursor");
   ShowWindow(_fullscreen_window_handle, SW_SHOW);
   auto rect = RECT{};
   SetWindowRgn(_moving_or_resizing_window.handle, CreateRectRgnIndirect(&rect), false);
@@ -229,6 +245,7 @@ void WindowManager::process_begin_use_fullscreen_window() noexcept
 
 void WindowManager::process_end_use_fullscreen_window() noexcept
 {
+  err_if(ShowCursor(true) < 0, "failed to display cursor");
   SetWindowPos(_moving_or_resizing_window.handle, 0, _moving_or_resizing_window.x, _moving_or_resizing_window.y, _moving_or_resizing_window.width, _moving_or_resizing_window.height, 0);
   SetWindowRgn(_moving_or_resizing_window.handle, nullptr, false);
   ShowWindow(_fullscreen_window_handle, SW_HIDE);

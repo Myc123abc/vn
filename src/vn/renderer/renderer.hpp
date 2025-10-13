@@ -45,17 +45,12 @@ private:
 private:
   std::deque<std::function<bool()>> _current_frame_render_finish_procs;
 
-  enum class CursorType
+  struct Cursor
   {
-    arrow,
-    up_down,
-    left_rigtht,
-    diagonal,
-    anti_diagonal,
-    Number
+    Image<ImageType::srv, ImageFormat::rgba8_unorm> image;
+    glm::vec2                                       pos;
   };
-  using CursorImage = Image<ImageType::srv, ImageFormat::rgba8_unorm>;
-  std::unordered_map<CursorType, CursorImage>     _cursor_images;
+  std::unordered_map<CursorType, Cursor>          _cursors;
   DescriptorHeap<DescriptorHeapType::cbv_srv_uav> _srv_heap;
   Microsoft::WRL::ComPtr<ID3D12PipelineState>     _pipeline_state;
   Microsoft::WRL::ComPtr<ID3D12RootSignature>     _root_signature;

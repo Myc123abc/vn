@@ -6,16 +6,27 @@
 
 namespace vn { namespace renderer {
 
+enum class CursorType
+{
+  arrow,
+  up_down,
+  left_rigtht,
+  diagonal,
+  anti_diagonal,
+  Number
+};
+
 struct Window
 {
-  HWND     handle;
-  int      x;
-  int      y;
-  uint32_t width;
-  uint32_t height;
-  RECT     rect;
-  bool     moving{};
-  bool     resizing{};
+  HWND       handle;
+  int        x;
+  int        y;
+  uint32_t   width;
+  uint32_t   height;
+  RECT       rect;
+  bool       moving{};
+  bool       resizing{};
+  CursorType cursor_type{};
 
 public:
   Window() = default;
@@ -61,5 +72,8 @@ private:
   void update_rect()         noexcept;
   void update_by_rect()      noexcept;
 };
+
+void set_cursor(Window::ResizeType type = Window::ResizeType::none) noexcept;
+auto get_cursor_type(Window::ResizeType type) noexcept -> CursorType;
 
 }}

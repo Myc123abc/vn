@@ -12,8 +12,8 @@ int main()
 
   auto wm = renderer::WindowManager::instance();
 
-  wm->create_window(50, 50, 100, 100);
-  wm->create_window(75, 75, 100, 100);
+  wm->create_window(50, 50, 50, 50);
+  wm->create_window(75, 75, 50, 50);
 
   auto beg = std::chrono::steady_clock::now();
   uint32_t count{};

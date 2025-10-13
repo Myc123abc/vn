@@ -98,9 +98,10 @@ auto compile_comp(std::string_view path, std::string_view comp_main) noexcept
 struct Bitmap
 {
   std::vector<std::byte> pixels;
-  uint32_t width{};
-  uint32_t height{};
-  uint32_t pixel_size{};
+  uint32_t               width{};
+  uint32_t               height{};
+  uint32_t               pixel_size{};
+  glm::vec2              pos{};
 
   auto data()            noexcept { return pixels.data();               }
   auto byte_size() const noexcept { return width * height * pixel_size; }
@@ -132,6 +133,31 @@ auto load_cursor_bitmap(LPCSTR idc_cursor) noexcept
 
   err_if(!DeleteObject(info.hbmColor), "failed to delete cursor information object");
   err_if(!DeleteObject(info.hbmMask), "failed to delete cursor information object");
+
+  // get cursor position of bitmap
+  auto min_x = uint32_t{};
+  auto min_y = uint32_t{};
+  auto max_x = uint32_t{};
+  auto max_y = uint32_t{};
+  auto p     = reinterpret_cast<uint8_t*>(cursor_bitmap.data());
+  assert(bitmap.bmWidthBytes / bitmap.bmWidth == 4);
+  for (int y = 0; y < cursor_bitmap.height; ++y)
+  {
+    for (int x = 0; x < cursor_bitmap.width; ++x)
+    {
+      auto idx = y * cursor_bitmap.row_pitch() + x * 4;
+      if (p[idx] != 0 || p[idx + 1] != 0 || p[idx + 2] != 0)
+      {
+        if (x < min_x) min_x = x;
+        if (y < min_y) min_y = y;
+        if (x > max_x) max_x= x;
+        if (y > max_y) max_y = y;
+      }
+    }
+  }
+
+  cursor_bitmap.pos.x = min_x + (max_x - min_x) / 2;
+  cursor_bitmap.pos.y = min_y + (max_y - min_y) / 2;
 
   return cursor_bitmap;
 }
@@ -203,17 +229,31 @@ void Renderer::create_pipeline_resource() noexcept
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
   {
-    {  "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    {  "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    {  "COLOR",    0, DXGI_FORMAT_R32_UINT,     0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "COLOR",    0, DXGI_FORMAT_R32_UINT,     0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "FLAGS",    0, DXGI_FORMAT_R32_UINT,     0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
   };
+
+  auto  blend_state = D3D12_BLEND_DESC{};
+  auto& rt          = blend_state.RenderTarget[0];
+  rt.BlendEnable = true;
+  rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
+  rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
+  rt.BlendOp               = D3D12_BLEND_OP_ADD;
+  rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
+  rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
+  rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
+  rt.LogicOp               = D3D12_LOGIC_OP_NOOP;
+  rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
   D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline_state_desc{};
   pipeline_state_desc.InputLayout           = { layout, _countof(layout) };
   pipeline_state_desc.pRootSignature        = _root_signature.Get();
   pipeline_state_desc.VS                    = CD3DX12_SHADER_BYTECODE{ vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize() };
   pipeline_state_desc.PS                    = CD3DX12_SHADER_BYTECODE{ pixel_shader->GetBufferPointer(),  pixel_shader->GetBufferSize()  };
   pipeline_state_desc.RasterizerState       = CD3DX12_RASTERIZER_DESC{ D3D12_DEFAULT };
-  pipeline_state_desc.BlendState            = CD3DX12_BLEND_DESC{ D3D12_DEFAULT };
+  pipeline_state_desc.BlendState            = blend_state;
   pipeline_state_desc.SampleMask            = UINT_MAX;
   pipeline_state_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
   pipeline_state_desc.NumRenderTargets      = 1;
@@ -236,15 +276,18 @@ void Renderer::load_cursor_images() noexcept
   bitmaps[diagonal]      = load_cursor_bitmap(IDC_SIZENESW);
   bitmaps[anti_diagonal] = load_cursor_bitmap(IDC_SIZENWSE);
 
-  // create texture
+  // create cursors
   for (auto& [cursor_type, bitmap] : bitmaps)
-    _cursor_images[cursor_type].init(bitmap.width, bitmap.height);
+  {
+    _cursors[cursor_type].image.init(bitmap.width, bitmap.height);
+    _cursors[cursor_type].pos = bitmap.pos;
+  }
 
   // create upload heap
   auto upload_heap     = ComPtr<ID3D12Resource>{};
   auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-  auto upload_heap_des = CD3DX12_RESOURCE_DESC::Buffer(std::ranges::fold_left(_cursor_images | std::views::values, 0,
-    [](uint32_t sum, auto const& texture) { return sum + align(GetRequiredIntermediateSize(texture.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT); }));
+  auto upload_heap_des = CD3DX12_RESOURCE_DESC::Buffer(std::ranges::fold_left(_cursors | std::views::values, 0,
+    [](uint32_t sum, auto const& cursor) { return sum + align(GetRequiredIntermediateSize(cursor.image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT); }));
   err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &upload_heap_des, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_heap)),
           "failed to create upload heap");
   
@@ -253,7 +296,7 @@ void Renderer::load_cursor_images() noexcept
   for (auto const& [index, pair] : std::views::enumerate(bitmaps))
   {
     auto& [cursor_type, bitmap] = pair;
-    auto& cursor_image          = _cursor_images[cursor_type];
+    auto& cursor_image          = _cursors[cursor_type].image;
 
     // upload bitmap
     auto texture_data = D3D12_SUBRESOURCE_DATA{};
@@ -304,7 +347,7 @@ void Renderer::run() noexcept
 
 void Renderer::update() noexcept
 {
-  float offsets[] = { 0, 1.f/2, 1};
+  float offsets[]  = { 0, 1.f/2, 1};
   float offsets2[] = { 1, 1.f/2, 0};
   auto i = 0;
   for (auto& [k, v] : _window_resources)
@@ -312,31 +355,23 @@ void Renderer::update() noexcept
     auto& window         = v.window;
     auto& frame_resource = v.frame_resource;
     
-    //frame_resource.vertices.append_range(std::vector<Vertex>
-    //{
-    //  { { window.width * offsets[i], 0             }, {}, 0x00ff00ff },
-    //  { { window.width * offsets2[i],     window.height }, {}, 0x0000ffff },
-    //  { { 0,                window.height * offsets2[i] }, {}, 0x00ffffff },
-    //});
     frame_resource.vertices.append_range(std::vector<Vertex>
     {
-      { { }, {}, 0x00ff00ff },
-      { { 32,     0 }, {1,0}, 0x0000ffff },
-      { { 32, 32 }, {1,1}, 0x00ffffff },
-      { { 0, 32 }, {0,1}, 0x00ffffff },
+      { { window.width * offsets[i],  0                           }, {}, 0x00ff00ff },
+      { { window.width * offsets2[i], window.height               }, {}, 0x0000ffff },
+      { { 0,                          window.height * offsets2[i] }, {}, 0x00ffffff },
     });
     frame_resource.indices.append_range(std::vector<uint16_t>
     {
       static_cast<uint16_t>(frame_resource.idx_beg + 0),
       static_cast<uint16_t>(frame_resource.idx_beg + 1),
       static_cast<uint16_t>(frame_resource.idx_beg + 2),
-      static_cast<uint16_t>(frame_resource.idx_beg + 0),
-      static_cast<uint16_t>(frame_resource.idx_beg + 2),
-      static_cast<uint16_t>(frame_resource.idx_beg + 3),
     });
-    frame_resource.idx_beg += 6;
+    frame_resource.idx_beg += 3;
 
     ++i;
+
+    v.update();
   }
 }
 

@@ -18,6 +18,7 @@ struct alignas(8) Vertex
   glm::vec2 pos{};
   glm::vec2 uv{};
 	uint32_t  color{};
+  uint32_t  flags{};
 };
 
 struct Constants

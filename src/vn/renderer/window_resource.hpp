@@ -62,6 +62,7 @@ struct WindowResource
 
   void init(Window const& window) noexcept;
 
+  void update() noexcept;
   void render() noexcept;
 };
 

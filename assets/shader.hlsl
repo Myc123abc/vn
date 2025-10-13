@@ -1,8 +1,17 @@
-struct PSInput
+struct Vertex
 {
-  float4 pos   : SV_POSITION;
-  float2 uv    : TEXCOORD;
-  float4 color : COLOR;
+  float2   pos   : POSITION;
+  float2   uv    : TEXCOORD;
+  uint32_t color : COLOR;
+  uint32_t flags : FLAGS;
+};
+
+struct PSParameter
+{
+  float4 pos     : SV_POSITION;
+  float2 uv      : TEXCOORD;
+  float4 color   : COLOR;
+  uint32_t flags : FLAGS;
 };
 
 struct Constants
@@ -24,19 +33,25 @@ float4 to_float4(uint32_t color)
     return float4(r, g, b, a);
 }
 
-PSInput vs(float2 pos: POSITION, float2 uv: TEXCOORD, uint32_t color : COLOR)
+PSParameter vs(Vertex vertex)
 {
-  PSInput result;
-  result.pos   = float4((pos + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
-  result.uv    = uv;
-  result.color = to_float4(color);
+  PSParameter result;
+  result.pos           = float4((vertex.pos + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
+  result.uv            = vertex.uv;
+  result.color         = to_float4(vertex.color);
+  result.flags = vertex.flags;
   return result;
 }
 
-float4 ps(PSInput input) : SV_TARGET
+bool cursor_render(uint32_t flags)
 {
-  if (constants.cursor_index >= 0)
-    return cursor_textures[constants.cursor_index].Sample(g_sampler, input.uv);
+  return bool(flags & 0x00000001);
+}
+
+float4 ps(PSParameter args) : SV_TARGET
+{
+  if (cursor_render(args.flags))
+    return cursor_textures[constants.cursor_index].Sample(g_sampler, args.uv);
   else
-    return input.color;
+    return args.color;
 }

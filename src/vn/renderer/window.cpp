@@ -92,6 +92,8 @@ void Window::adjust_offset(ResizeType type, POINT const& point, LONG& dx, LONG& 
 void Window::resize(ResizeType type, int dx, int dy) noexcept
 {
   resizing = true;
+
+  cursor_type = get_cursor_type(type);
   
   using enum ResizeType;
   switch (type)
@@ -146,10 +148,10 @@ auto Window::get_resize_type(POINT const& p) const noexcept -> ResizeType
       p.y < rect.top  || p.y > rect.bottom)
     return none;
 
-  bool left_side   = p.x > rect.left                   && p.x < rect.left + Resize_Width;
-  bool right_side  = p.x > rect.right - Resize_Width   && p.x < rect.right;
-  bool top_side    = p.y > rect.top                    && p.y < rect.top + Resize_Height;
-  bool bottom_side = p.y > rect.bottom - Resize_Height && p.y < rect.bottom;
+  bool left_side   = p.x >= rect.left                   && p.x <= rect.left + Resize_Width;
+  bool right_side  = p.x >= rect.right - Resize_Width   && p.x <= rect.right;
+  bool top_side    = p.y >= rect.top                    && p.y <= rect.top + Resize_Height;
+  bool bottom_side = p.y >= rect.bottom - Resize_Height && p.y <= rect.bottom;
 
   if (top_side)
   {
@@ -242,6 +244,57 @@ void Window::bottom_offset(int dy) noexcept
   else
     min_bottom = rect.top + Min_Height;
   rect.bottom = std::clamp(rect.bottom + dy, min_bottom, static_cast<LONG>(screen_size.y));
+}
+
+auto get_cursor_type(Window::ResizeType type) noexcept -> CursorType
+{
+  using enum Window::ResizeType;
+  using enum CursorType;
+  switch (type)
+  {
+  case top:
+  case bottom:
+    return up_down;
+  case left:
+  case right:
+    return left_rigtht;
+  case right_top:
+  case left_bottom:
+    return diagonal;
+  case left_top:
+  case right_bottom:
+    return anti_diagonal;
+  case none:
+    return arrow;
+  }
+}
+
+void set_cursor(Window::ResizeType type) noexcept
+{
+  using enum Window::ResizeType;
+  auto cursor = IDC_ARROW;
+  switch (type)
+  {
+  case top:
+  case bottom:
+    cursor = IDC_SIZENS;
+    break;
+  case left:
+  case right:
+    cursor = IDC_SIZEWE;
+    break;
+  case right_top:
+  case left_bottom:
+    cursor = IDC_SIZENESW;
+    break;
+  case left_top:
+  case right_bottom:
+    cursor = IDC_SIZENWSE;
+    break;
+  case none:
+    break;
+  }
+  SetCursor(LoadCursorA(nullptr, cursor));
 }
 
 }}

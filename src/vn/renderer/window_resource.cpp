@@ -48,12 +48,14 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
             "failed to commit composition device");
   }  
   else
+  {
     err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
             "failed to create swapchain");
+    
+    // disable alt-enter fullscreen
+    err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER), "failed to disable alt-enter");
+  }
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
-
-  // disable alt-enter fullscreen
-  err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER), "failed to disable alt-enter");
 
   // create descriptor heaps
   D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
@@ -148,6 +150,41 @@ void WindowResource::init(Window const& window) noexcept
   });
 }
 
+void WindowResource::update() noexcept
+{
+  auto renderer = Renderer::instance();
+
+  if (window.moving || window.resizing)
+  {
+    auto pos = POINT{};
+    GetCursorPos(&pos);
+    pos.x -= window.x;
+    pos.y -= window.y;
+    if (window.cursor_type != CursorType::arrow)
+    {
+      pos.x -= renderer->_cursors[window.cursor_type].pos.x;
+      pos.y -= renderer->_cursors[window.cursor_type].pos.y;
+    }
+    frame_resource.vertices.append_range(std::vector<Vertex>
+    {
+      { { pos.x,      pos.y      }, { 0, 0 }, {}, 1 },
+      { { pos.x + 32, pos.y      }, { 1, 0 }, {}, 1 },
+      { { pos.x + 32, pos.y + 32 }, { 1, 1 }, {}, 1 },
+      { { pos.x,      pos.y + 32 }, { 0, 1 }, {}, 1 },
+    });
+    frame_resource.indices.append_range(std::vector<uint16_t>
+    {
+      static_cast<uint16_t>(frame_resource.idx_beg + 0),
+      static_cast<uint16_t>(frame_resource.idx_beg + 1),
+      static_cast<uint16_t>(frame_resource.idx_beg + 2),
+      static_cast<uint16_t>(frame_resource.idx_beg + 0),
+      static_cast<uint16_t>(frame_resource.idx_beg + 2),
+      static_cast<uint16_t>(frame_resource.idx_beg + 3),
+    });
+    frame_resource.idx_beg += 6;
+  }
+}
+
 void WindowResource::render() noexcept
 {
   auto core      = Core::instance();
@@ -196,14 +233,16 @@ void WindowResource::render() noexcept
   auto constants = Constants{};
   constants.window_extent = swapchain_image->extent();
   if (window.moving || window.resizing)
-    constants.window_pos = window.pos();
-  constants.cursor_index = 3;
-  cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
+  {
+    constants.window_pos   = window.pos();
+    constants.cursor_index = static_cast<uint32_t>(window.cursor_type);
 
-  // set cursor texture
-  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_srv_heap.handle() };
-  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
-  cmd->SetGraphicsRootDescriptorTable(1, renderer->_srv_heap.gpu_handle());
+    // set cursor texture
+    auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_srv_heap.handle() };
+    cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
+    cmd->SetGraphicsRootDescriptorTable(1, renderer->_srv_heap.gpu_handle());
+  }
+  cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
 
   // draw
   cmd->DrawIndexedInstanced(frame_resource.indices.size(), 1, 0, 0, 0);
