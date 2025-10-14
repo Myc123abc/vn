@@ -237,7 +237,7 @@ void WindowManager::end_use_fullscreen_window() const noexcept
 
 void WindowManager::process_begin_use_fullscreen_window() noexcept
 {
-  err_if(ShowCursor(false) >= 0, "failed to hide cursor");
+  while (ShowCursor(false) >= 0);
   ShowWindow(_fullscreen_window_handle, SW_SHOW);
   auto rect = RECT{};
   SetWindowRgn(_moving_or_resizing_window.handle, CreateRectRgnIndirect(&rect), false);
@@ -245,7 +245,7 @@ void WindowManager::process_begin_use_fullscreen_window() noexcept
 
 void WindowManager::process_end_use_fullscreen_window() noexcept
 {
-  err_if(ShowCursor(true) < 0, "failed to display cursor");
+  while (ShowCursor(true) < 0);
   SetWindowPos(_moving_or_resizing_window.handle, 0, _moving_or_resizing_window.x, _moving_or_resizing_window.y, _moving_or_resizing_window.width, _moving_or_resizing_window.height, 0);
   SetWindowRgn(_moving_or_resizing_window.handle, nullptr, false);
   ShowWindow(_fullscreen_window_handle, SW_HIDE);

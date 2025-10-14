@@ -194,16 +194,17 @@ void Renderer::create_pipeline_resource() noexcept
 {
   auto core = Core::instance();
 
-  // create heaps
-  _srv_heap.init(static_cast<uint32_t>(CursorType::Number));
+  _srv_heap.init();
 
   // create root signature
-  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 2>{};
+  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 3>{};
   root_parameters[0].InitAsConstants(sizeof(Constants), 0, 0, D3D12_SHADER_VISIBILITY_ALL);
 
-  auto range = CD3DX12_DESCRIPTOR_RANGE1{};
-  range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, _srv_heap.capacity(), 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
-  root_parameters[1].InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_PIXEL);
+  auto ranges = std::array<CD3DX12_DESCRIPTOR_RANGE1, 2>{};
+  ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, static_cast<uint32_t>(CursorType::Number), 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+  root_parameters[1].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+  ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 1);
+  root_parameters[2].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL);
 
   auto sampler_desc = D3D12_STATIC_SAMPLER_DESC{};
   sampler_desc.AddressU         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
@@ -315,6 +316,9 @@ void Renderer::load_cursor_images() noexcept
     cursor_image.create_descriptor(_srv_heap.pop_handle());
   }
 
+  // create frame buffer descriptor
+  _buffer.init(80, _srv_heap.pop_handle());
+
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete
   core->submit(core->cmd());
@@ -377,6 +381,8 @@ void Renderer::update() noexcept
 
 void Renderer::render() noexcept
 {
+  // clear frame buffer
+  _buffer.clear();
   for (auto& [k, wr] : _window_resources) wr.render();
   Core::instance()->move_to_next_frame();
 }

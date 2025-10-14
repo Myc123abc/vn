@@ -4,6 +4,13 @@
 
 #include <unordered_map>
 
+/*
+TODO:
+dynamic set WS_EX_TRANSPARENT to make window can mouse pass through
+and in interactive area, remove WS_EX_TRANSPARENT
+so dynamic mosue pass through, this can be try
+*/
+
 namespace vn { namespace renderer {
 
 inline auto get_screen_size() noexcept -> glm::vec<2, uint32_t>

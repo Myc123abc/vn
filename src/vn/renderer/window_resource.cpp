@@ -1,5 +1,6 @@
 #include "window_resource.hpp"
 #include "renderer.hpp"
+#include "config.hpp"
 
 #include <algorithm>
 
@@ -131,9 +132,6 @@ void FrameResource::init() noexcept
   err_if(core->device()->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, command_allocators[0].Get(), nullptr, IID_PPV_ARGS(&cmd)),
           "failed to create command list");
   err_if(cmd->Close(), "failed to close command list");
-
-  // init frame buffer
-  frame_buffer.init(1024);
 }
 
 void WindowResource::init(Window const& window) noexcept
@@ -223,23 +221,24 @@ void WindowResource::render() noexcept
   // set primitive topology
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-  // clear frame buffer
-  frame_resource.frame_buffer.clear();
+  // set descriptor heaps
+  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_srv_heap.handle() };
+  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
-  // upload vertices and indices
-  frame_resource.frame_buffer.upload(cmd, frame_resource.vertices, frame_resource.indices);
+  // set byte address buffer
+  auto srv_heap_handle = CD3DX12_GPU_DESCRIPTOR_HANDLE{renderer->_srv_heap.gpu_handle()};
+  cmd->SetGraphicsRootDescriptorTable(2, srv_heap_handle.Offset(static_cast<uint32_t>(CursorType::Number), CBV_SRV_UAV_Size));
 
   // set constant
   auto constants = Constants{};
   constants.window_extent = swapchain_image->extent();
+  constants.buffer_offset = renderer->_buffer.upload(cmd, frame_resource.vertices, frame_resource.indices);
   if (window.moving || window.resizing)
   {
     constants.window_pos   = window.pos();
     constants.cursor_index = static_cast<uint32_t>(window.cursor_type);
 
     // set cursor texture
-    auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_srv_heap.handle() };
-    cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
     cmd->SetGraphicsRootDescriptorTable(1, renderer->_srv_heap.gpu_handle());
   }
   cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);

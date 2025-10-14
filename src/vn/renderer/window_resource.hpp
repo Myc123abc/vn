@@ -46,7 +46,6 @@ struct FrameResource
   std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, Frame_Count> command_allocators;
   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd;
 
-  FrameBuffer           frame_buffer;
   std::vector<Vertex>   vertices;
   std::vector<uint16_t> indices;
   uint16_t              idx_beg{};

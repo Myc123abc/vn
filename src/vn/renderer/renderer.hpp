@@ -50,13 +50,21 @@ private:
     Image<ImageType::srv, ImageFormat::rgba8_unorm> image;
     glm::vec2                                       pos;
   };
-  std::unordered_map<CursorType, Cursor>          _cursors;
-  DescriptorHeap<DescriptorHeapType::cbv_srv_uav> _srv_heap;
-  Microsoft::WRL::ComPtr<ID3D12PipelineState>     _pipeline_state;
-  Microsoft::WRL::ComPtr<ID3D12RootSignature>     _root_signature;
+  std::unordered_map<CursorType, Cursor> _cursors;
 
-  std::unordered_map<HWND, WindowResource>    _window_resources;
-  SwapchainResource                           _fullscreen_swapchain_resource;
+  // descriptor heap
+  // cursor textures + frame buffer
+  DescriptorHeap<
+    DescriptorHeapType::cbv_srv_uav,
+    static_cast<uint32_t>(CursorType::Number) + 1> _srv_heap;
+  
+  FrameBuffer _buffer;
+
+  Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;
+  Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;
+
+  std::unordered_map<HWND, WindowResource> _window_resources;
+  SwapchainResource                        _fullscreen_swapchain_resource;
 };
 
 }}
