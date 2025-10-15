@@ -15,14 +15,19 @@ struct Constants
 {
   glm::vec<2, uint32_t> window_extent{};
   glm::vec<2, int32_t>  window_pos{};
-  int                   cursor_index{};
+  uint32_t              cursor_index{};
 };
 
 struct ShapeProperty
 {
-  uint32_t type{};
+  enum class Type : uint32_t
+  {
+    cursor = 1,
+    triangle,
+  };
+
+  Type     type{};
   uint32_t color{};
-  uint32_t flags{};
 };
 
 }}

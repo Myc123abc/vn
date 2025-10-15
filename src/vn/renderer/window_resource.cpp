@@ -183,7 +183,7 @@ void WindowResource::update() noexcept
 
     frame_resource.shape_properties.append_range(std::vector<ShapeProperty>
     {
-      { .flags = 1 } 
+      { .type = ShapeProperty::Type::cursor } 
     });
 
     renderer->_shape_properties_offset += sizeof(ShapeProperty);

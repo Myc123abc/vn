@@ -19,16 +19,30 @@ struct PSParameter
 
 struct Constants
 {
-  uint2 window_extent;
-  int2  window_pos;
-  int   cursor_index;
+  uint2    window_extent;
+  int2     window_pos;
+  uint32_t cursor_index;
+};
+
+enum : uint32_t
+{
+  type_cursor = 1,
+  type_triangle,
 };
 
 struct ShapeProperty
 {
   uint32_t type;
   uint32_t color;
-  uint32_t flags;
+
+  float4 get_color()
+  {
+    float r = float((color >> 24) & 0xFF) / 255;
+    float g = float((color >> 16) & 0xFF) / 255;
+    float b = float((color >> 8 ) & 0xFF) / 255;
+    float a = float((color      ) & 0xFF) / 255;
+    return float4(r, g, b, a);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -43,20 +57,6 @@ ByteAddressBuffer         buffer            : register(t0, space1);
 ////////////////////////////////////////////////////////////////////////////////
 ///                              Function
 ////////////////////////////////////////////////////////////////////////////////
-
-float4 to_float4(uint32_t color)
-{
-  float r = float((color >> 24) & 0xFF) / 255;
-  float g = float((color >> 16) & 0xFF) / 255;
-  float b = float((color >> 8 ) & 0xFF) / 255;
-  float a = float((color      ) & 0xFF) / 255;
-  return float4(r, g, b, a);
-}
-
-bool cursor_render(uint32_t flags)
-{
-  return bool(flags & 0x00000001);
-}
 
 ShapeProperty get_shape_property(uint32_t offset)
 {
@@ -74,7 +74,7 @@ PSParameter vs(Vertex vertex)
   PSParameter result;
   result.pos           = float4((vertex.pos + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
   result.uv            = vertex.uv;
-  result.color         = to_float4(shape_property.color);
+  result.color         = shape_property.get_color();
   result.buffer_offset = vertex.buffer_offset;
   return result;
 }
@@ -86,8 +86,20 @@ PSParameter vs(Vertex vertex)
 float4 ps(PSParameter args) : SV_TARGET
 {
   ShapeProperty shape_property = get_shape_property(args.buffer_offset);
-  if (cursor_render(shape_property.flags))
-    return cursor_textures[constants.cursor_index].Sample(g_sampler, args.uv);
-  else
+
+  switch (shape_property.type)
+  {
+  default:
     return args.color;
+
+  case type_cursor:
+    return cursor_textures[constants.cursor_index].Sample(g_sampler, args.uv);
+
+  case type_triangle:
+  {
+    float w = length(float2(ddx_fine(args.pos.x), ddy_fine(args.pos.y)));
+    // TODO: distance
+    return float4(1, 1, 0, 1);
+  }
+  }
 }
