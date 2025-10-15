@@ -1,6 +1,8 @@
 #pragma once
 
 #include "window_resource.hpp"
+#include "buffer.hpp"
+#include "descriptor_heap.hpp"
 
 #include <functional>
 #include <deque>
@@ -52,13 +54,11 @@ private:
   };
   std::unordered_map<CursorType, Cursor> _cursors;
 
-  // descriptor heap
-  // cursor textures + frame buffer
   DescriptorHeap<
     DescriptorHeapType::cbv_srv_uav,
-    static_cast<uint32_t>(CursorType::Number) + 1> _srv_heap;
-  
-  FrameBuffer _buffer;
+    static_cast<uint32_t>(CursorType::Number) + Frame_Count> _srv_heap;
+  std::array<FrameBuffer, Frame_Count> _frame_buffers;
+  uint32_t                            _shape_properties_offset{};
 
   Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;
   Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;

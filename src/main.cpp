@@ -17,6 +17,7 @@ int main()
 
   auto beg = std::chrono::steady_clock::now();
   uint32_t count{};
+  uint32_t secs{};
 
   while (wm->window_count())
   {
@@ -28,9 +29,13 @@ int main()
     auto dur = std::chrono::duration<float>(now - beg).count();
     if (dur >= 1.f)
     {
+      ++secs;
       info("[fps] {}", count / dur);
       count = 0;
       beg = now;
+
+      if (secs == 3)
+        wm->create_window(125, 125, 50, 50);
     }
   }
 

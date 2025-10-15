@@ -8,6 +8,7 @@
 #include <utf8.h>
 
 #include <algorithm>
+#include <ranges>
 
 using namespace vn;
 using namespace Microsoft::WRL;
@@ -33,8 +34,19 @@ auto to_wstring(std::string_view str) noexcept -> std::wstring
 auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer, std::string_view main, std::string_view profile) noexcept
 {
   auto args = ComPtr<IDxcCompilerArgs>{};
+#ifndef NDEBUG
+  auto debug_args = std::vector<LPCWSTR>
+  {
+    L"-Zi",
+    L"-Qembed_debug",
+    L"-Od",
+  };
+  vn::err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), debug_args.data(), debug_args.size(), nullptr, 0, args.GetAddressOf()),
+              "failed to create dxc args");
+#else
   vn::err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), nullptr, 0, nullptr, 0, args.GetAddressOf()),
               "failed to create dxc args");
+#endif
   
   auto result = ComPtr<IDxcResult>{};
   vn::err_if(compiler->Compile(&buffer, args->GetArguments(), args->GetCount(), nullptr, IID_PPV_ARGS(&result)),
@@ -156,8 +168,8 @@ auto load_cursor_bitmap(LPCSTR idc_cursor) noexcept
     }
   }
 
-  cursor_bitmap.pos.x = min_x + (max_x - min_x) / 2;
-  cursor_bitmap.pos.y = min_y + (max_y - min_y) / 2;
+  cursor_bitmap.pos.x = static_cast<float>(max_x - min_x) / 2 + min_x;
+  cursor_bitmap.pos.y = static_cast<float>(max_y - min_y) / 2 + min_y;
 
   return cursor_bitmap;
 }
@@ -204,7 +216,7 @@ void Renderer::create_pipeline_resource() noexcept
   ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, static_cast<uint32_t>(CursorType::Number), 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
   root_parameters[1].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
   ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 1);
-  root_parameters[2].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL);
+  root_parameters[2].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
 
   auto sampler_desc = D3D12_STATIC_SAMPLER_DESC{};
   sampler_desc.AddressU         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
@@ -230,10 +242,9 @@ void Renderer::create_pipeline_resource() noexcept
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
   {
-    { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "COLOR",    0, DXGI_FORMAT_R32_UINT,     0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "FLAGS",    0, DXGI_FORMAT_R32_UINT,     0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "POSITION",      0, DXGI_FORMAT_R32G32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "TEXCOORD",      0, DXGI_FORMAT_R32G32_FLOAT, 0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "BUFFER_OFFSET", 0, DXGI_FORMAT_R32_UINT,     0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
   };
 
   auto  blend_state = D3D12_BLEND_DESC{};
@@ -316,8 +327,8 @@ void Renderer::load_cursor_images() noexcept
     cursor_image.create_descriptor(_srv_heap.pop_handle());
   }
 
-  // create frame buffer descriptor
-  _buffer.init(80, _srv_heap.pop_handle());
+  // create buffers
+  for (auto& buf : _frame_buffers) buf.init(_srv_heap.pop_handle());
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete
@@ -353,7 +364,9 @@ void Renderer::update() noexcept
 {
   float offsets[]  = { 0, 1.f/2, 1};
   float offsets2[] = { 1, 1.f/2, 0};
+  uint32_t colors[] = { 0x00ff00ff, 0x0000ffff, 0xff0000ff };
   auto i = 0;
+  _shape_properties_offset = {};
   for (auto& [k, v] : _window_resources)
   {
     auto& window         = v.window;
@@ -361,9 +374,9 @@ void Renderer::update() noexcept
     
     frame_resource.vertices.append_range(std::vector<Vertex>
     {
-      { { window.width * offsets[i],  0                           }, {}, 0x00ff00ff },
-      { { window.width * offsets2[i], window.height               }, {}, 0x0000ffff },
-      { { 0,                          window.height * offsets2[i] }, {}, 0x00ffffff },
+      { { window.width * offsets[i],  0                           }, {}, _shape_properties_offset },
+      { { window.width * offsets2[i], window.height               }, {}, _shape_properties_offset },
+      { { 0,                          window.height * offsets2[i] }, {}, _shape_properties_offset },
     });
     frame_resource.indices.append_range(std::vector<uint16_t>
     {
@@ -373,18 +386,28 @@ void Renderer::update() noexcept
     });
     frame_resource.idx_beg += 3;
 
-    ++i;
+    frame_resource.shape_properties.append_range(std::vector<ShapeProperty>
+    {
+      { .color = colors[i] } 
+    });
+
+    _shape_properties_offset += sizeof(ShapeProperty);
 
     v.update();
+
+    ++i;
   }
 }
 
 void Renderer::render() noexcept
 {
-  // clear frame buffer
-  _buffer.clear();
+  auto core = Core::instance();
+
+  _frame_buffers[core->frame_index()].clear();
+  
   for (auto& [k, wr] : _window_resources) wr.render();
-  Core::instance()->move_to_next_frame();
+
+  core->move_to_next_frame();
 }
 
 }}

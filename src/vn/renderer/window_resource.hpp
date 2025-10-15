@@ -1,7 +1,7 @@
 #pragma once
 
 #include "image.hpp"
-#include "memory_allocator.hpp"
+#include "shader_type.hpp"
 #include "window.hpp"
 
 #include <dcomp.h>
@@ -46,9 +46,10 @@ struct FrameResource
   std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, Frame_Count> command_allocators;
   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd;
 
-  std::vector<Vertex>   vertices;
-  std::vector<uint16_t> indices;
-  uint16_t              idx_beg{};
+  std::vector<Vertex>        vertices;
+  std::vector<uint16_t>      indices;
+  uint16_t                   idx_beg{};
+  std::vector<ShapeProperty> shape_properties;
 
   void init() noexcept;
 };
