@@ -43,7 +43,7 @@ public:
   struct Message_Update_Window               { Window window; };
   struct Message_End_Use_Fullscreen_Window   { Window window; };
   struct Message_Resize_window               { Window window; };
-  
+
   using Message = std::variant<
     Message_Create_Window_Render_Resource,
     Message_Destroy_Window_Render_Resource,

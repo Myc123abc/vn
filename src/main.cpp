@@ -23,7 +23,7 @@ int main()
   {
     vn::message_process();
     vn::render();
-    
+
     ++count;
     auto now = std::chrono::steady_clock ::now();
     auto dur = std::chrono::duration<float>(now - beg).count();

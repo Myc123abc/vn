@@ -44,7 +44,7 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
     {
       ReleaseCapture();
       lm_down = false;
-        
+
       auto& window = wm->_windows[handle];
 
       if (window.moving)
@@ -177,7 +177,7 @@ void WindowManager::init() noexcept
   wnd_class.lpszClassName = Window_Class;
   wnd_class.lpfnWndProc   = wnd_proc;
   err_if(!RegisterClassExW(&wnd_class), "failed register class");
-    
+
   // create fullscreen
   auto screen_size = get_screen_size();
   _fullscreen_window_handle = CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,

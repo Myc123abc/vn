@@ -35,7 +35,7 @@ public:
   auto pos() const noexcept { return glm::vec<2, int32_t>{ x, y }; }
 
   void move(int dx, int dy) noexcept;
-  
+
   static auto constexpr Resize_Width  = 10;
   static auto constexpr Resize_Height = 10;
 

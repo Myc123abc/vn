@@ -65,7 +65,7 @@ void Window::adjust_offset(ResizeType type, POINT const& point, LONG& dx, LONG& 
     if (width == Min_Width && point.x > rect.left) dx = 0;
     if (height == Min_Height && point.y < rect.bottom) dy = 0;
     break;
-  
+
   case right_bottom:
     if (width == Min_Width && point.x < rect.right) dx = 0;
     if (height == Min_Height && point.y < rect.bottom) dy = 0;
@@ -94,7 +94,7 @@ void Window::resize(ResizeType type, int dx, int dy) noexcept
   resizing = true;
 
   cursor_type = get_cursor_type(type);
-  
+
   using enum ResizeType;
   switch (type)
   {
@@ -115,7 +115,7 @@ void Window::resize(ResizeType type, int dx, int dy) noexcept
     left_offset(dx);
     bottom_offset(dy);
     break;
-  
+
   case right_bottom:
     right_offset(dx);
     bottom_offset(dy);
@@ -175,7 +175,7 @@ void Window::left_offset(int dx) noexcept
   auto screen_size = get_screen_size();
 
   if (rect.left < 0) return;
-  
+
   LONG max_left;
   if (rect.right > screen_size.x)
   {
@@ -211,7 +211,7 @@ void Window::top_offset(int dy) noexcept
 void Window::right_offset(int dx) noexcept
 {
   auto screen_size = get_screen_size();
-  
+
   if (rect.right > screen_size.x) return;
 
   LONG min_right;

@@ -95,7 +95,7 @@ void Core::move_to_next_frame() noexcept
 
   // signal fence
   err_if(_command_queue->Signal(_fence.Get(), fence_value), "failed to signal fence");
-      
+
   // move to next frame
   _frame_index = ++_frame_index % Frame_Count;
 

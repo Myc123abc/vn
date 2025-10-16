@@ -26,8 +26,29 @@ struct ShapeProperty
     triangle,
   };
 
-  Type     type{};
-  uint32_t color{};
+  struct Header
+  {
+    Type     type{};
+    uint32_t color{};
+  };
+
+  ShapeProperty(Type type, uint32_t color = {}, std::vector<glm::vec<2, uint32_t>> const& points = {}) noexcept
+  {
+    _data.reserve(sizeof(Header) / sizeof(uint32_t) + points.size() * sizeof(glm::vec2));
+    _data.emplace_back(static_cast<uint32_t>(type));
+    _data.emplace_back(color);
+    for (auto const& p : points)
+    {
+      _data.emplace_back(p.x);
+      _data.emplace_back(p.y);
+    }
+  }
+
+  auto data()      const noexcept { return _data.data();                    }
+  auto byte_size() const noexcept { return _data.size() * sizeof(uint32_t); }
+
+private:
+  std::vector<uint32_t> _data{};
 };
 
 }}

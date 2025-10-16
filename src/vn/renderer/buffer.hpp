@@ -36,7 +36,7 @@ public:
 
   auto gpu_address() const noexcept { return _handle->GetGPUVirtualAddress(); }
   auto size()        const noexcept { return _size;                           }
-  
+
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;
   D3D12_CPU_DESCRIPTOR_HANDLE            _descriptor_handle{};

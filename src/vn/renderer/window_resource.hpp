@@ -31,7 +31,7 @@ public:
   auto current_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
 
   auto rtv() const noexcept
-  { 
+  {
     return CD3DX12_CPU_DESCRIPTOR_HANDLE{
       rtv_heap->GetCPUDescriptorHandleForHeapStart(),
       static_cast<int>(swapchain->GetCurrentBackBufferIndex()),

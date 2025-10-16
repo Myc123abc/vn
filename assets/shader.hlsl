@@ -1,3 +1,5 @@
+#include "sdf.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                                 Structure
 ////////////////////////////////////////////////////////////////////////////////
@@ -70,7 +72,7 @@ ShapeProperty get_shape_property(uint32_t offset)
 PSParameter vs(Vertex vertex)
 {
   ShapeProperty shape_property = get_shape_property(vertex.buffer_offset);
-  
+
   PSParameter result;
   result.pos           = float4((vertex.pos + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
   result.uv            = vertex.uv;

@@ -19,7 +19,7 @@ inline auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
 }
 
 class WindowManager
-{  
+{
 private:
   WindowManager()                                = default;
   ~WindowManager()                               = default;
@@ -38,7 +38,7 @@ public:
   void init() noexcept;
 
   void message_process() noexcept;
-  
+
   void create_window(int x, int y, uint32_t width, uint32_t height) noexcept;
 
   auto window_count() const noexcept { return _windows.size(); }

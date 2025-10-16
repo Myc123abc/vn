@@ -30,7 +30,7 @@ auto calculate_capacity(uint32_t old_capacity, uint32_t need_capacity)
 }
 
 namespace vn { namespace renderer {
-  
+
 void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) noexcept
 {
   _size              = {};
@@ -48,7 +48,7 @@ void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) 
     nullptr,
     IID_PPV_ARGS(&_handle)),
     "failed to create vertex buffer");
-  
+
   // get pointer of buffer
   auto range = CD3DX12_RANGE{};
   err_if(_handle->Map(0, &range, reinterpret_cast<void**>(&_data)), "failed to map pointer from buffer");
@@ -130,7 +130,8 @@ void FrameBuffer::upload(ID3D12GraphicsCommandList* cmd, std::span<Vertex> verti
   _window_offset = _vertices_indices_buffer.size();
 
   // shape properties
-  _shape_properties_buffer.append_range(shape_properties);
+  for (auto const& shape_property : shape_properties)
+    _shape_properties_buffer.append(shape_property.data(), shape_property.byte_size());
 }
 
 }}

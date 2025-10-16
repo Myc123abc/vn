@@ -156,14 +156,14 @@ public:
       auto uav_desc = D3D12_UNORDERED_ACCESS_VIEW_DESC{};
       uav_desc.Format        = dx12_image_format<Format>();
       uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-      Core::instance()->device()->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, handle);  
+      Core::instance()->device()->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, handle);
     }
     else if constexpr (Type == ImageType::rtv)
     {
       Core::instance()->device()->CreateRenderTargetView(_handle.Get(), nullptr, handle);
     }
     else if constexpr (Type == ImageType::srv)
-    {  
+    {
       D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
       srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
       srv_desc.Format                  = dx12_image_format<Format>();

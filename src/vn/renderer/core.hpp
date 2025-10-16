@@ -55,5 +55,5 @@ private:
   Microsoft::WRL::ComPtr<ID3D12Fence>               _fence;
   HANDLE                                            _fence_event;
 };
-  
+
 }}

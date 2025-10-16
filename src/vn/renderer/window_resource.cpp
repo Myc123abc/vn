@@ -11,7 +11,7 @@ namespace vn { namespace renderer {
 void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool transparent) noexcept
 {
   this->transparent = transparent;
-  
+
   auto core = Core::instance();
 
   // set viewport and scissor
@@ -47,12 +47,12 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
             "failed to bind composition visual to target");
     err_if(_comp_device->Commit(),
             "failed to commit composition device");
-  }  
+  }
   else
   {
     err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
             "failed to create swapchain");
-    
+
     // disable alt-enter fullscreen
     err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER), "failed to disable alt-enter");
   }
@@ -142,7 +142,7 @@ void WindowResource::init(Window const& window) noexcept
 
   // first frame rendered then display
   Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle]
-  { 
+  {
     ShowWindow(handle, SW_SHOW);
     UpdateWindow(handle);
   });
@@ -181,12 +181,12 @@ void WindowResource::update() noexcept
     });
     frame_resource.idx_beg += 6;
 
-    frame_resource.shape_properties.append_range(std::vector<ShapeProperty>
+    frame_resource.shape_properties.emplace_back(ShapeProperty
     {
-      { .type = ShapeProperty::Type::cursor } 
+      ShapeProperty::Type::cursor
     });
 
-    renderer->_shape_properties_offset += sizeof(ShapeProperty);
+    renderer->_shape_properties_offset += frame_resource.shape_properties.back().byte_size();
   }
 }
 
@@ -200,7 +200,7 @@ void WindowResource::render() noexcept
   auto& swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : this->swapchain_resource;
   auto  swapchain_image    = swapchain_resource.current_image();
   auto  rtv_handle         = swapchain_resource.rtv();
-  
+
   // reset command allocator and command list
   err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
   err_if(cmd->Reset(cmd_alloc, nullptr), "failed to reset command list");

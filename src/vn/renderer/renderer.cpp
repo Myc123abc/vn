@@ -31,46 +31,38 @@ auto to_wstring(std::string_view str) noexcept -> std::wstring
 }
 #endif
 
-auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer, std::string_view main, std::string_view profile) noexcept
+auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer, std::string_view main, std::string_view profile, std::span<LPCWSTR> args = {}) noexcept
 {
-  auto args = ComPtr<IDxcCompilerArgs>{};
-#ifndef NDEBUG
-  auto debug_args = std::vector<LPCWSTR>
-  {
-    L"-Zi",
-    L"-Qembed_debug",
-    L"-Od",
-  };
-  vn::err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), debug_args.data(), debug_args.size(), nullptr, 0, args.GetAddressOf()),
+  auto dxc_args = ComPtr<IDxcCompilerArgs>{};
+  err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), args.data(), args.size(), nullptr, 0, dxc_args.GetAddressOf()),
               "failed to create dxc args");
-#else
-  vn::err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), nullptr, 0, nullptr, 0, args.GetAddressOf()),
-              "failed to create dxc args");
-#endif
-  
+
+  auto include = ComPtr<IDxcIncludeHandler>{};
+  err_if(utils->CreateDefaultIncludeHandler(&include), "failed to create default include handler in dxc");
+
   auto result = ComPtr<IDxcResult>{};
-  vn::err_if(compiler->Compile(&buffer, args->GetArguments(), args->GetCount(), nullptr, IID_PPV_ARGS(&result)),
+  err_if(compiler->Compile(&buffer, dxc_args->GetArguments(), dxc_args->GetCount(), include.Get(), IID_PPV_ARGS(&result)),
               "failed to compile {}", main);
-  
+
   auto hr = HRESULT{};
   result->GetStatus(&hr);
   if (FAILED(hr))
   {
     auto msg = ComPtr<IDxcBlobUtf8>{};
-    vn::err_if(result->GetOutput(DXC_OUT_ERRORS,  IID_PPV_ARGS(&msg), nullptr), "failed to get error ouput of dxc");
-    vn::err_if(true, "failed to compile {}\n{}", main, msg->GetStringPointer());
+    err_if(result->GetOutput(DXC_OUT_ERRORS,  IID_PPV_ARGS(&msg), nullptr), "failed to get error ouput of dxc");
+    err_if(true, "failed to compile {}\n{}", main, msg->GetStringPointer());
   }
 
   auto cso = ComPtr<IDxcBlob>{};
-  vn::err_if(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&cso), nullptr), "failed to get compile result");
+  err_if(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&cso), nullptr), "failed to get compile result");
 
   return cso;
 }
 
-auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::string_view pixel_main) noexcept -> std::pair<ComPtr<IDxcBlob>, ComPtr<IDxcBlob>>
+auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::string_view pixel_main, std::span<LPCWSTR> args) noexcept -> std::pair<ComPtr<IDxcBlob>, ComPtr<IDxcBlob>>
 {
   auto compiler = ComPtr<IDxcCompiler3>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
+  err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
               "failed to create dxc compiler");
 
   DxcBuffer buffer{};
@@ -80,15 +72,16 @@ auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::
   buffer.Encoding = DXC_CP_UTF8;
 
   auto utils = ComPtr<IDxcUtils>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
+  err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
               "failed to create dxc utils");
-  return { compile_shader(compiler.Get(), utils.Get(), buffer, vert_main, "vs_6_0"), compile_shader(compiler.Get(), utils.Get(), buffer, pixel_main, "ps_6_0") };
+
+  return { compile_shader(compiler.Get(), utils.Get(), buffer, vert_main, "vs_6_0", args), compile_shader(compiler.Get(), utils.Get(), buffer, pixel_main, "ps_6_0", args) };
 }
 
-auto compile_comp(std::string_view path, std::string_view comp_main) noexcept
+auto compile_comp(std::string_view path, std::string_view comp_main, std::span<LPCWSTR> args) noexcept
 {
   auto compiler = ComPtr<IDxcCompiler3>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
+  err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
               "failed to create dxc compiler");
 
   DxcBuffer buffer{};
@@ -98,9 +91,9 @@ auto compile_comp(std::string_view path, std::string_view comp_main) noexcept
   buffer.Encoding = DXC_CP_UTF8;
 
   auto utils = ComPtr<IDxcUtils>{};
-  vn::err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
+  err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
               "failed to create dxc utils");
-  return compile_shader(compiler.Get(), utils.Get(), buffer, comp_main, "cs_6_0");
+  return compile_shader(compiler.Get(), utils.Get(), buffer, comp_main, "cs_6_0", args);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -120,7 +113,7 @@ struct Bitmap
   auto row_pitch() const noexcept { return width * pixel_size;          }
 
   void init(uint32_t width, uint32_t height, uint32_t pixel_size) noexcept
-  { 
+  {
     this->width      = width;
     this->height     = height;
     this->pixel_size = pixel_size;
@@ -235,9 +228,18 @@ void Renderer::create_pipeline_resource() noexcept
           "failed to serialize root signature");
   err_if(core->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
           "failed to create root signature");
-  
+
   // create shaders
-  auto [vertex_shader, pixel_shader] = compile_vert_pixel("assets/shader.hlsl", "vs", "ps");
+  auto compiler_args = std::vector<LPCWSTR>
+  {
+#ifndef NDEBUG
+    L"-Zi",
+    L"-Qembed_debug",
+    L"-Od",
+#endif
+    L"-Iassets"
+  };
+  auto [vertex_shader, pixel_shader] = compile_vert_pixel("assets/shader.hlsl", "vs", "ps", compiler_args);
 
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
@@ -302,7 +304,7 @@ void Renderer::load_cursor_images() noexcept
     [](uint32_t sum, auto const& cursor) { return sum + align(GetRequiredIntermediateSize(cursor.image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT); }));
   err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &upload_heap_des, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_heap)),
           "failed to create upload heap");
-  
+
   // upload bitmap to cursor tesxtures
   auto offset = uint32_t{};
   for (auto const& [index, pair] : std::views::enumerate(bitmaps))
@@ -362,8 +364,6 @@ void Renderer::run() noexcept
 
 void Renderer::update() noexcept
 {
-  float offsets[]  = { 0, 1.f/2, 1};
-  float offsets2[] = { 1, 1.f/2, 0};
   uint32_t colors[] = { 0x00ff00ff, 0x0000ffff, 0xff0000ff };
   auto i = 0;
   _shape_properties_offset = {};
@@ -371,27 +371,33 @@ void Renderer::update() noexcept
   {
     auto& window         = v.window;
     auto& frame_resource = v.frame_resource;
-    
+
     frame_resource.vertices.append_range(std::vector<Vertex>
     {
-      { { window.width * offsets[i],  0                           }, {}, _shape_properties_offset },
-      { { window.width * offsets2[i], window.height               }, {}, _shape_properties_offset },
-      { { 0,                          window.height * offsets2[i] }, {}, _shape_properties_offset },
+      { { 0,            0             }, {}, _shape_properties_offset },
+      { { window.width, 0             }, {}, _shape_properties_offset },
+      { { window.width, window.height }, {}, _shape_properties_offset },
+      { { 0,            window.height }, {}, _shape_properties_offset },
     });
     frame_resource.indices.append_range(std::vector<uint16_t>
     {
       static_cast<uint16_t>(frame_resource.idx_beg + 0),
       static_cast<uint16_t>(frame_resource.idx_beg + 1),
       static_cast<uint16_t>(frame_resource.idx_beg + 2),
+      static_cast<uint16_t>(frame_resource.idx_beg + 0),
+      static_cast<uint16_t>(frame_resource.idx_beg + 2),
+      static_cast<uint16_t>(frame_resource.idx_beg + 3),
     });
-    frame_resource.idx_beg += 3;
+    frame_resource.idx_beg += 4;
 
-    frame_resource.shape_properties.append_range(std::vector<ShapeProperty>
+    frame_resource.shape_properties.emplace_back(ShapeProperty
     {
-      { .color = colors[i] } 
+      ShapeProperty::Type::triangle,
+      colors[i],
+      { {}, { window.width, 0 }, { 0, 20 } }
     });
 
-    _shape_properties_offset += sizeof(ShapeProperty);
+    _shape_properties_offset += frame_resource.shape_properties.back().byte_size();
 
     v.update();
 
@@ -404,7 +410,7 @@ void Renderer::render() noexcept
   auto core = Core::instance();
 
   _frame_buffers[core->frame_index()].clear();
-  
+
   for (auto& [k, wr] : _window_resources) wr.render();
 
   core->move_to_next_frame();
