@@ -2,6 +2,8 @@
 
 #include <glm/glm.hpp>
 
+#include <bit>
+
 namespace vn { namespace renderer {
 
 struct alignas(8) Vertex
@@ -32,15 +34,15 @@ struct ShapeProperty
     uint32_t color{};
   };
 
-  ShapeProperty(Type type, uint32_t color = {}, std::vector<glm::vec<2, uint32_t>> const& points = {}) noexcept
+  ShapeProperty(Type type, uint32_t color = {}, std::vector<glm::vec2> const& points = {}) noexcept
   {
     _data.reserve(sizeof(Header) / sizeof(uint32_t) + points.size() * sizeof(glm::vec2));
     _data.emplace_back(static_cast<uint32_t>(type));
     _data.emplace_back(color);
     for (auto const& p : points)
     {
-      _data.emplace_back(p.x);
-      _data.emplace_back(p.y);
+      _data.emplace_back(std::bit_cast<uint32_t>(p.x));
+      _data.emplace_back(std::bit_cast<uint32_t>(p.y));
     }
   }
 

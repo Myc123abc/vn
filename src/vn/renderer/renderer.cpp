@@ -394,7 +394,7 @@ void Renderer::update() noexcept
     {
       ShapeProperty::Type::triangle,
       colors[i],
-      { {}, { window.width, 0 }, { 0, 20 } }
+      { {}, { window.width, 0 }, { 0, window.height / 2 } }
     });
 
     _shape_properties_offset += frame_resource.shape_properties.back().byte_size();

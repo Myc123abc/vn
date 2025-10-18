@@ -65,6 +65,11 @@ ShapeProperty get_shape_property(uint32_t offset)
   return buffer.Load<ShapeProperty>(offset);
 }
 
+float2 get_point(uint32_t offset, uint32_t index)
+{
+  return buffer.Load<float2>(offset + sizeof(ShapeProperty) + sizeof(float2) * index);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                              Vertex Shader
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,8 +105,12 @@ float4 ps(PSParameter args) : SV_TARGET
   case type_triangle:
   {
     float w = length(float2(ddx_fine(args.pos.x), ddy_fine(args.pos.y)));
-    // TODO: distance
-    return float4(1, 1, 0, 1);
+    float d = sdTriangle(
+      args.pos.xy,
+      get_point(args.buffer_offset, 0) + constants.window_pos,
+      get_point(args.buffer_offset, 1) + constants.window_pos,
+      get_point(args.buffer_offset, 2) + constants.window_pos);
+    return float4(args.color.rgb, args.color.a * (1.0 - smoothstep(0.0, w, d)));
   }
   }
 }
