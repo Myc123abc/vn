@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include <string>
+
 namespace vn { namespace renderer {
 
 enum class CursorType
@@ -18,19 +20,20 @@ enum class CursorType
 
 struct Window
 {
-  HWND       handle;
-  int        x;
-  int        y;
-  uint32_t   width;
-  uint32_t   height;
-  RECT       rect;
-  bool       moving{};
-  bool       resizing{};
-  CursorType cursor_type{};
+  std::string name;
+  HWND        handle;
+  int         x;
+  int         y;
+  uint32_t    width;
+  uint32_t    height;
+  RECT        rect;
+  bool        moving{};
+  bool        resizing{};
+  CursorType  cursor_type{};
 
 public:
   Window() = default;
-  Window(HWND handle, int x, int y, uint32_t width, uint32_t height);
+  Window(HWND handle, std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept;
 
   auto pos() const noexcept { return glm::vec<2, int32_t>{ x, y }; }
 

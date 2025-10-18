@@ -1,7 +1,9 @@
 #include "window_manager.hpp"
-#include "../util.hpp"
+#include "util.hpp"
 #include "renderer.hpp"
 #include "message_queue.hpp"
+
+#include <ranges>
 
 using namespace vn::renderer;
 
@@ -183,7 +185,7 @@ void WindowManager::init() noexcept
   _fullscreen_window_handle = CreateWindowExW(WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,
     0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!_fullscreen_window_handle,  "failed to create window");
-  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, 0, 0, screen_size.x, screen_size.y } });
+  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, {}, 0, 0, screen_size.x, screen_size.y } });
 }
 
 void WindowManager::message_process() noexcept
@@ -215,12 +217,14 @@ void WindowManager::process_message(MSG const& msg) noexcept
   }
 }
 
-void WindowManager::create_window(int x, int y, uint32_t width, uint32_t height) noexcept
+void WindowManager::create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept
 {
+  for (auto const& [_, window] : _windows) err_if(window.name == name, "duplicate window of {}", name);
+
   auto handle = CreateWindowExW(0, Window_Class, nullptr, WS_POPUP,
     x, y, width, height, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!handle,  "failed to create window");
-  auto window = Window{ handle, x, y, width, height };
+  auto window = Window{ handle, name, x, y, width, height };
   _windows.emplace(handle, window);
   MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window });
 }

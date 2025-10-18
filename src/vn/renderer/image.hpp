@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../util.hpp"
+#include "util.hpp"
 #include "core.hpp"
 
 #include <wrl/client.h>

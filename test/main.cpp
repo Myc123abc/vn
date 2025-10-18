@@ -1,25 +1,26 @@
 #include "vn/vn.hpp"
-#include "vn/renderer/window_manager.hpp"
 #include "vn/util.hpp"
+#include "vn/ui/ui.hpp"
 
 #include <chrono>
 
+// TODO: test hide window
+
 using namespace vn;
+using namespace vn::ui;
 
 int main()
 {
   vn::init();
 
-  auto wm = renderer::WindowManager::instance();
-
-  wm->create_window(50, 50, 50, 50);
-  wm->create_window(75, 75, 50, 50);
+  ui::create_window("first window", 100, 100, 100, 100);
+  ui::create_window("second window", 200, 200, 100, 100);
 
   auto beg = std::chrono::steady_clock::now();
   uint32_t count{};
   uint32_t secs{};
 
-  while (wm->window_count())
+  while (ui::window_count())
   {
     vn::message_process();
     vn::render();
@@ -35,7 +36,7 @@ int main()
       beg = now;
 
       if (secs == 3)
-        wm->create_window(125, 125, 50, 50);
+        ui::create_window("third window", 300, 300, 100, 100);
     }
   }
 

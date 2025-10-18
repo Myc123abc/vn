@@ -39,7 +39,7 @@ public:
 
   void message_process() noexcept;
 
-  void create_window(int x, int y, uint32_t width, uint32_t height) noexcept;
+  void create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept;
 
   auto window_count() const noexcept { return _windows.size(); }
 

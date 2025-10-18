@@ -1,13 +1,13 @@
 #include "window.hpp"
 #include "window_manager.hpp"
-#include "../util.hpp"
+#include "util.hpp"
 
 #include <algorithm>
 
 namespace vn { namespace renderer {
 
-Window::Window(HWND handle, int x, int y, uint32_t width, uint32_t height)
-  : handle(handle), x(x), y(y), width(width), height(height)
+Window::Window(HWND handle, std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept
+  : handle(handle), name(name), x(x), y(y), width(width), height(height)
 {
   err_if(width < Min_Width || height < Min_Height, "too small window!");
   update_rect();

@@ -14,26 +14,32 @@ add_subdirectory(vendor/DirectX-Headers)
 add_subdirectory(vendor/glm)
 
 ################################################################################
-###                                 test exe
+###                                  Library
 ################################################################################
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 file(GLOB_RECURSE SRC src/*.cpp)
 
-add_executable(test ${SRC})
-target_compile_definitions(test PRIVATE
+add_library(vn ${SRC})
+target_compile_definitions(vn
+PRIVATE
   WIN32_LEAN_AND_MEAN
   NOMINMAX
   UTF_CPP_CPLUSPLUS=202002L
 )
-target_link_libraries(test PRIVATE
+target_link_libraries(vn
+PRIVATE
   d3d12 dxgi dxcompiler dcomp dxguid
   DirectX-Headers
 )
-target_include_directories(test PRIVATE
+target_include_directories(vn
+PRIVATE
   vendor/glm
   vendor/utfcpp/source
+  include/vn
+PUBLIC
+  include
 )
 
 ################################################################################
@@ -45,3 +51,10 @@ add_custom_target(copy_assets ALL
           ${CMAKE_SOURCE_DIR}/assets
           ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
 )
+
+################################################################################
+###                                  Test
+################################################################################
+
+add_executable(test test/main.cpp)
+target_link_libraries(test PRIVATE vn)

@@ -1,6 +1,6 @@
 #include "renderer.hpp"
 #include "core.hpp"
-#include "../util.hpp"
+#include "util.hpp"
 #include "message_queue.hpp"
 
 #include <dxcapi.h>
