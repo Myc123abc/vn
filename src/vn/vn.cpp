@@ -1,8 +1,10 @@
 #include "vn.hpp"
 #include "renderer/renderer.hpp"
 #include "renderer/window_manager.hpp"
+#include "ui/ui_context.hpp"
 
 using namespace vn::renderer;
+using namespace vn::ui;
 
 namespace vn {
 
@@ -20,11 +22,14 @@ void destroy() noexcept
 void message_process() noexcept
 {
   WindowManager::instance()->message_process();
+  Renderer::instance()->message_process();
 }
 
 void render() noexcept
 {
-  Renderer::instance()->run();
+  Renderer::instance()->render_begin();
+  UIContext::instance()->render();
+  Renderer::instance()->render_end();
 }
 
 }

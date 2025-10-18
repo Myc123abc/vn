@@ -35,10 +35,10 @@ PRIVATE
 )
 target_include_directories(vn
 PRIVATE
-  vendor/glm
   vendor/utfcpp/source
   include/vn
 PUBLIC
+  vendor/glm
   include
 )
 

@@ -18,8 +18,12 @@ inline auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
   return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 }
 
+LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
+
 class WindowManager
 {
+  friend LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
+
 private:
   WindowManager()                                = default;
   ~WindowManager()                               = default;
@@ -39,16 +43,17 @@ public:
 
   void message_process() noexcept;
 
-  void create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept;
+  auto create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept -> HWND;
 
   auto window_count() const noexcept { return _windows.size(); }
 
   void begin_use_fullscreen_window() const noexcept;
   void end_use_fullscreen_window() const noexcept;
 
-private:
-  static LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
+  auto get_window_name(HWND handle) noexcept -> std::string_view;
+  auto get_window(HWND handle) noexcept { return _windows[handle]; }
 
+private:
   void process_message(MSG const& msg) noexcept;
 
   void process_begin_use_fullscreen_window() noexcept;

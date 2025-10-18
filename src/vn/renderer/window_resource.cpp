@@ -148,49 +148,7 @@ void WindowResource::init(Window const& window) noexcept
   });
 }
 
-void WindowResource::update() noexcept
-{
-  auto renderer = Renderer::instance();
-
-  if (window.moving || window.resizing)
-  {
-    auto pos = POINT{};
-    GetCursorPos(&pos);
-    pos.x -= window.x;
-    pos.y -= window.y;
-    if (window.cursor_type != CursorType::arrow)
-    {
-      pos.x -= renderer->_cursors[window.cursor_type].pos.x;
-      pos.y -= renderer->_cursors[window.cursor_type].pos.y;
-    }
-    frame_resource.vertices.append_range(std::vector<Vertex>
-    {
-      { { pos.x,      pos.y      }, { 0, 0 }, renderer->_shape_properties_offset },
-      { { pos.x + 32, pos.y      }, { 1, 0 }, renderer->_shape_properties_offset },
-      { { pos.x + 32, pos.y + 32 }, { 1, 1 }, renderer->_shape_properties_offset },
-      { { pos.x,      pos.y + 32 }, { 0, 1 }, renderer->_shape_properties_offset },
-    });
-    frame_resource.indices.append_range(std::vector<uint16_t>
-    {
-      static_cast<uint16_t>(frame_resource.idx_beg + 0),
-      static_cast<uint16_t>(frame_resource.idx_beg + 1),
-      static_cast<uint16_t>(frame_resource.idx_beg + 2),
-      static_cast<uint16_t>(frame_resource.idx_beg + 0),
-      static_cast<uint16_t>(frame_resource.idx_beg + 2),
-      static_cast<uint16_t>(frame_resource.idx_beg + 3),
-    });
-    frame_resource.idx_beg += 6;
-
-    frame_resource.shape_properties.emplace_back(ShapeProperty
-    {
-      ShapeProperty::Type::cursor
-    });
-
-    renderer->_shape_properties_offset += frame_resource.shape_properties.back().byte_size();
-  }
-}
-
-void WindowResource::render() noexcept
+void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
 {
   auto core      = Core::instance();
   auto renderer  = Renderer::instance();
@@ -233,7 +191,7 @@ void WindowResource::render() noexcept
   cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
   // upload data to buffer
-  renderer->_frame_buffers[core->frame_index()].upload(cmd, frame_resource.vertices, frame_resource.indices, frame_resource.shape_properties);
+  renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
 
   // set byte address buffer
   auto srv_heap_handle = CD3DX12_GPU_DESCRIPTOR_HANDLE{renderer->_srv_heap.gpu_handle()};
@@ -254,13 +212,7 @@ void WindowResource::render() noexcept
   cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
 
   // draw
-  cmd->DrawIndexedInstanced(frame_resource.indices.size(), 1, 0, 0, 0);
-
-  // clear vertices, indices and shape properties
-  frame_resource.vertices.clear();
-  frame_resource.indices.clear();
-  frame_resource.idx_beg = {};
-  frame_resource.shape_properties.clear();
+  cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
 
   // record finish, change render target view type to present
   swapchain_image->set_state<ImageState::present>(cmd);

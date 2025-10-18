@@ -6,6 +6,8 @@
 
 #include <dcomp.h>
 
+#include <span>
+
 namespace vn { namespace renderer {
 
 struct SwapchainResource
@@ -46,11 +48,6 @@ struct FrameResource
   std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, Frame_Count> command_allocators;
   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd;
 
-  std::vector<Vertex>        vertices;
-  std::vector<uint16_t>      indices;
-  uint16_t                   idx_beg{};
-  std::vector<ShapeProperty> shape_properties;
-
   void init() noexcept;
 };
 
@@ -62,8 +59,7 @@ struct WindowResource
 
   void init(Window const& window) noexcept;
 
-  void update() noexcept;
-  void render() noexcept;
+  void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
 };
 
 }}

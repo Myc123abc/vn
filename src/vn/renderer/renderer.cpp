@@ -2,6 +2,7 @@
 #include "core.hpp"
 #include "util.hpp"
 #include "message_queue.hpp"
+#include "../ui/ui_context.hpp"
 
 #include <dxcapi.h>
 
@@ -185,8 +186,6 @@ void Renderer::init() noexcept
 
   // load gpu resources
   load_cursor_images();
-
-  run();
 }
 
 void Renderer::destroy() noexcept
@@ -350,70 +349,29 @@ void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func
   });
 }
 
-void Renderer::run() noexcept
+void Renderer::message_process() noexcept
 {
   // process last render finish processes
   for (auto it = _current_frame_render_finish_procs.begin(); it != _current_frame_render_finish_procs.end();)
     (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
 
   MessageQueue::instance()->process_messages();
-
-  update();
-  render();
 }
 
-void Renderer::update() noexcept
+void Renderer::render_begin() noexcept
 {
-  uint32_t colors[] = { 0x00ff00ff, 0x0000ffff, 0xff0000ff };
-  auto i = 0;
-  _shape_properties_offset = {};
-  for (auto& [k, v] : _window_resources)
-  {
-    auto& window         = v.window;
-    auto& frame_resource = v.frame_resource;
-
-    frame_resource.vertices.append_range(std::vector<Vertex>
-    {
-      { { 0,            0             }, {}, _shape_properties_offset },
-      { { window.width, 0             }, {}, _shape_properties_offset },
-      { { window.width, window.height }, {}, _shape_properties_offset },
-      { { 0,            window.height }, {}, _shape_properties_offset },
-    });
-    frame_resource.indices.append_range(std::vector<uint16_t>
-    {
-      static_cast<uint16_t>(frame_resource.idx_beg + 0),
-      static_cast<uint16_t>(frame_resource.idx_beg + 1),
-      static_cast<uint16_t>(frame_resource.idx_beg + 2),
-      static_cast<uint16_t>(frame_resource.idx_beg + 0),
-      static_cast<uint16_t>(frame_resource.idx_beg + 2),
-      static_cast<uint16_t>(frame_resource.idx_beg + 3),
-    });
-    frame_resource.idx_beg += 4;
-
-    frame_resource.shape_properties.emplace_back(ShapeProperty
-    {
-      ShapeProperty::Type::triangle,
-      colors[i],
-      { {}, { window.width, 0 }, { 0, window.height / 2 } }
-    });
-
-    _shape_properties_offset += frame_resource.shape_properties.back().byte_size();
-
-    v.update();
-
-    ++i;
-  }
+  _frame_buffers[Core::instance()->frame_index()].clear();
 }
 
-void Renderer::render() noexcept
+void Renderer::render_end() noexcept
 {
-  auto core = Core::instance();
+  Core::instance()->move_to_next_frame();
+}
 
-  _frame_buffers[core->frame_index()].clear();
-
-  for (auto& [k, wr] : _window_resources) wr.render();
-
-  core->move_to_next_frame();
+void Renderer::render_window(HWND handle, ui::WindowRenderData const& data) noexcept
+{
+  err_if(!_window_resources.contains(handle), "unknow window resource window when rendering");
+  _window_resources[handle].render(data.vertices, data.indices, data.shape_properties);
 }
 
 }}

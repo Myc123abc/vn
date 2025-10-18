@@ -36,11 +36,11 @@ void MessageQueue::process_messages() noexcept
         {
           wm->begin_use_fullscreen_window();
         });
-        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
+        std::swap(wr[data.window.handle].window, data.window);
       }
       else if constexpr (std::is_same_v<T, Message_Update_Window>)
       {
-        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
+        std::swap(wr[data.window.handle].window, data.window);
       }
       else if constexpr (std::is_same_v<T, Message_End_Use_Fullscreen_Window>)
       {
@@ -48,11 +48,11 @@ void MessageQueue::process_messages() noexcept
         {
           wm->end_use_fullscreen_window();
         });
-        std::swap(renderer->_window_resources[data.window.handle].window, data.window);
+        std::swap(wr[data.window.handle].window, data.window);
       }
       else if constexpr (std::is_same_v<T, Message_Resize_window>)
       {
-        renderer->_window_resources[data.window.handle].swapchain_resource.resize(data.window.width, data.window.height);
+        wr[data.window.handle].swapchain_resource.resize(data.window.width, data.window.height);
       }
       else
         static_assert(false, "unexist message type of renderer");

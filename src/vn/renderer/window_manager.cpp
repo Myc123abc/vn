@@ -2,8 +2,7 @@
 #include "util.hpp"
 #include "renderer.hpp"
 #include "message_queue.hpp"
-
-#include <ranges>
+#include "../ui/ui_context.hpp"
 
 using namespace vn::renderer;
 
@@ -29,7 +28,7 @@ auto to_32_bits(uint64_t x) noexcept -> std::pair<uint32_t, uint32_t>
 
 namespace vn { namespace renderer {
 
-LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept
+LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept
 {
   static auto wm        = WindowManager::instance();
   static auto renderer  = Renderer::instance();
@@ -82,6 +81,7 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
   case WM_DESTROY:
   {
     msg_queue->send_message(MessageQueue::Message_Destroy_Window_Render_Resource{ handle });
+    ui::UIContext::instance()->windows.erase(handle);
     wm->_windows.erase(handle);
     return 0;
   }
@@ -121,7 +121,7 @@ LRESULT CALLBACK WindowManager::wnd_proc(HWND handle, UINT msg, WPARAM w_param, 
       auto offset_x = pos.x - last_pos.x;
       auto offset_y = pos.y - last_pos.y;
 
-      auto& window = wm->_windows.at(handle);
+      auto& window = wm->_windows[handle];
 
       // window moving
       if (lm_downresize_type == Window::ResizeType::none)
@@ -217,16 +217,15 @@ void WindowManager::process_message(MSG const& msg) noexcept
   }
 }
 
-void WindowManager::create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept
+auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept -> HWND
 {
-  for (auto const& [_, window] : _windows) err_if(window.name == name, "duplicate window of {}", name);
-
   auto handle = CreateWindowExW(0, Window_Class, nullptr, WS_POPUP,
     x, y, width, height, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!handle,  "failed to create window");
-  auto window = Window{ handle, name, x, y, width, height };
+  auto window = Window{ handle, name, x, y, width, height};
   _windows.emplace(handle, window);
   MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window });
+  return handle;
 }
 
 void WindowManager::begin_use_fullscreen_window() const noexcept
@@ -253,6 +252,12 @@ void WindowManager::process_end_use_fullscreen_window() noexcept
   SetWindowPos(_moving_or_resizing_window.handle, 0, _moving_or_resizing_window.x, _moving_or_resizing_window.y, _moving_or_resizing_window.width, _moving_or_resizing_window.height, 0);
   SetWindowRgn(_moving_or_resizing_window.handle, nullptr, false);
   ShowWindow(_fullscreen_window_handle, SW_HIDE);
+}
+
+auto WindowManager::get_window_name(HWND handle) noexcept -> std::string_view
+{
+  err_if(!_windows.contains(handle), "failed to get name of window");
+  return _windows[handle].name;
 }
 
 }}

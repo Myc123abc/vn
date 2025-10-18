@@ -64,7 +64,7 @@ public:
     _window_offset = {};
   }
 
-  void upload(ID3D12GraphicsCommandList* cmd, std::span<Vertex> vertices, std::span<uint16_t> indices, std::span<ShapeProperty> shape_properties) noexcept;
+  void upload(ID3D12GraphicsCommandList* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
 
 private:
   Buffer   _vertices_indices_buffer;

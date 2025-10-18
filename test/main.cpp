@@ -1,20 +1,36 @@
-#include "vn/vn.hpp"
+#include "vn.hpp"
 #include "vn/util.hpp"
-#include "vn/ui/ui.hpp"
+#include "vn/ui.hpp"
 
 #include <chrono>
 
-// TODO: test hide window
-
 using namespace vn;
 using namespace vn::ui;
+
+void render_window_1() noexcept
+{
+  auto [width, height] = window_extent();
+  ui::triangle({}, { width, 0 }, { 0, height }, 0xff0000ff);
+}
+
+void render_window_2() noexcept
+{
+  auto [width, height] = window_extent();
+  ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff);
+}
+
+void render_window_3() noexcept
+{
+  auto [width, height] = window_extent();
+  ui::triangle({}, { width, height }, { 0, height }, 0x0000ffff);
+}
 
 int main()
 {
   vn::init();
 
-  ui::create_window("first window", 100, 100, 100, 100);
-  ui::create_window("second window", 200, 200, 100, 100);
+  ui::create_window("first window", 100, 100, 100, 100, render_window_1);
+  ui::create_window("second window", 200, 200, 100, 100, render_window_2);
 
   auto beg = std::chrono::steady_clock::now();
   uint32_t count{};
@@ -36,7 +52,7 @@ int main()
       beg = now;
 
       if (secs == 3)
-        ui::create_window("third window", 300, 300, 100, 100);
+        ui::create_window("third window", 300, 300, 100, 100, render_window_3);
     }
   }
 

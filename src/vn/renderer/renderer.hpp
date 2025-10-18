@@ -7,12 +7,20 @@
 #include <functional>
 #include <deque>
 
+namespace vn { namespace ui {
+
+struct UIContext;
+struct WindowRenderData;
+
+}}
+
 namespace vn { namespace renderer {
 
 class Renderer
 {
   friend class MessageQueue;
   friend class WindowResource;
+  friend class ui::UIContext;
 
 private:
   Renderer()                           = default;
@@ -34,15 +42,16 @@ public:
 
   void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
 
-  void run() noexcept;
+  void message_process() noexcept;
+  void render_begin() noexcept;
+  void render_end() noexcept;
+
+  void render_window(HWND handle, ui::WindowRenderData const& data) noexcept;
 
 private:
   void create_pipeline_resource() noexcept;
 
   void load_cursor_images() noexcept;
-
-  void update() noexcept;
-  void render() noexcept;
 
 private:
   std::deque<std::function<bool()>> _current_frame_render_finish_procs;
@@ -58,7 +67,6 @@ private:
     DescriptorHeapType::cbv_srv_uav,
     static_cast<uint32_t>(CursorType::Number) + Frame_Count> _srv_heap;
   std::array<FrameBuffer, Frame_Count> _frame_buffers;
-  uint32_t                            _shape_properties_offset{};
 
   Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;
   Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;
