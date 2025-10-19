@@ -11,18 +11,20 @@ void render_window_1() noexcept
 {
   auto [width, height] = window_extent();
   ui::triangle({}, { width, 0 }, { 0, height }, 0xff0000ff, 0);
+  ui::rectangle({ 10, 10 }, { 30, 30 }, 0xfff000ff, 0);
 }
 
 void render_window_2() noexcept
 {
   auto [width, height] = window_extent();
+  ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
   ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff, 1);
 }
 
 void render_window_3() noexcept
 {
   auto [width, height] = window_extent();
-  ui::triangle({}, { width, height }, { 0, height }, 0x0000ffff, 4);
+  ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff0f0ff, 4);
 }
 
 int main()

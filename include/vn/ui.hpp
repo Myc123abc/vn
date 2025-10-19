@@ -31,13 +31,22 @@ auto window_count() noexcept -> uint32_t;
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
 
 /**
- * draw a triangle
- * @param p1 positon 0 of triangle
- * @param p2 positon 1 of triangle
- * @param p3 positon 2 of triangle
- * @param color color of triangle
- * @param thickness thickness of triangle
+ * draw a triangle (clockwise)
+ * @param p1
+ * @param p2
+ * @param p3
+ * @param color
+ * @param thickness
  */
-void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float thickness = {}) noexcept;
+void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color, float thickness = {}) noexcept;
+
+/**
+ * draw a rectangle
+ * @param left_top left upper corner
+ * @param right_bottom right down corner
+ * @param color
+ * @param thickness
+ */
+void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color, uint32_t thickness = {}) noexcept;
 
 }}

@@ -26,6 +26,7 @@ struct ShapeProperty
   {
     cursor = 1,
     triangle,
+    rectangle,
   };
 
   struct Header

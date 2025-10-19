@@ -3,25 +3,11 @@
 #include "ui_context.hpp"
 
 using namespace vn::renderer;
+using namespace vn::ui;
 
-namespace vn { namespace ui {
+namespace {
 
-void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept
-{
-  UIContext::instance()->add_window(name, x, y, width, height, update_func);
-}
-
-auto window_count() noexcept -> uint32_t
-{
-  return WindowManager::instance()->window_count();
-}
-
-auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
-{
-  return { UIContext::instance()->window.width, UIContext::instance()->window.height };
-}
-
-void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float thickness) noexcept
+void add_shape(ShapeProperty::Type type, uint32_t color, float thickness, std::vector<glm::vec2> const& values) noexcept
 {
   auto ctx = UIContext::instance();
 
@@ -45,13 +31,42 @@ void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float th
 
   ctx->render_data.shape_properties.emplace_back(ShapeProperty
   {
-    ShapeProperty::Type::triangle,
+    type,
     color,
     thickness,
-    { p0, p1, p2 }
+    values
   });
 
   ctx->shape_properties_offset += ctx->render_data.shape_properties.back().byte_size();
+}
+  
+}
+
+namespace vn { namespace ui {
+
+void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept
+{
+  UIContext::instance()->add_window(name, x, y, width, height, update_func);
+}
+
+auto window_count() noexcept -> uint32_t
+{
+  return WindowManager::instance()->window_count();
+}
+
+auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
+{
+  return { UIContext::instance()->window.width, UIContext::instance()->window.height };
+}
+
+void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color, float thickness) noexcept
+{
+  add_shape(ShapeProperty::Type::triangle, color, thickness, { p0, p1, p2 });
+}
+
+void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color, uint32_t thickness) noexcept
+{
+  add_shape(ShapeProperty::Type::rectangle, color, thickness, { left_top, right_bottom });
 }
 
 }}
