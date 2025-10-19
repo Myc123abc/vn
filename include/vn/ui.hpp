@@ -36,7 +36,8 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
  * @param p2 positon 1 of triangle
  * @param p3 positon 2 of triangle
  * @param color color of triangle
+ * @param thickness thickness of triangle
  */
-void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color) noexcept;
+void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float thickness = {}) noexcept;
 
 }}

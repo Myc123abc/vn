@@ -10,19 +10,19 @@ using namespace vn::ui;
 void render_window_1() noexcept
 {
   auto [width, height] = window_extent();
-  ui::triangle({}, { width, 0 }, { 0, height }, 0xff0000ff);
+  ui::triangle({}, { width, 0 }, { 0, height }, 0xff0000ff, 0);
 }
 
 void render_window_2() noexcept
 {
   auto [width, height] = window_extent();
-  ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff);
+  ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff, 1);
 }
 
 void render_window_3() noexcept
 {
   auto [width, height] = window_extent();
-  ui::triangle({}, { width, height }, { 0, height }, 0x0000ffff);
+  ui::triangle({}, { width, height }, { 0, height }, 0x0000ffff, 4);
 }
 
 int main()

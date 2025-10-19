@@ -36,6 +36,7 @@ struct ShapeProperty
 {
   uint32_t type;
   uint32_t color;
+  float    thickness;
 
   float4 get_color()
   {
@@ -68,6 +69,25 @@ ShapeProperty get_shape_property(uint32_t offset)
 float2 get_point(uint32_t offset, uint32_t index)
 {
   return buffer.Load<float2>(offset + sizeof(ShapeProperty) + sizeof(float2) * index);
+}
+
+float4 get_color(float4 color, float w, float d, float t)
+{
+  float value;
+  if (t == 0)
+    value = d;
+  else if (t == 1)
+    value = abs(d);
+  else
+  {
+    if (d > 0.0)
+      value = d;
+    else
+      value = -d - t + 1.0;
+  }
+  if (value >= w) discard;
+  float alpha = 1.0 - smoothstep(0.0, w, value);
+  return float4(color.rgb, color.a * alpha);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -110,7 +130,7 @@ float4 ps(PSParameter args) : SV_TARGET
       get_point(args.buffer_offset, 0) + constants.window_pos,
       get_point(args.buffer_offset, 1) + constants.window_pos,
       get_point(args.buffer_offset, 2) + constants.window_pos);
-    return float4(args.color.rgb, args.color.a * (1.0 - smoothstep(0.0, w, d)));
+    return get_color(args.color, w, d, shape_property.thickness);
   }
   }
 }

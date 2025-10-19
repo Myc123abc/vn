@@ -21,7 +21,7 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
   return { UIContext::instance()->window.width, UIContext::instance()->window.height };
 }
 
-void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color) noexcept
+void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float thickness) noexcept
 {
   auto ctx = UIContext::instance();
 
@@ -47,6 +47,7 @@ void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color) noexcept
   {
     ShapeProperty::Type::triangle,
     color,
+    thickness,
     { p0, p1, p2 }
   });
 
