@@ -31,6 +31,7 @@ enum : uint32_t
   type_cursor = 1,
   type_triangle,
   type_rectangle,
+  type_circle,
 };
 
 struct ShapeProperty
@@ -70,6 +71,11 @@ ShapeProperty get_shape_property(uint32_t offset)
 float2 get_point(uint32_t offset, uint32_t index)
 {
   return buffer.Load<float2>(offset + sizeof(ShapeProperty) + sizeof(float2) * index) + constants.window_pos;
+}
+
+float get_float(uint32_t offset, uint32_t index)
+{
+  return buffer.Load<float>(offset + sizeof(ShapeProperty) + sizeof(float) * index);
 }
 
 float4 get_color(float4 color, float w, float d, float t)
@@ -146,6 +152,14 @@ float4 ps(PSParameter args) : SV_TARGET
       args.pos.xy - center,
       extent_div2
     );
+    break;
+  }
+
+  case type_circle:
+  {
+    float2 center = get_point(args.buffer_offset, 0);
+    float radius = get_float(args.buffer_offset, 2);
+    d = sdCircle(args.pos.xy - center, radius);
     break;
   }
   }

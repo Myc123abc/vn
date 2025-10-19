@@ -10,14 +10,16 @@ using namespace vn::ui;
 void render_window_1() noexcept
 {
   auto [width, height] = window_extent();
-  ui::triangle({}, { width, 0 }, { 0, height }, 0xff0000ff, 0);
-  ui::rectangle({ 10, 10 }, { 30, 30 }, 0xfff000ff, 0);
+  ui::rectangle({}, { width, height }, 0x282C34FF, 0);
+  ui::rectangle({ 10, 10 }, { width - 40, height - 30 }, 0xff00004f, 0);
+  ui::rectangle({ 20, 10 }, { width - 30, height - 30 }, 0x0000ff4f, 0);
 }
 
 void render_window_2() noexcept
 {
   auto [width, height] = window_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
+  ui::circle({ 40, 40 }, 20, 0x00ff00ff, 1);
   ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff, 1);
 }
 

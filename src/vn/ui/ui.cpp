@@ -7,7 +7,7 @@ using namespace vn::ui;
 
 namespace {
 
-void add_shape(ShapeProperty::Type type, uint32_t color, float thickness, std::vector<glm::vec2> const& values) noexcept
+void add_shape(ShapeProperty::Type type, uint32_t color, float thickness, std::vector<glm::vec2> const& points, std::vector<float> const& values = {}) noexcept
 {
   auto ctx = UIContext::instance();
 
@@ -34,6 +34,7 @@ void add_shape(ShapeProperty::Type type, uint32_t color, float thickness, std::v
     type,
     color,
     thickness,
+    points,
     values
   });
 
@@ -67,6 +68,11 @@ void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uin
 void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color, uint32_t thickness) noexcept
 {
   add_shape(ShapeProperty::Type::rectangle, color, thickness, { left_top, right_bottom });
+}
+
+void circle(glm::vec2 const& center, float radius, uint32_t color, uint32_t thickness) noexcept
+{
+  add_shape(ShapeProperty::Type::circle, color, thickness, { center }, { radius });
 }
 
 }}

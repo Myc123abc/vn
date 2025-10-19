@@ -49,4 +49,14 @@ void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uin
  */
 void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color, uint32_t thickness = {}) noexcept;
 
+/**
+ * draw a circle
+ * @param center
+ * @param radius
+ * @param color
+ * @param thickness
+ */
+void circle(glm::vec2 const& center, float radius, uint32_t color, uint32_t thickness = {}) noexcept;
+
+
 }}

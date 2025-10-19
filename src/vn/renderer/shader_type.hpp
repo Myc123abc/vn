@@ -27,6 +27,7 @@ struct ShapeProperty
     cursor = 1,
     triangle,
     rectangle,
+    circle,
   };
 
   struct Header
@@ -36,9 +37,9 @@ struct ShapeProperty
     float    thickness{};
   };
 
-  ShapeProperty(Type type, uint32_t color = {}, float thickness = {}, std::vector<glm::vec2> const& points = {}) noexcept
+  ShapeProperty(Type type, uint32_t color = {}, float thickness = {}, std::vector<glm::vec2> const& points = {}, std::vector<float> const& values = {}) noexcept
   {
-    _data.reserve(sizeof(Header) / sizeof(uint32_t) + points.size() * sizeof(glm::vec2));
+    _data.reserve(sizeof(Header) / sizeof(uint32_t) + points.size() * sizeof(glm::vec2) + values.size() * sizeof(float));
     _data.emplace_back(static_cast<uint32_t>(type));
     _data.emplace_back(color);
     _data.emplace_back(std::bit_cast<uint32_t>(thickness));
@@ -46,6 +47,10 @@ struct ShapeProperty
     {
       _data.emplace_back(std::bit_cast<uint32_t>(p.x));
       _data.emplace_back(std::bit_cast<uint32_t>(p.y));
+    }
+    for (auto const& v : values)
+    {
+      _data.emplace_back(std::bit_cast<uint32_t>(v));
     }
   }
 
