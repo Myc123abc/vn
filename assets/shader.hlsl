@@ -34,11 +34,18 @@ enum : uint32_t
   type_circle,
 };
 
+enum : uint32_t
+{
+  op_none,
+  op_union,
+};
+
 struct ShapeProperty
 {
   uint32_t type;
   uint32_t color;
   float    thickness;
+  uint32_t op;
 
   float4 get_color()
   {
@@ -70,12 +77,12 @@ ShapeProperty get_shape_property(uint32_t offset)
 
 float2 get_point(uint32_t offset, uint32_t index)
 {
-  return buffer.Load<float2>(offset + sizeof(ShapeProperty) + sizeof(float2) * index) + constants.window_pos;
+  return buffer.Load<float2>(offset + sizeof(float2) * index);
 }
 
 float get_float(uint32_t offset, uint32_t index)
 {
-  return buffer.Load<float>(offset + sizeof(ShapeProperty) + sizeof(float) * index);
+  return buffer.Load<float>(offset + sizeof(float) * index);
 }
 
 float4 get_color(float4 color, float w, float d, float t)
@@ -95,6 +102,51 @@ float4 get_color(float4 color, float w, float d, float t)
   if (value >= w) discard;
   float alpha = 1.0 - smoothstep(0.0, w, value);
   return float4(color.rgb, color.a * alpha);
+}
+
+float get_sd(float2 pos, uint32_t type, inout uint32_t offset)
+{
+  float d;
+  switch (type)
+  {
+  default:
+    return 0;
+
+  case type_triangle:
+  {
+    d = sdTriangle(
+      pos,
+      get_point(offset, 0) + constants.window_pos,
+      get_point(offset, 1) + constants.window_pos,
+      get_point(offset, 2) + constants.window_pos);
+    offset += sizeof(float2) * 3;
+    break;
+  }
+
+  case type_rectangle:
+  {
+    float2 p0 = get_point(offset, 0) + constants.window_pos;
+    float2 p1 = get_point(offset, 1) + constants.window_pos;
+    float2 extent_div2 = (p1 - p0) * 0.5;
+    float2 center = p0 + extent_div2;
+    d = sdBox(
+      pos - center,
+      extent_div2
+    );
+    offset += sizeof(float2) * 2;
+    break;
+  }
+
+  case type_circle:
+  {
+    float2 center = get_point(offset, 0) + constants.window_pos;
+    float radius  = get_float(offset, 2);
+    d = sdCircle(pos - center, radius);
+    offset += sizeof(float2) + sizeof(float);
+    break;
+  }
+  }
+  return d;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -119,49 +171,29 @@ PSParameter vs(Vertex vertex)
 
 float4 ps(PSParameter args) : SV_TARGET
 {
-  ShapeProperty shape_property = get_shape_property(args.buffer_offset);
+  uint32_t offset = args.buffer_offset;
 
-  float w = length(float2(ddx_fine(args.pos.x), ddy_fine(args.pos.y)));
-  float d;
+  ShapeProperty shape_property = get_shape_property(offset);
+  offset += sizeof(ShapeProperty);
 
-  switch (shape_property.type)
-  {
-  default:
-    return args.color;
+  float4 color = args.color;
 
-  case type_cursor:
+  if (shape_property.type == type_cursor)
     return cursor_textures[constants.cursor_index].Sample(g_sampler, args.uv);
 
-  case type_triangle:
+  float w = length(float2(ddx_fine(args.pos.x), ddy_fine(args.pos.y)));
+  float d = get_sd(args.pos.xy, shape_property.type, offset);
+
+  while (shape_property.op != op_none)
   {
-    d = sdTriangle(
-      args.pos.xy,
-      get_point(args.buffer_offset, 0),
-      get_point(args.buffer_offset, 1),
-      get_point(args.buffer_offset, 2));
-    break;
+    if (shape_property.op == op_union)
+    {
+      shape_property = get_shape_property(offset);
+      offset += sizeof(ShapeProperty);
+      color = shape_property.get_color();
+      d     = min(d, get_sd(args.pos.xy, shape_property.type, offset));
+    }
   }
 
-  case type_rectangle:
-  {
-    float2 p0 = get_point(args.buffer_offset, 0);
-    float2 p1 = get_point(args.buffer_offset, 1);
-    float2 extent_div2 = (p1 - p0) * 0.5;
-    float2 center = p0 + extent_div2;
-    d = sdBox(
-      args.pos.xy - center,
-      extent_div2
-    );
-    break;
-  }
-
-  case type_circle:
-  {
-    float2 center = get_point(args.buffer_offset, 0);
-    float radius = get_float(args.buffer_offset, 2);
-    d = sdCircle(args.pos.xy - center, radius);
-    break;
-  }
-  }
-  return get_color(args.color, w, d, shape_property.thickness);
+  return get_color(color, w, d, shape_property.thickness);
 }

@@ -30,19 +30,27 @@ struct ShapeProperty
     circle,
   };
 
+  enum class Operator : uint32_t
+  {
+    none,
+    u,
+  };
+
   struct Header
   {
     Type     type{};
     uint32_t color{};
     float    thickness{};
+    Operator op{};
   };
 
-  ShapeProperty(Type type, uint32_t color = {}, float thickness = {}, std::vector<glm::vec2> const& points = {}, std::vector<float> const& values = {}) noexcept
+  ShapeProperty(Type type, uint32_t color = {}, float thickness = {}, Operator op = {}, std::vector<glm::vec2> const& points = {}, std::vector<float> const& values = {}) noexcept
   {
     _data.reserve(sizeof(Header) / sizeof(uint32_t) + points.size() * sizeof(glm::vec2) + values.size() * sizeof(float));
     _data.emplace_back(static_cast<uint32_t>(type));
     _data.emplace_back(color);
     _data.emplace_back(std::bit_cast<uint32_t>(thickness));
+    _data.emplace_back(static_cast<uint32_t>(op));
     for (auto const& p : points)
     {
       _data.emplace_back(std::bit_cast<uint32_t>(p.x));
@@ -56,6 +64,10 @@ struct ShapeProperty
 
   auto data()      const noexcept { return _data.data();                    }
   auto byte_size() const noexcept { return _data.size() * sizeof(uint32_t); }
+
+  void set_color(uint32_t color)      noexcept { _data[1] = color;                              }
+  void set_thickness(float thickness) noexcept { _data[2] = std::bit_cast<uint32_t>(thickness); }
+  void set_operator(Operator op)      noexcept { _data[3] = static_cast<uint32_t>(op);          }
 
 private:
   std::vector<uint32_t> _data{};

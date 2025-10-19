@@ -7,6 +7,8 @@
 using namespace vn;
 using namespace vn::ui;
 
+uint32_t secs;
+
 void render_window_1() noexcept
 {
   auto [width, height] = window_extent();
@@ -19,7 +21,8 @@ void render_window_2() noexcept
 {
   auto [width, height] = window_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
-  ui::circle({ 40, 40 }, 20, 0x00ff00ff, 1);
+  if (secs < 2)
+    ui::circle({ 40, 40 }, 20, 0x00ff00ff, 1);
   ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff, 1);
 }
 
@@ -27,6 +30,11 @@ void render_window_3() noexcept
 {
   auto [width, height] = window_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff0f0ff, 4);
+
+  ui::begin_union(0x00ff00ff, 1);
+  ui::circle({ 40, 40 }, 20);
+  ui::circle({ 30, 40 }, 20);
+  ui::end_union();
 }
 
 int main()
@@ -38,7 +46,6 @@ int main()
 
   auto beg = std::chrono::steady_clock::now();
   uint32_t count{};
-  uint32_t secs{};
 
   while (ui::window_count())
   {

@@ -65,10 +65,14 @@ private:
   void update_cursor() noexcept;
 
 public:
-  std::unordered_map<HWND, Window> windows;
-  WindowRenderData                 render_data;
-  renderer::Window                 window;
-  uint32_t                         shape_properties_offset;
+  std::unordered_map<HWND, Window>  windows;
+  WindowRenderData                  render_data;
+  renderer::Window                  window;
+  uint32_t                          shape_properties_offset{};
+
+  renderer::ShapeProperty::Operator op{};
+  uint32_t                          color{};
+  float                             thickness{};
 };
 
 }}

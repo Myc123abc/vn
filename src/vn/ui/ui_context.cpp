@@ -32,6 +32,9 @@ void UIContext::render() noexcept
     render_data.clear();
 
     window.update();
+
+    err_if(op != ShapeProperty::Operator::none, "must clear operator after using finish");
+
     update_cursor();
 
     Renderer::instance()->render_window(handle, render_data);
@@ -70,11 +73,7 @@ void UIContext::update_cursor() noexcept
     });
     render_data.idx_beg += 6;
 
-    render_data.shape_properties.emplace_back(ShapeProperty
-    {
-      ShapeProperty::Type::cursor
-    });
-
+    render_data.shape_properties.emplace_back(ShapeProperty{ ShapeProperty::Type::cursor });
     shape_properties_offset += render_data.shape_properties.back().byte_size();
   }
 }

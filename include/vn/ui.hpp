@@ -31,6 +31,16 @@ auto window_count() noexcept -> uint32_t;
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
 
 /**
+ * use union operator between shapes, the color and thickness will be ignore on unioned shapes
+ * @param color
+ * @param thickness
+ */
+void begin_union(uint32_t color, float thickness = {}) noexcept;
+
+/// end the union operator
+void end_union() noexcept;
+
+/**
  * draw a triangle (clockwise)
  * @param p1
  * @param p2
@@ -38,7 +48,7 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
  * @param color
  * @param thickness
  */
-void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color, float thickness = {}) noexcept;
+void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color = {}, float thickness = {}) noexcept;
 
 /**
  * draw a rectangle
@@ -47,7 +57,7 @@ void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uin
  * @param color
  * @param thickness
  */
-void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color, uint32_t thickness = {}) noexcept;
+void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color = {}, uint32_t thickness = {}) noexcept;
 
 /**
  * draw a circle
@@ -56,7 +66,7 @@ void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_
  * @param color
  * @param thickness
  */
-void circle(glm::vec2 const& center, float radius, uint32_t color, uint32_t thickness = {}) noexcept;
+void circle(glm::vec2 const& center, float radius, uint32_t color = {}, uint32_t thickness = {}) noexcept;
 
 
 }}
