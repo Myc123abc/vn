@@ -70,9 +70,12 @@ public:
   renderer::Window                  window;
   uint32_t                          shape_properties_offset{};
 
-  renderer::ShapeProperty::Operator op{};
-  uint32_t                          color{};
-  float                             thickness{};
+  struct OperatorShapeRenderData
+  {
+    renderer::ShapeProperty::Operator op{};
+    std::vector<glm::vec2>            points{};
+    uint32_t                          offset{};
+  } op_data;
 };
 
 }}

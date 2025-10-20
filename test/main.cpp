@@ -29,12 +29,24 @@ void render_window_2() noexcept
 void render_window_3() noexcept
 {
   auto [width, height] = window_extent();
-  ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff0f0ff, 4);
+  ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff0f0ff, 1);
 
-  ui::begin_union(0x00ff00ff, 1);
-  ui::circle({ 40, 40 }, 20);
+  ui::begin_union();
+  ui::circle({ 50, 40 }, 20);
   ui::circle({ 30, 40 }, 20);
-  ui::end_union();
+  ui::end_union(0x00ff00ff, 4);
+
+  ui::begin_union();
+  ui::circle({ 50, 60 }, 20);
+  ui::circle({ 30, 60 }, 20);
+  ui::end_union(0x00ff004f, 1);
+
+  ui::begin_union();
+  ui::circle({ 50, 70 }, 20);
+  ui::circle({ 30, 80 }, 20);
+  ui::end_union(0x00ff0fff);
+
+  ui::rectangle({ 60, 10 }, { 80, 30 }, 0x0ff0f0ff, 4);
 }
 
 int main()
