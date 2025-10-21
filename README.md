@@ -3,9 +3,9 @@
 ## TODO
 
 ### Core Systems
-- [*] Renderer
-- [*] Window Manager
-- [*] SDF Rendering
+- [x] Renderer
+- [x] Window Manager
+- [x] SDF Rendering
 - [ ] UI System
 - [ ] Text Engine
 - [ ] Audio Engine
