@@ -14,6 +14,23 @@ void render_window_1() noexcept
   auto [width, height] = window_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
   ui::rectangle({ 10, 10 }, { width - 40, height - 30 }, 0xff00004f, 0);
+
+  ui::begin_union();
+
+  ui::circle({50, 50}, 20);
+
+  ui::begin_path();
+  ui::line({0, 50}, {100,50});
+  ui::bezier({100, 50}, {50,150}, {0, 50});
+  ui::end_path();
+
+  ui::begin_path();
+  ui::line({60, 0}, {60, 200});
+  ui::bezier({60, 200}, {40, 20}, {60, 0});
+  ui::end_path();
+
+  ui::end_union(0x00ff00ff, 1);
+
   ui::rectangle({ 20, 10 }, { width - 30, height - 30 }, 0x0000ff4f, 0);
 }
 

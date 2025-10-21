@@ -171,7 +171,10 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
 
   // set viewport and scissor rectangle
   cmd->RSSetViewports(1, &swapchain_resource.viewport);
-  cmd->RSSetScissorRects(1, &swapchain_resource.scissor);
+  if (window.moving || window.resizing)
+    cmd->RSSetScissorRects(1, &window.rect);
+  else
+    cmd->RSSetScissorRects(1, &swapchain_resource.scissor);
 
   // convert render target view from present type to render target type
   swapchain_image->set_state<ImageState::render_target>(cmd);
@@ -212,7 +215,14 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
 
   // draw
-  cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
+  if (window.moving || window.resizing)
+  {
+    cmd->DrawIndexedInstanced(indices.size() - 6, 1, 0, 0, 0);
+    cmd->RSSetScissorRects(1, &swapchain_resource.scissor);
+    cmd->DrawIndexedInstanced(6, 1, indices.size() - 6, 0, 0);
+  }
+  else
+    cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
 
   // record finish, change render target view type to present
   swapchain_image->set_state<ImageState::present>(cmd);

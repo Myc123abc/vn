@@ -3,15 +3,14 @@
 ## TODO
 
 ### Core Systems
-- [ ] Renderer
-- [ ] Window Manager
-- [ ] SDF Rendering
+- [*] Renderer
+- [*] Window Manager
+- [*] SDF Rendering
 - [ ] UI System
 - [ ] Text Engine
 - [ ] Audio Engine
 - [ ] Video Engine
 - [ ] Script System
-- [ ] Advanced Effects
 
 ### Examples
 - [ ] Audio Player

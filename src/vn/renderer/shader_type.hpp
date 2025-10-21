@@ -28,6 +28,12 @@ struct ShapeProperty
     triangle,
     rectangle,
     circle,
+    line,
+    bezier,
+
+    path,
+    path_line,
+    path_bezier
   };
 
   enum class Operator : uint32_t

@@ -76,6 +76,10 @@ public:
     std::vector<glm::vec2>            points{};
     uint32_t                          offset{};
   } op_data;
+
+  bool                   path_draw{};
+  std::vector<float>     path_draw_data;
+  std::vector<glm::vec2> path_draw_points;
 };
 
 }}

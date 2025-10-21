@@ -30,6 +30,12 @@ enum : uint32_t
   type_triangle,
   type_rectangle,
   type_circle,
+  type_line,
+  type_bezier,
+
+  type_path,
+  type_path_line,
+  type_path_bezier
 };
 
 enum : uint32_t
@@ -89,30 +95,14 @@ float get_float(inout uint32_t offset)
   return res;
 }
 
-float sdTriangle(float2 p, float2 p0, float2 p1, float2 p2)
+uint32_t get_uint(inout uint32_t offset)
 {
-  float2 e0 = p1-p0, e1 = p2-p1, e2 = p0-p2;
-  float2 v0 = p -p0, v1 = p -p1, v2 = p -p2;
-  float2 pq0 = v0 - e0*clamp( dot(v0,e0)/dot(e0,e0), 0.0, 1.0 );
-  float2 pq1 = v1 - e1*clamp( dot(v1,e1)/dot(e1,e1), 0.0, 1.0 );
-  float2 pq2 = v2 - e2*clamp( dot(v2,e2)/dot(e2,e2), 0.0, 1.0 );
-  float s = sign( e0.x*e2.y - e0.y*e2.x );
-  float2 d = min(min(float2(dot(pq0,pq0), s*(v0.x*e0.y-v0.y*e0.x)),
-                     float2(dot(pq1,pq1), s*(v1.x*e1.y-v1.y*e1.x))),
-                     float2(dot(pq2,pq2), s*(v2.x*e2.y-v2.y*e2.x)));
-  return -sqrt(d.x)*sign(d.y);
+  uint32_t res = buffer.Load<uint32_t>(offset);
+  offset += sizeof(uint32_t);
+  return res;
 }
 
-float sdBox(float2 p, float2 b)
-{
-  float2 d = abs(p)-b;
-  return length(max(d,0.0)) + min(max(d.x,d.y),0.0);
-}
-
-float sdCircle(float2 p, float r)
-{
-  return length(p) - r;
-}
+#include "sdf.h"
 
 float4 get_color(float4 color, float w, float d, float t)
 {
@@ -133,9 +123,33 @@ float4 get_color(float4 color, float w, float d, float t)
   return float4(color.rgb, color.a * alpha);
 }
 
-float get_sd(float2 pos, uint32_t type, inout uint32_t offset)
+float get_distance_parition(float2 pos, inout uint offset)
 {
   float d;
+  switch (get_uint(offset))
+  {
+  case type_path_line:
+  {
+    float2 p0 = get_point(offset);
+    float2 p1 = get_point(offset);
+    d = sdf_line_partition(pos, p0, p1);
+    break;
+  }
+  case type_path_bezier:
+  {
+    float2 p0 = get_point(offset);
+    float2 p1 = get_point(offset);
+    float2 p2 = get_point(offset);
+    d = sdf_bezier_partition(pos, p0, p1, p2);
+    break;
+  }
+  }
+  return d;
+}
+
+float get_sd(float2 pos, uint32_t type, inout uint32_t offset)
+{
+  float d = -3.4028235e+38;
   switch (type)
   {
   default:
@@ -165,6 +179,46 @@ float get_sd(float2 pos, uint32_t type, inout uint32_t offset)
     float2 center = get_point(offset);
     float  radius = get_float(offset);
     d = sdCircle(pos - center, radius);
+    break;
+  }
+
+  case type_line:
+  {
+    float2 p0 = get_point(offset);
+    float2 p1 = get_point(offset);
+    d = sdSegment(pos, p0, p1);
+    break;
+  }
+
+  case type_bezier:
+  {
+    float2 p0 = get_point(offset);
+    float2 p1 = get_point(offset);
+    float2 p2 = get_point(offset);
+    d = sdBezier(pos, p0, p1, p2);
+    break;
+  }
+
+  case type_path:
+  {
+    uint32_t count = get_uint(offset);
+    for (uint32_t i = 0; i < count; ++i)
+    {
+      float partition_distance = get_distance_parition(pos, offset);
+      float distance = max(d, partition_distance);
+      
+      // aliasing problem:
+      // when two line segment in same line, such as (0,0)(50,50) to (50,50)(100,100)
+      // max(d0,d1) will lead aliasing problem
+      // so use min(abs(d0),abs(d1)) to resolve
+      // well min's way can only use for 1-pixel case,
+      // so for filled and thickness wireform we use max still,
+      // and use min on bround, perfect! (I spent half day to resolve... my holiday...)
+      if (distance > 0.0)
+        d = min(abs(d), abs(partition_distance));
+      else
+        d = distance;
+    }
     break;
   }
   }
