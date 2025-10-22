@@ -297,4 +297,10 @@ void set_cursor(Window::ResizeType type) noexcept
   SetCursor(LoadCursorA(nullptr, cursor));
 }
 
+auto Window::cursor_pos() const noexcept -> glm::vec<2, int>
+{
+  auto pos = get_cursor_pos();
+  return { pos.x - x, pos.y - y };
+}
+
 }}

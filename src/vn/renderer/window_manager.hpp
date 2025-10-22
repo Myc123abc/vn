@@ -18,6 +18,13 @@ inline auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
   return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 }
 
+inline auto get_cursor_pos() noexcept
+{
+  POINT p;
+  GetCursorPos(&p);
+  return p;
+}
+
 LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
 
 class WindowManager

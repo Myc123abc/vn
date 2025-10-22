@@ -80,6 +80,9 @@ public:
   bool                   path_draw{};
   std::vector<float>     path_draw_data;
   std::vector<glm::vec2> path_draw_points;
+
+  bool updating{}; // promise ui functinos only call in update callback
+  bool using_union{};
 };
 
 }}

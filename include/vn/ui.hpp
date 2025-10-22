@@ -7,14 +7,18 @@
 
 namespace vn { namespace ui {
 
+////////////////////////////////////////////////////////////////////////////////
+///                                Window
+////////////////////////////////////////////////////////////////////////////////
+
 /**
  * create a window
  * @param name cannot be duplicated
- * @x position x of window
- * @y position y of window
- * @width width of window
- * @height height of window
- * @update_func update function for rendering
+ * @param x position x of window
+ * @param y position y of window
+ * @param width width of window
+ * @param height height of window
+ * @param update_func update function for rendering
  */
 void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept;
 
@@ -29,6 +33,10 @@ auto window_count() noexcept -> uint32_t;
  * @return extent of window
  */
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
+
+////////////////////////////////////////////////////////////////////////////////
+///                            Shape Operator
+////////////////////////////////////////////////////////////////////////////////
 
 /// use union operator between shapes
 void begin_union() noexcept;
@@ -49,6 +57,10 @@ void begin_path() noexcept;
  * @param thickness
  */
 void end_path(uint32_t color = {}, float thickness = {}) noexcept;
+
+////////////////////////////////////////////////////////////////////////////////
+///                            Basic Shape
+////////////////////////////////////////////////////////////////////////////////
 
 /**
  * draw a triangle (clockwise)
@@ -94,5 +106,11 @@ void line(glm::vec2 const& p0, glm::vec2 const& p1, uint32_t color = {}) noexcep
  * @param color
  */
 void bezier(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color = 0) noexcept;
+
+////////////////////////////////////////////////////////////////////////////////
+///                              UI Widget
+////////////////////////////////////////////////////////////////////////////////
+
+auto is_hover_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool;
 
 }}

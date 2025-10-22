@@ -66,6 +66,8 @@ public:
 
   void adjust_offset(ResizeType type, POINT const& point, LONG& dx, LONG& dy) const noexcept;
 
+  auto cursor_pos() const noexcept -> glm::vec<2, int>;
+
 private:
   void left_offset(int dx)   noexcept;
   void top_offset(int dy)    noexcept;

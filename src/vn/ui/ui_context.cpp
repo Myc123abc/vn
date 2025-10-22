@@ -31,7 +31,9 @@ void UIContext::render() noexcept
 
     render_data.clear();
 
+    updating = true;
     window.update();
+    updating = false;
 
     err_if(op_data.op != ShapeProperty::Operator::none, "must clear operator after using finish");
 
