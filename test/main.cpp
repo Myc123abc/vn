@@ -9,6 +9,26 @@ using namespace vn::ui;
 
 uint32_t secs;
 
+void close_button() noexcept
+{
+  auto [width, _] = window_extent();
+
+  auto x = glm::vec<2, uint32_t>{ width - 30,  0 };
+  auto y = glm::vec<2, uint32_t>{ width,      30 };
+
+  uint32_t color[2] = { 0xffffffff, 0xff0000ff };
+  auto i = is_hover_on(x, y);
+  ui::rectangle(x, y, color[i]);
+
+  auto v = 5u;
+  uint32_t color2[2] = { 0x6b717dff, 0xffffffff };
+  ui::line(x + v, y - v, color2[i]);
+  ui::line({ y.x - v, x.y + v }, { x.x + v, y.y - v }, color2[i]);
+
+  if (is_click_on(x, y))
+    close_window();
+}
+
 void render_window_1() noexcept
 {
   auto [width, height] = window_extent();
@@ -17,6 +37,11 @@ void render_window_1() noexcept
   uint32_t colors[2] = { 0xffffffff, 0xdcdcdcff };
   auto i = ui::is_hover_on({}, { 50 , 50 });
   ui::rectangle({}, { 50, 50 }, colors[i]);
+
+  if (ui::is_click_on({}, {50, 50 }))
+    info("click!");
+
+  close_button();
 }
 
 void render_window_2() noexcept

@@ -22,6 +22,11 @@ void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32
   windows[wm->create_window(name, x, y, width, height)].update = update_func;
 }
 
+void UIContext::close_current_window() noexcept
+{
+  PostMessageW(window.handle, WM_CLOSE, 0, 0);
+}
+
 void UIContext::render() noexcept
 {
   shape_properties_offset = {};
@@ -30,6 +35,7 @@ void UIContext::render() noexcept
     this->window = WindowManager::instance()->get_window(handle);
 
     render_data.clear();
+    window.clear();
 
     updating = true;
     window.update();
@@ -78,6 +84,20 @@ void UIContext::update_cursor() noexcept
     render_data.shape_properties.emplace_back(ShapeProperty{ ShapeProperty::Type::cursor });
     shape_properties_offset += render_data.shape_properties.back().byte_size();
   }
+}
+
+void UIContext::message_process() noexcept
+{
+  using enum MouseState;
+  if (is_mouse_down())
+  {
+    if (mouse_state == left_button_up)
+      mouse_state = left_button_down;
+    else if (mouse_state == left_button_down)
+      mouse_state = left_button_press;
+  }
+  else
+    mouse_state = left_button_up;
 }
 
 }}

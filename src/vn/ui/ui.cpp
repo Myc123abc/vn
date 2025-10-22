@@ -104,6 +104,11 @@ void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width
   UIContext::instance()->add_window(name, x, y, width, height, update_func);
 }
 
+void close_window() noexcept
+{
+  UIContext::instance()->close_current_window();
+}
+
 auto window_count() noexcept -> uint32_t
 {
   return WindowManager::instance()->window_count();
@@ -238,6 +243,14 @@ auto is_hover_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexc
   if (ctx->window.moving || ctx->window.resizing) return false;
   auto p = ctx->window.cursor_pos();
   return p.x > left_top.x && p.x < right_bottom.x && p.y > left_top.y && p.y < right_bottom.y;
+}
+
+auto is_click_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool
+{
+  check_in_update_callback();
+  auto ctx = UIContext::instance();
+  if (!ctx->window.is_active() || ctx->window.moving || ctx->window.resizing) return false;
+  return is_hover_on(left_top, right_bottom) && ctx->mouse_state == UIContext::MouseState::left_button_down;
 }
 
 }}

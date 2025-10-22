@@ -36,6 +36,13 @@ struct WindowRenderData
 struct Window
 {
   std::function<void()> update;
+
+  std::vector<glm::vec<2, uint32_t>> click_areas;
+
+  void clear() noexcept
+  {
+    click_areas.clear();
+  }
 };
 
 class UIContext
@@ -58,7 +65,9 @@ public:
   }
 
   void add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept;
+  void close_current_window() noexcept;
 
+  void message_process() noexcept;
   void render() noexcept;
 
 private:
@@ -83,6 +92,13 @@ public:
 
   bool updating{}; // promise ui functinos only call in update callback
   bool using_union{};
+
+  enum class MouseState
+  {
+    left_button_up,
+    left_button_down,
+    left_button_press,
+  } mouse_state;
 };
 
 }}

@@ -34,6 +34,9 @@ auto window_count() noexcept -> uint32_t;
  */
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
 
+/// close current window
+void close_window() noexcept;
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////
@@ -111,6 +114,18 @@ void bezier(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint3
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * whether cursor hover on specific region
+ * @param left_top
+ * @param right_bottom
+ */
 auto is_hover_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool;
+
+/**
+ * whether cursor click on specific region
+ * @param left_top
+ * @param right_bottom
+ */
+auto is_click_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool;
 
 }}

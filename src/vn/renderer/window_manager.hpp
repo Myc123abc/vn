@@ -18,12 +18,14 @@ inline auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
   return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 }
 
-inline auto get_cursor_pos() noexcept
+inline auto get_cursor_pos() noexcept -> glm::vec<2, int>
 {
   POINT p;
   GetCursorPos(&p);
-  return p;
+  return { p.x, p.y };
 }
+
+inline auto is_mouse_down() noexcept { return GetKeyState(VK_LBUTTON) & 0x8000; }
 
 LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
 

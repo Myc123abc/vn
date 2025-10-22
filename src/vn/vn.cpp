@@ -23,6 +23,7 @@ void message_process() noexcept
 {
   WindowManager::instance()->message_process();
   Renderer::instance()->message_process();
+  UIContext::instance()->message_process();
 }
 
 void render() noexcept

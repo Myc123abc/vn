@@ -68,6 +68,8 @@ public:
 
   auto cursor_pos() const noexcept -> glm::vec<2, int>;
 
+  auto is_active() const noexcept { return GetForegroundWindow() == handle; }
+
 private:
   void left_offset(int dx)   noexcept;
   void top_offset(int dy)    noexcept;
