@@ -120,6 +120,12 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
   return { UIContext::instance()->window.width, UIContext::instance()->window.height };
 }
 
+void move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept
+{
+  check_in_update_callback();
+  UIContext::instance()->add_move_invalid_area(x, y, width, height);
+}
+
 void begin_union() noexcept
 {
   check_in_update_callback();
@@ -240,7 +246,7 @@ auto is_hover_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexc
 {
   check_in_update_callback();
   auto ctx = UIContext::instance();
-  if (ctx->window.moving || ctx->window.resizing) return false;
+  if (!ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
   auto p = ctx->window.cursor_pos();
   return p.x > left_top.x && p.x < right_bottom.x && p.y > left_top.y && p.y < right_bottom.y;
 }
@@ -249,7 +255,7 @@ auto is_click_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexc
 {
   check_in_update_callback();
   auto ctx = UIContext::instance();
-  if (!ctx->window.is_active() || ctx->window.moving || ctx->window.resizing) return false;
+  if (!ctx->window.is_active() || !ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
   return is_hover_on(left_top, right_bottom) && ctx->mouse_state == UIContext::MouseState::left_button_down;
 }
 

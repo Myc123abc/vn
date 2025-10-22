@@ -37,6 +37,16 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
 /// close current window
 void close_window() noexcept;
 
+/**
+ * set cursor move invalid area
+ * every rendering will be reset
+ * @param x
+ * @param y
+ * @param width
+ * @param height
+ */
+void move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////

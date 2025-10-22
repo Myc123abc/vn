@@ -37,14 +37,15 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   static auto last_pos           = POINT{};
   static auto last_resize_type   = Window::ResizeType{};
   static auto lm_downresize_type = Window::ResizeType{};
-  static auto lm_down            = bool{};
+  static auto lm_down_pos        = POINT{};
 
   auto finish_window_moving_or_resizing = [&]
   {
-    if (lm_down)
+    auto& window = wm->_windows[handle];
+    if (window.left_button_down)
     {
       ReleaseCapture();
-      lm_down = false;
+      window.left_button_down = false;
 
       auto& window = wm->_windows[handle];
 
@@ -91,7 +92,8 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     SetCapture(handle);
     GetCursorPos(&last_pos);
     lm_downresize_type = wm->_windows[handle].get_resize_type(last_pos);
-    lm_down = true;
+    wm->_windows[handle].left_button_down = true;
+    lm_down_pos = last_pos;
     break;
   }
 
@@ -113,15 +115,15 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       set_cursor(last_resize_type);
     }
 
+    auto& window = wm->_windows[handle];
+
     // move or resize window
-    if (lm_down)
+    if (window.left_button_down)
     {
       POINT pos;
       GetCursorPos(&pos);
       auto offset_x = pos.x - last_pos.x;
       auto offset_y = pos.y - last_pos.y;
-
-      auto& window = wm->_windows[handle];
 
       // window moving
       if (lm_downresize_type == Window::ResizeType::none)
@@ -129,9 +131,12 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
         // first moving
         if (!window.moving)
         {
-          window.move(offset_x, offset_y);
-          wm->_moving_or_resizing_window = window;
-          msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
+          if (window.is_move_area(lm_down_pos.x, lm_down_pos.y))
+          {
+            window.move(offset_x, offset_y);
+            wm->_moving_or_resizing_window = window;
+            msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
+          }
         }
         // continuely moving
         else
@@ -196,6 +201,12 @@ void WindowManager::message_process() noexcept
     process_message(msg);
     TranslateMessage(&msg);
     DispatchMessageW(&msg);
+  }
+
+  // clear last frame window dynamic data
+  for (auto& [_, window] : _windows)
+  {
+    window.move_invalid_area.clear();
   }
 }
 

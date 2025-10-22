@@ -36,13 +36,6 @@ struct WindowRenderData
 struct Window
 {
   std::function<void()> update;
-
-  std::vector<glm::vec<2, uint32_t>> click_areas;
-
-  void clear() noexcept
-  {
-    click_areas.clear();
-  }
 };
 
 class UIContext
@@ -66,6 +59,8 @@ public:
 
   void add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept;
   void close_current_window() noexcept;
+
+  void add_move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
 
   void message_process() noexcept;
   void render() noexcept;

@@ -30,6 +30,9 @@ struct Window
   bool        moving{};
   bool        resizing{};
   CursorType  cursor_type{};
+  bool        left_button_down{};
+
+  std::vector<glm::vec<4, uint32_t>> move_invalid_area{};
 
 public:
   Window() = default;
@@ -39,8 +42,8 @@ public:
 
   void move(int dx, int dy) noexcept;
 
-  static auto constexpr Resize_Width  = 10;
-  static auto constexpr Resize_Height = 10;
+  static auto constexpr Resize_Width  = 5;
+  static auto constexpr Resize_Height = 5;
 
   static auto constexpr Min_Width  = 50;
   static auto constexpr Min_Height = 50;
@@ -69,6 +72,10 @@ public:
   auto cursor_pos() const noexcept -> glm::vec<2, int>;
 
   auto is_active() const noexcept { return GetForegroundWindow() == handle; }
+
+  auto is_move_area(int x, int y) const noexcept -> bool;
+
+  auto cursor_valid_area() const noexcept -> bool;
 
 private:
   void left_offset(int dx)   noexcept;

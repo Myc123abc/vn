@@ -11,21 +11,23 @@ uint32_t secs;
 
 void close_button() noexcept
 {
-  auto [width, _] = window_extent();
+  auto [width, height] = window_extent();
 
-  auto x = glm::vec<2, uint32_t>{ width - 30,  0 };
-  auto y = glm::vec<2, uint32_t>{ width,      30 };
+  auto left_top     = glm::vec<2, uint32_t>{ width - 30,  0 };
+  auto right_bottom = glm::vec<2, uint32_t>{ width,      30 };
 
   uint32_t color[2] = { 0xffffffff, 0xff0000ff };
-  auto i = is_hover_on(x, y);
-  ui::rectangle(x, y, color[i]);
+  auto i = is_hover_on(left_top, right_bottom);
+  ui::rectangle(left_top, right_bottom, color[i]);
+  ui::move_invalid_area(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
+  ui::move_invalid_area(0, right_bottom.y, width, height);
 
   auto v = 5u;
   uint32_t color2[2] = { 0x6b717dff, 0xffffffff };
-  ui::line(x + v, y - v, color2[i]);
-  ui::line({ y.x - v, x.y + v }, { x.x + v, y.y - v }, color2[i]);
+  ui::line(left_top + v, right_bottom - v, color2[i]);
+  ui::line({ right_bottom.x - v, left_top.y + v }, { left_top.x + v, right_bottom.y - v }, color2[i]);
 
-  if (is_click_on(x, y))
+  if (is_click_on(left_top, right_bottom))
     close_window();
 }
 

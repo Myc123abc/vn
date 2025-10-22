@@ -303,4 +303,21 @@ auto Window::cursor_pos() const noexcept -> glm::vec<2, int>
   return { pos.x - x, pos.y - y };
 }
 
+auto Window::is_move_area(int x, int y) const noexcept -> bool
+{
+  x -= this->x;
+  y -= this->y;
+  for (auto const& area : move_invalid_area)
+    if (x > area.x && x < area.z && y > area.y && y < area.w)
+      return false;
+  return true;
+}
+
+auto Window::cursor_valid_area() const noexcept -> bool
+{
+  auto pos = cursor_pos();
+  return pos.x > Resize_Width  && pos.x < width - Resize_Width &&
+         pos.y > Resize_Height && pos.y < height - Resize_Height;
+}
+
 }}

@@ -35,7 +35,6 @@ void UIContext::render() noexcept
     this->window = WindowManager::instance()->get_window(handle);
 
     render_data.clear();
-    window.clear();
 
     updating = true;
     window.update();
@@ -47,6 +46,11 @@ void UIContext::render() noexcept
 
     Renderer::instance()->render_window(handle, render_data);
   }
+}
+
+void UIContext::add_move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept
+{
+  WindowManager::instance()->_windows[window.handle].move_invalid_area.emplace_back(x, y, width, height);
 }
 
 void UIContext::update_cursor() noexcept

@@ -11,6 +11,12 @@ and in interactive area, remove WS_EX_TRANSPARENT
 so dynamic mosue pass through, this can be try
 */
 
+namespace vn { namespace ui {
+
+class UIContext;
+
+}}
+
 namespace vn { namespace renderer {
 
 inline auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
@@ -32,6 +38,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 class WindowManager
 {
   friend LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
+  friend class ui::UIContext;
 
 private:
   WindowManager()                                = default;
