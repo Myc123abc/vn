@@ -18,19 +18,28 @@ enum class CursorType
   Number
 };
 
+enum class MouseState
+{
+  left_button_up,
+  left_button_down,
+  left_button_press,
+};
+
 struct Window
 {
   std::string name;
-  HWND        handle;
-  int         x;
-  int         y;
-  uint32_t    width;
-  uint32_t    height;
+  HWND        handle{};
+  int         x{};
+  int         y{};
+  uint32_t    width{};
+  uint32_t    height{};
   RECT        rect;
   bool        moving{};
   bool        resizing{};
   CursorType  cursor_type{};
-  bool        left_button_down{};
+  MouseState  mouse_state{};
+  bool        is_minimized{};
+  bool        is_maximized{};
 
   std::vector<glm::vec<4, uint32_t>> move_invalid_area{};
 

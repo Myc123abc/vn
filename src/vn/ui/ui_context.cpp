@@ -2,6 +2,7 @@
 #include "util.hpp"
 #include "../renderer/window_manager.hpp"
 #include "../renderer/renderer.hpp"
+#include "ui.hpp"
 
 #include <algorithm>
 #include <ranges>
@@ -10,7 +11,7 @@ using namespace vn::renderer;
 
 namespace vn { namespace ui {
 
-void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept
+void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept
 {
   auto wm = WindowManager::instance();
 
@@ -29,23 +30,34 @@ void UIContext::close_current_window() noexcept
 
 void UIContext::render() noexcept
 {
+  auto has_rendering = false;
   shape_properties_offset = {};
   for (auto& [handle, window] : windows)
   {
     this->window = WindowManager::instance()->get_window(handle);
+    if (this->window.is_minimized) break;
+
+    has_rendering = true;
 
     render_data.clear();
 
     updating = true;
+
     window.update();
-    updating = false;
 
     err_if(op_data.op != ShapeProperty::Operator::none, "must clear operator after using finish");
+
+    if (!this->window.is_maximized)
+      update_wireframe();
+
+    updating = false;
 
     update_cursor();
 
     Renderer::instance()->render_window(handle, render_data);
   }
+
+  if (!has_rendering) Sleep(1); // FIXME: any better way?
 }
 
 void UIContext::add_move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept
@@ -90,18 +102,12 @@ void UIContext::update_cursor() noexcept
   }
 }
 
-void UIContext::message_process() noexcept
+void UIContext::update_wireframe() noexcept
 {
-  using enum MouseState;
-  if (is_mouse_down())
+  Tmp_Render_Pos(0, 0)
   {
-    if (mouse_state == left_button_up)
-      mouse_state = left_button_down;
-    else if (mouse_state == left_button_down)
-      mouse_state = left_button_press;
+    ui::rectangle({}, { window.width, window.height }, 0xbbbbbbff, 1);
   }
-  else
-    mouse_state = left_button_up;
 }
 
 }}

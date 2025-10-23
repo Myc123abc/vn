@@ -3,47 +3,96 @@
 #include "vn/ui.hpp"
 
 #include <chrono>
+#include <functional>
 
 using namespace vn;
 using namespace vn::ui;
 
 uint32_t secs;
 
-void close_button() noexcept
+auto button(
+  uint32_t                                x,
+  uint32_t                                y,
+  uint32_t                                width,
+  uint32_t                                height,
+  uint32_t                                button_color,
+  uint32_t                                button_hover_color,
+  std::function<void(uint32_t, uint32_t)> icon_update_func,
+  uint32_t                                icon_width,
+  uint32_t                                icon_height,
+  uint32_t                                icon_color,
+  uint32_t                                icon_hover_color) noexcept
 {
-  auto [width, height] = window_extent();
+  auto left_top     = glm::vec<2, uint32_t>{ x,         y          };
+  auto right_bottom = glm::vec<2, uint32_t>{ x + width, y + height };
 
-  auto left_top     = glm::vec<2, uint32_t>{ width - 30,  0 };
-  auto right_bottom = glm::vec<2, uint32_t>{ width,      30 };
+  uint32_t button_colors[2] = { button_color, button_hover_color };
+  uint32_t icon_colors[2]   = { icon_color,   icon_hover_color   };
 
-  uint32_t color[2] = { 0xffffffff, 0xff0000ff };
-  auto i = is_hover_on(left_top, right_bottom);
-  ui::rectangle(left_top, right_bottom, color[i]);
-  ui::move_invalid_area(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
-  ui::move_invalid_area(0, right_bottom.y, width, height);
+  auto hovered = is_hover_on(left_top, right_bottom); // TODO: soft color exchange, color line change with a little time
 
-  auto v = 5u;
-  uint32_t color2[2] = { 0x6b717dff, 0xffffffff };
-  ui::line(left_top + v, right_bottom - v, color2[i]);
-  ui::line({ right_bottom.x - v, left_top.y + v }, { left_top.x + v, right_bottom.y - v }, color2[i]);
+  ui::rectangle(left_top, right_bottom, button_colors[hovered]);
+  ui::move_invalid_area(left_top.x, left_top.y, right_bottom.x, right_bottom.y); // TODO: every button add area will be so much!!
 
-  if (is_click_on(left_top, right_bottom))
-    close_window();
+  auto x_offset = (width  - icon_width)  / 2;
+  auto y_offset = (height - icon_height) / 2;
+
+  Tmp_Render_Pos(x + x_offset, y + y_offset)
+  {
+    enable_tmp_color(icon_colors[hovered]);
+    if (icon_update_func) icon_update_func(icon_width, icon_height);
+    disable_tmp_color();
+  }
+
+  return is_click_on(left_top, right_bottom);
+}
+
+void title_bar(uint32_t height) noexcept
+{
+  Tmp_Render_Pos(0, 0)
+  {
+    auto width = 46.f / 34 * height;
+    
+    uint32_t background_colors[2] = { 0xffffffff, 0xeeeeeeff };
+    auto i = is_active() || is_moving() || is_resizing();
+
+    auto [w, h] = window_extent();
+    ui::rectangle({}, { w, height }, background_colors[i]);
+    ui::move_invalid_area(0, height, w, h);
+
+    // minimize button
+    if (button(w - width * 3, 0, width, height, background_colors[i], 0x0cececeff,
+      [] (uint32_t width, uint32_t height) { ui::line({ 0, height / 2 }, { width, height / 2 }); },
+      10, 10, 0x395063ff, 0x395063ff))
+      minimize_window();
+
+    // maximize button
+    if (button(w - width * 2, 0, width, height, background_colors[i], 0x0cececeff, 
+      [] (uint32_t width, uint32_t height) { ui::rectangle({}, { width, height }, 0, 1); },
+      10, 10, 0x395063ff, 0x395063ff))
+      maximize_window();
+
+    // close button
+    if (button(w - width, 0, width, height, background_colors[i], 0xeb1123ff,
+      [] (uint32_t width, uint32_t height)
+      {
+        ui::line({}, { width, height });
+        ui::line({ width, 0 }, { 0, height });
+      }, 10, 10, 0x395063ff, 0xffffffff))
+      close_window();
+  }
 }
 
 void render_window_1() noexcept
 {
+  // use title bar, move draw position under the title bar
+  set_render_pos(0, 34);
+
+  // set background
   auto [width, height] = window_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
 
-  uint32_t colors[2] = { 0xffffffff, 0xdcdcdcff };
-  auto i = ui::is_hover_on({}, { 50 , 50 });
-  ui::rectangle({}, { 50, 50 }, colors[i]);
-
-  if (ui::is_click_on({}, {50, 50 }))
-    info("click!");
-
-  close_button();
+  title_bar(34);
 }
 
 void render_window_2() noexcept
@@ -82,8 +131,8 @@ int main()
 {
   vn::init();
 
-  ui::create_window("first window", 100, 100, 100, 100, render_window_1);
-  ui::create_window("second window", 200, 200, 100, 100, render_window_2);
+  ui::create_window("first window", 100, 100, 200, 100, render_window_1);
+  //ui::create_window("second window", 200, 200, 100, 100, render_window_2);
 
   auto beg = std::chrono::steady_clock::now();
   uint32_t count{};
@@ -103,8 +152,8 @@ int main()
       count = 0;
       beg = now;
 
-      if (secs == 3)
-        ui::create_window("third window", 300, 300, 100, 100, render_window_3);
+      //if (secs == 3)
+      //  ui::create_window("third window", 300, 300, 100, 100, render_window_3);
     }
   }
 

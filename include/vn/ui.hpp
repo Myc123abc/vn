@@ -20,7 +20,7 @@ namespace vn { namespace ui {
  * @param height height of window
  * @param update_func update function for rendering
  */
-void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept;
+void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept;
 
 /**
  * get count of windows
@@ -47,9 +47,67 @@ void close_window() noexcept;
  */
 void move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
 
+/**
+ * whether current window is active
+ * @return whether active
+ */
+auto is_active() noexcept -> bool;
+
+/**
+ * whether current window is moving
+ * @return whether moving
+ */
+auto is_moving() noexcept -> bool;
+
+/**
+ * whether current window is resizing
+ * @return whether resizing
+ */
+auto is_resizing() noexcept -> bool;
+
+/// minimize window
+void minimize_window() noexcept;
+
+/// maximize window
+void maximize_window() noexcept;
+
+/// restore window
+void restore_window() noexcept;
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * set render position. TODO: default position relevant with window style (title bar | wireframe | maximize)
+ * @param x
+ * @param y
+ */
+void set_render_pos(int x, int y) noexcept;
+
+/// get render position
+auto get_render_pos() noexcept -> glm::vec2;
+
+/// temporary set render position macro
+/// example:
+///   Tmp_Render_Pos(0, 0)
+///   {
+///     // draw functions
+///   }
+#define Tmp_Render_Pos(__x, __y) \
+  for (auto __call_once = true; __call_once;) \
+    for (auto __old_render_pos = get_render_pos(); __call_once; set_render_pos(__old_render_pos.x, __old_render_pos.y)) \
+      for (set_render_pos(__x, __y); __call_once; __call_once = false)
+
+// FIXME: use in internal
+/**
+ * enable temporary color, use for global, independent windows
+ * @param color
+ */
+void enable_tmp_color(uint32_t color) noexcept;
+
+/// disable temporary color
+void disable_tmp_color() noexcept;
 
 /// use union operator between shapes
 void begin_union() noexcept;
@@ -83,7 +141,7 @@ void end_path(uint32_t color = {}, float thickness = {}) noexcept;
  * @param color
  * @param thickness
  */
-void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color = {}, float thickness = {}) noexcept;
+void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color = {}, float thickness = {}) noexcept;
 
 /**
  * draw a rectangle
@@ -92,7 +150,7 @@ void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uin
  * @param color
  * @param thickness
  */
-void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color = {}, float thickness = {}) noexcept;
+void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, uint32_t color = {}, float thickness = {}) noexcept;
 
 /**
  * draw a circle
@@ -101,7 +159,7 @@ void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_
  * @param color
  * @param thickness
  */
-void circle(glm::vec2 const& center, float radius, uint32_t color = {}, float thickness = {}) noexcept;
+void circle(glm::vec2 center, float radius, uint32_t color = {}, float thickness = {}) noexcept;
 
 /**
  * draw a line
@@ -109,7 +167,7 @@ void circle(glm::vec2 const& center, float radius, uint32_t color = {}, float th
  * @param p1
  * @param color
  */
-void line(glm::vec2 const& p0, glm::vec2 const& p1, uint32_t color = {}) noexcept;
+void line(glm::vec2 p0, glm::vec2 p1, uint32_t color = {}) noexcept;
 
 /**
  * draw a quadratic bezier
@@ -118,7 +176,7 @@ void line(glm::vec2 const& p0, glm::vec2 const& p1, uint32_t color = {}) noexcep
  * @param p2
  * @param color
  */
-void bezier(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color = 0) noexcept;
+void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color = 0) noexcept;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                              UI Widget
@@ -129,13 +187,13 @@ void bezier(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint3
  * @param left_top
  * @param right_bottom
  */
-auto is_hover_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool;
+auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
 /**
  * whether cursor click on specific region
  * @param left_top
  * @param right_bottom
  */
-auto is_click_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool;
+auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
 }}

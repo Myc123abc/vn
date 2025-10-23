@@ -87,7 +87,7 @@ add_shape_property:
   ctx->render_data.shape_properties.emplace_back(ShapeProperty
   {
     type,
-    color,
+    ctx->tmp_color.value_or(color),
     thickness,
     ctx->op_data.op,
     values
@@ -99,7 +99,11 @@ add_shape_property:
 
 namespace vn { namespace ui {
 
-void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> const& update_func) noexcept
+////////////////////////////////////////////////////////////////////////////////
+///                                Window
+////////////////////////////////////////////////////////////////////////////////
+
+void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept
 {
   UIContext::instance()->add_window(name, x, y, width, height, update_func);
 }
@@ -126,6 +130,70 @@ void move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) 
   UIContext::instance()->add_move_invalid_area(x, y, width, height);
 }
 
+auto is_active() noexcept -> bool
+{
+  check_in_update_callback();
+  return UIContext::instance()->window.is_active();
+}
+
+auto is_moving() noexcept -> bool
+{
+  check_in_update_callback();
+  return UIContext::instance()->window.moving;
+}
+
+auto is_resizing() noexcept -> bool
+{
+  check_in_update_callback();
+  return UIContext::instance()->window.resizing;
+}
+
+void minimize_window() noexcept
+{
+  check_in_update_callback();
+  ShowWindow(UIContext::instance()->window.handle, SW_MINIMIZE);
+}
+
+void maximize_window() noexcept
+{
+  check_in_update_callback();
+  ShowWindow(UIContext::instance()->window.handle, SW_MAXIMIZE);
+}
+
+void restore_window() noexcept
+{
+  check_in_update_callback();
+  ShowWindow(UIContext::instance()->window.handle, SW_RESTORE);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+///                            Shape Operator
+////////////////////////////////////////////////////////////////////////////////
+
+void set_render_pos(int x, int y) noexcept
+{
+  check_in_update_callback();
+  UIContext::instance()->set_window_render_pos(x, y);
+}
+
+auto get_render_pos() noexcept -> glm::vec2
+{
+  check_in_update_callback();
+  return UIContext::instance()->window_render_pos();
+}
+
+void enable_tmp_color(uint32_t color) noexcept
+{
+  check_in_update_callback();
+  UIContext::instance()->tmp_color = color;
+}
+
+void disable_tmp_color() noexcept
+{
+  check_in_update_callback();
+  UIContext::instance()->tmp_color = {};
+}
+
 void begin_union() noexcept
 {
   check_in_update_callback();
@@ -144,7 +212,7 @@ void end_union(uint32_t color, float thickness) noexcept
   err_if(!ctx->using_union, "cannot call end union in an uncomplete unino operator");
   err_if(ctx->path_draw, "cannot call end union in an uncomplete path draw");
   ctx->using_union = false;
-  ctx->render_data.shape_properties.back().set_color(color);
+  ctx->render_data.shape_properties.back().set_color(ctx->tmp_color.value_or(color));
   ctx->render_data.shape_properties.back().set_thickness(thickness);
   ctx->render_data.shape_properties.back().set_operator({});
 
@@ -181,31 +249,56 @@ void end_path(uint32_t color, float thickness) noexcept
   ctx->path_draw_points.clear();
 }
 
-void triangle(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color, float thickness) noexcept
+////////////////////////////////////////////////////////////////////////////////
+///                            Basic Shape
+////////////////////////////////////////////////////////////////////////////////
+
+void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float thickness) noexcept
 {
   check_in_update_callback();
   check_not_path_draw();
+  
+  auto render_pos = UIContext::instance()->window_render_pos();
+  p0 += render_pos;
+  p1 += render_pos;
+  p2 += render_pos;
+
   add_shape(ShapeProperty::Type::triangle, color, thickness, { p0.x, p0.y, p1.x, p1.y, p2.x, p2.y }, get_bounding_rectangle({ p0, p1, p2 }));
 }
 
-void rectangle(glm::vec2 const& left_top, glm::vec2 const& right_bottom, uint32_t color, float thickness) noexcept
+void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, uint32_t color, float thickness) noexcept
 {
   check_in_update_callback();
   check_not_path_draw();
+
+  auto render_pos = UIContext::instance()->window_render_pos();
+  left_top     += render_pos;
+  right_bottom += render_pos;
+
   add_shape(ShapeProperty::Type::rectangle, color, thickness, { left_top.x, left_top.y, right_bottom.x, right_bottom.y }, { left_top, right_bottom });
 }
 
-void circle(glm::vec2 const& center, float radius, uint32_t color, float thickness) noexcept
+void circle(glm::vec2 center, float radius, uint32_t color, float thickness) noexcept
 {
   check_in_update_callback();
   check_not_path_draw();
+
+  auto render_pos = UIContext::instance()->window_render_pos();
+  center += render_pos;
+
   add_shape(ShapeProperty::Type::circle, color, thickness, { center.x, center.y, radius }, { center - radius, center + radius });
 }
 
-void line(glm::vec2 const& p0, glm::vec2 const& p1, uint32_t color) noexcept
+void line(glm::vec2 p0, glm::vec2 p1, uint32_t color) noexcept
 {
   check_in_update_callback();
+
   auto ctx = UIContext::instance();
+
+  auto render_pos = ctx->window_render_pos();
+  p0 += render_pos;
+  p1 += render_pos;
+
   if (ctx->path_draw)
   {
     ctx->path_draw_data[0] = std::bit_cast<float>(std::bit_cast<uint32_t>(ctx->path_draw_data[0]) + 1);
@@ -220,10 +313,17 @@ void line(glm::vec2 const& p0, glm::vec2 const& p1, uint32_t color) noexcept
     add_shape(ShapeProperty::Type::line, color, {}, { p0.x, p0.y, p1.x, p1.y }, get_bounding_rectangle({ p0, p1 }));
 }
 
-void bezier(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint32_t color) noexcept
+void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color) noexcept
 {
   check_in_update_callback();
+
   auto ctx = UIContext::instance();
+
+  auto render_pos = ctx->window_render_pos();
+  p0 += render_pos;
+  p1 += render_pos;
+  p2 += render_pos;
+
   if (ctx->path_draw)
   {
     ctx->path_draw_data[0] = std::bit_cast<float>(std::bit_cast<uint32_t>(ctx->path_draw_data[0]) + 1);
@@ -242,21 +342,33 @@ void bezier(glm::vec2 const& p0, glm::vec2 const& p1, glm::vec2 const& p2, uint3
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////
 
-auto is_hover_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool
+auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 {
   check_in_update_callback();
+
   auto ctx = UIContext::instance();
+
+  auto render_pos = ctx->window_render_pos();
+  left_top     += render_pos;
+  right_bottom += render_pos;
+
   if (!ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
   auto p = ctx->window.cursor_pos();
   return p.x > left_top.x && p.x < right_bottom.x && p.y > left_top.y && p.y < right_bottom.y;
 }
 
-auto is_click_on(glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept -> bool
+auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 {
   check_in_update_callback();
+
   auto ctx = UIContext::instance();
+
+  auto render_pos = ctx->window_render_pos();
+  left_top     += render_pos;
+  right_bottom += render_pos;
+
   if (!ctx->window.is_active() || !ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
-  return is_hover_on(left_top, right_bottom) && ctx->mouse_state == UIContext::MouseState::left_button_down;
+  return is_hover_on(left_top, right_bottom) && ctx->window.mouse_state == MouseState::left_button_down;
 }
 
 }}

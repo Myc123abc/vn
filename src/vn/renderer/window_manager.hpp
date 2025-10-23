@@ -24,6 +24,13 @@ inline auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
   return { GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
 }
 
+inline auto get_maximize_rect() noexcept
+{
+  auto rect = RECT{};
+  SystemParametersInfoW(SPI_GETWORKAREA, 0, &rect, 0);
+  return rect;
+}
+
 inline auto get_cursor_pos() noexcept -> glm::vec<2, int>
 {
   POINT p;

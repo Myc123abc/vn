@@ -11,8 +11,12 @@ namespace {
 constexpr wchar_t Fullscreen_Class[] = L"vn::WindowManager::Fullscreen";
 constexpr wchar_t Window_Class[]     = L"vn::WindowManager::Window";
 
-constexpr auto Msg_Begin_Use_Fullscreen_Window = WM_APP + 0;
-constexpr auto Msg_End_Use_Fullscreen_Window   = WM_APP + 1;
+enum class Message
+{
+  begin_use_fullscreen_window = WM_APP,
+  end_use_fullscreen_window,
+  left_button_press
+};
 
 auto to_64_bits(uint32_t x, uint32_t y) noexcept
 {
@@ -39,25 +43,29 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   static auto lm_downresize_type = Window::ResizeType{};
   static auto lm_down_pos        = POINT{};
 
+  using enum MouseState;
+
   auto finish_window_moving_or_resizing = [&]
   {
     auto& window = wm->_windows[handle];
-    if (window.left_button_down)
+    if (window.mouse_state == left_button_down || window.mouse_state == left_button_press)
     {
       ReleaseCapture();
-      window.left_button_down = false;
+      window.mouse_state = MouseState::left_button_up;
 
       auto& window = wm->_windows[handle];
 
       if (window.moving)
       {
         window.moving = {};
+        BringWindowToTop(handle);
         wm->_moving_or_resizing_window = window;
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
       }
       else if (lm_downresize_type != Window::ResizeType::none)
       {
         window.resizing    = {};
+        BringWindowToTop(handle);
         window.cursor_type = {};
         wm->_moving_or_resizing_window = window;
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
@@ -92,9 +100,15 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     SetCapture(handle);
     GetCursorPos(&last_pos);
     lm_downresize_type = wm->_windows[handle].get_resize_type(last_pos);
-    wm->_windows[handle].left_button_down = true;
     lm_down_pos = last_pos;
+    wm->_windows[handle].mouse_state = left_button_down;
     break;
+  }
+
+  case static_cast<int>(Message::left_button_press):
+  {
+    wm->_windows[handle].mouse_state = left_button_press;
+    return 0;
   }
 
   case WM_LBUTTONUP:
@@ -118,7 +132,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     auto& window = wm->_windows[handle];
 
     // move or resize window
-    if (window.left_button_down)
+    if (window.mouse_state == left_button_down || window.mouse_state == left_button_press)
     {
       POINT pos;
       GetCursorPos(&pos);
@@ -168,6 +182,33 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     }
     break;
   }
+
+  case WM_SIZE:
+  {
+    if (!wm->_windows.contains(handle)) break;
+    
+    auto& window = wm->_windows[handle];
+
+    if (w_param == SIZE_MINIMIZED)
+    {
+      window.is_minimized = true;
+    }
+    else if (w_param == SIZE_MAXIMIZED)
+    {
+      // TODO:
+      window.is_maximized = true;
+    }
+    else if (w_param == SIZE_RESTORED)
+    {
+      if (window.is_maximized)
+      {
+        // TODO:
+      }
+      window.is_minimized = {};
+      window.is_maximized = {};
+    }
+    break;
+  }
   }
   return DefWindowProcW(handle, msg, w_param, l_param);
 }
@@ -203,10 +244,14 @@ void WindowManager::message_process() noexcept
     DispatchMessageW(&msg);
   }
 
-  // clear last frame window dynamic data
-  for (auto& [_, window] : _windows)
+  for (auto& [handle, window] : _windows)
   {
+    // clear last frame window dynamic data
     window.move_invalid_area.clear();
+
+    // send WM_LBUTTONDOWN again, to change mouse state to press
+    if (window.mouse_state == MouseState::left_button_down)
+      PostMessageW(handle, static_cast<int>(Message::left_button_press), 0, 0);
   }
 }
 
@@ -214,13 +259,13 @@ void WindowManager::process_message(MSG const& msg) noexcept
 {
   switch (msg.message)
   {
-  case Msg_Begin_Use_Fullscreen_Window:
+  case static_cast<int>(Message::begin_use_fullscreen_window):
   {
     process_begin_use_fullscreen_window();
     break;
   }
 
-  case Msg_End_Use_Fullscreen_Window:
+  case static_cast<int>(Message::end_use_fullscreen_window):
   {
     process_end_use_fullscreen_window();
     break;
@@ -241,12 +286,12 @@ auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t 
 
 void WindowManager::begin_use_fullscreen_window() const noexcept
 {
-  PostMessageW(_windows.begin()->first, Msg_Begin_Use_Fullscreen_Window, 0, 0);
+  PostMessageW(_windows.begin()->first, static_cast<int>(Message::begin_use_fullscreen_window), 0, 0);
 }
 
 void WindowManager::end_use_fullscreen_window() const noexcept
 {
-  PostMessageW(_windows.begin()->first, Msg_End_Use_Fullscreen_Window, 0, 0);
+  PostMessageW(_windows.begin()->first, static_cast<int>(Message::end_use_fullscreen_window), 0, 0);
 }
 
 void WindowManager::process_begin_use_fullscreen_window() noexcept
@@ -255,6 +300,8 @@ void WindowManager::process_begin_use_fullscreen_window() noexcept
   ShowWindow(_fullscreen_window_handle, SW_SHOW);
   auto rect = RECT{};
   SetWindowRgn(_moving_or_resizing_window.handle, CreateRectRgnIndirect(&rect), false);
+  rect = get_maximize_rect();
+  ClipCursor(&rect);
 }
 
 void WindowManager::process_end_use_fullscreen_window() noexcept
@@ -263,6 +310,7 @@ void WindowManager::process_end_use_fullscreen_window() noexcept
   SetWindowPos(_moving_or_resizing_window.handle, 0, _moving_or_resizing_window.x, _moving_or_resizing_window.y, _moving_or_resizing_window.width, _moving_or_resizing_window.height, 0);
   SetWindowRgn(_moving_or_resizing_window.handle, nullptr, false);
   ShowWindow(_fullscreen_window_handle, SW_HIDE);
+  ClipCursor(nullptr);
 }
 
 auto WindowManager::get_window_name(HWND handle) noexcept -> std::string_view
