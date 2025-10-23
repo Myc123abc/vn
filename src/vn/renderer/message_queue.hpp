@@ -42,7 +42,7 @@ public:
   struct Message_Begin_Use_Fullscreen_Window { Window window; };
   struct Message_Update_Window               { Window window; };
   struct Message_End_Use_Fullscreen_Window   { Window window; };
-  struct Message_Resize_window               { Window window; };
+  struct Message_Resize_Window               { Window window; };
 
   using Message = std::variant<
     Message_Create_Window_Render_Resource,
@@ -51,7 +51,7 @@ public:
     Message_Begin_Use_Fullscreen_Window,
     Message_Update_Window,
     Message_End_Use_Fullscreen_Window,
-    Message_Resize_window
+    Message_Resize_Window
   >;
 
   void send_message(Message const& msg) noexcept { _message_queue.push(msg); }

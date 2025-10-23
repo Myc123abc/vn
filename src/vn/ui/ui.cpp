@@ -127,7 +127,8 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
 void move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept
 {
   check_in_update_callback();
-  UIContext::instance()->add_move_invalid_area(x, y, width, height);
+  auto render_pos = get_render_pos();
+  UIContext::instance()->add_move_invalid_area(render_pos.x + x, render_pos.y + y, width, height);
 }
 
 auto is_active() noexcept -> bool
@@ -148,6 +149,18 @@ auto is_resizing() noexcept -> bool
   return UIContext::instance()->window.resizing;
 }
 
+auto is_maxmize() noexcept -> bool
+{
+  check_in_update_callback();
+  return UIContext::instance()->window.is_maximized;
+}
+
+auto is_minimize() noexcept -> bool
+{
+  check_in_update_callback();
+  return UIContext::instance()->window.is_minimized;
+}
+
 void minimize_window() noexcept
 {
   check_in_update_callback();
@@ -157,7 +170,7 @@ void minimize_window() noexcept
 void maximize_window() noexcept
 {
   check_in_update_callback();
-  ShowWindow(UIContext::instance()->window.handle, SW_MAXIMIZE);
+  PostMessageW(UIContext::instance()->window.handle, WM_SIZE, SIZE_MAXIMIZED, 0);
 }
 
 void restore_window() noexcept
@@ -354,7 +367,7 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 
   if (!ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
   auto p = ctx->window.cursor_pos();
-  return p.x > left_top.x && p.x < right_bottom.x && p.y > left_top.y && p.y < right_bottom.y;
+  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y;
 }
 
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool

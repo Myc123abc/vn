@@ -69,7 +69,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
         window.cursor_type = {};
         wm->_moving_or_resizing_window = window;
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
-        msg_queue->send_message(MessageQueue::Message_Resize_window{ window });
+        msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
       }
     }
   };
@@ -139,6 +139,8 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       auto offset_x = pos.x - last_pos.x;
       auto offset_y = pos.y - last_pos.y;
 
+      if (!offset_x && !offset_y) break;
+
       // window moving
       if (lm_downresize_type == Window::ResizeType::none)
       {
@@ -195,8 +197,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     }
     else if (w_param == SIZE_MAXIMIZED)
     {
-      // TODO:
-      window.is_maximized = true;
+      // TODO: it's not smooth, use animation
+      window.maximize();
+      msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
+      SetWindowPos(handle, 0, window.x, window.y, window.width, window.height, 0);
+      return 0;
     }
     else if (w_param == SIZE_RESTORED)
     {
@@ -205,7 +210,6 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
         // TODO:
       }
       window.is_minimized = {};
-      window.is_maximized = {};
     }
     break;
   }

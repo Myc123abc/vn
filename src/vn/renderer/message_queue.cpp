@@ -50,7 +50,7 @@ void MessageQueue::process_messages() noexcept
         });
         std::swap(wr[data.window.handle].window, data.window);
       }
-      else if constexpr (std::is_same_v<T, Message_Resize_window>)
+      else if constexpr (std::is_same_v<T, Message_Resize_Window>)
       {
         wr[data.window.handle].swapchain_resource.resize(data.window.width, data.window.height);
       }

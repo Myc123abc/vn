@@ -10,6 +10,8 @@ using namespace vn::ui;
 
 uint32_t secs;
 
+// TODO: restore : button, taskbar, move
+
 auto button(
   uint32_t                                x,
   uint32_t                                y,
@@ -17,11 +19,11 @@ auto button(
   uint32_t                                height,
   uint32_t                                button_color,
   uint32_t                                button_hover_color,
-  std::function<void(uint32_t, uint32_t)> icon_update_func,
-  uint32_t                                icon_width,
-  uint32_t                                icon_height,
-  uint32_t                                icon_color,
-  uint32_t                                icon_hover_color) noexcept
+  std::function<void(uint32_t, uint32_t)> icon_update_func = {},
+  uint32_t                                icon_width       = {},
+  uint32_t                                icon_height      = {},
+  uint32_t                                icon_color       = {},
+  uint32_t                                icon_hover_color = {}) noexcept
 {
   auto left_top     = glm::vec<2, uint32_t>{ x,         y          };
   auto right_bottom = glm::vec<2, uint32_t>{ x + width, y + height };
@@ -66,9 +68,25 @@ void title_bar(uint32_t height) noexcept
       10, 10, 0x395063ff, 0x395063ff))
       minimize_window();
 
-    // maximize button
+    // maximize / restore button
     if (button(w - width * 2, 0, width, height, background_colors[i], 0x0cececeff, 
-      [] (uint32_t width, uint32_t height) { ui::rectangle({}, { width, height }, 0, 1); },
+      [&] (uint32_t width, uint32_t height)
+      {
+        if (is_maxmize())
+        {
+          // TODO: seams button not need icon's extent? just do in lambda?
+          auto padding_x = width / 3;
+          auto padding_y = width / 3;
+          ui::rectangle({ padding_x, 0 }, { width, height - padding_y }, 0, 1);
+          ui::rectangle({ 0, padding_y }, { width - padding_x, height }, 0, 1);
+
+          // TODO: it's ugly, is ui icon render by bitmap?
+          disable_tmp_color();
+          ui::rectangle({ 0 + 2, padding_y + 2 }, { width - padding_x - 2, height - 2 }, background_colors[i], 10);
+        }
+        else
+          ui::rectangle({}, { width, height }, 0, 1);
+      },
       10, 10, 0x395063ff, 0x395063ff))
       maximize_window();
 
@@ -91,6 +109,8 @@ void render_window_1() noexcept
   // set background
   auto [width, height] = window_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
+
+  button(0, 0, 100, 100, 0xffffffff, 0xeeeeeeee);
 
   title_bar(34);
 }

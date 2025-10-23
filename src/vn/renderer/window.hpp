@@ -40,6 +40,7 @@ struct Window
   MouseState  mouse_state{};
   bool        is_minimized{};
   bool        is_maximized{};
+  RECT        backup_rect{};
 
   std::vector<glm::vec<4, uint32_t>> move_invalid_area{};
 
@@ -71,6 +72,9 @@ public:
   };
 
   void resize(ResizeType type, int dx, int dy) noexcept;
+
+  void maximize() noexcept;
+  void restore() noexcept;
 
   auto get_resize_type(POINT const& p) const noexcept -> ResizeType;
 

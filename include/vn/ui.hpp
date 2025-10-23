@@ -65,6 +65,18 @@ auto is_moving() noexcept -> bool;
  */
 auto is_resizing() noexcept -> bool;
 
+/**
+ * whether current window is maximize
+ * @return whether maxmize
+ */
+auto is_maxmize() noexcept -> bool;
+
+/**
+ * whether current window is minimize
+ * @return whether minimize
+ */
+auto is_minimize() noexcept -> bool;
+
 /// minimize window
 void minimize_window() noexcept;
 

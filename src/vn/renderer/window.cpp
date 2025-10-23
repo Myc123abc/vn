@@ -145,7 +145,8 @@ auto Window::get_resize_type(POINT const& p) const noexcept -> ResizeType
   using enum ResizeType;
 
   if (p.x < rect.left || p.x > rect.right  ||
-      p.y < rect.top  || p.y > rect.bottom)
+      p.y < rect.top  || p.y > rect.bottom ||
+      is_maximized)
     return none;
 
   bool left_side   = p.x >= rect.left                   && p.x <= rect.left + Resize_Width;
@@ -170,6 +171,7 @@ auto Window::get_resize_type(POINT const& p) const noexcept -> ResizeType
   return none;
 }
 
+// FIXME: offsets have problem
 void Window::left_offset(int dx) noexcept
 {
   auto screen_size = get_screen_size();
@@ -308,7 +310,7 @@ auto Window::is_move_area(int x, int y) const noexcept -> bool
   x -= this->x;
   y -= this->y;
   for (auto const& area : move_invalid_area)
-    if (x > area.x && x < area.z && y > area.y && y < area.w)
+    if (x >= area.x && x <= area.z && y >= area.y && y <= area.w)
       return false;
   return true;
 }
@@ -316,8 +318,28 @@ auto Window::is_move_area(int x, int y) const noexcept -> bool
 auto Window::cursor_valid_area() const noexcept -> bool
 {
   auto pos = cursor_pos();
-  return pos.x > Resize_Width  && pos.x < width - Resize_Width &&
-         pos.y > Resize_Height && pos.y < height - Resize_Height;
+  if (is_maximized)
+    return pos.x >= rect.left  && pos.x <= rect.right &&
+           pos.y >= rect.top && pos.y <= rect.bottom;
+  else
+    return pos.x >= Resize_Width  && pos.x <= width  - Resize_Width &&
+           pos.y >= Resize_Height && pos.y <= height - Resize_Height;
+}
+
+void Window::maximize() noexcept
+{
+  is_maximized = true;
+  backup_rect = rect;
+  rect = get_maximize_rect();
+  update_by_rect();
+  mouse_state = {};
+}
+
+void Window::restore() noexcept
+{
+  is_maximized = {};
+  rect = backup_rect;
+  update_by_rect();
 }
 
 }}
