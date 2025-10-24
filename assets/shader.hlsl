@@ -42,6 +42,7 @@ enum : uint32_t
 {
   op_none,
   op_union,
+  op_discard
 };
 
 struct ShapeProperty
@@ -266,6 +267,13 @@ float4 ps(PSParameter args) : SV_TARGET
       shape_property = get_shape_property(offset);
       color = shape_property.get_color();
       d     = min(d, get_sd(args.pos.xy, shape_property.type, offset));
+    }
+    else if (shape_property.op == op_discard)
+    {
+      ShapeProperty discard_shape_property = get_shape_property(offset);
+      float discard_d = get_sd(args.pos.xy, discard_shape_property.type, offset);
+      if (discard_d < 0) discard;
+      break;
     }
   }
 

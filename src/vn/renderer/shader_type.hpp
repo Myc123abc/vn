@@ -40,6 +40,7 @@ struct ShapeProperty
   {
     none,
     u,
+    discard
   };
 
   struct Header

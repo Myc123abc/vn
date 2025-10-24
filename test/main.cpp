@@ -79,11 +79,8 @@ void title_bar() noexcept
           auto padding_x = width / 3;
           auto padding_y = width / 3;
           ui::rectangle({ padding_x, 0 }, { width, height - padding_y }, 0, 1);
+          ui::discard_rectangle({ 0, padding_y }, { width - padding_x, height });
           ui::rectangle({ 0, padding_y }, { width - padding_x, height }, 0, 1);
-
-          // TODO: it's ugly, is ui icon render by bitmap?
-          disable_tmp_color();
-          ui::rectangle({ 0 + 2, padding_y + 2 }, { width - padding_x - 2, height - 2 }, background_colors[i], 10);
         }
         else
           ui::rectangle({}, { width, height }, 0, 1);

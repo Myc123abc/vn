@@ -141,6 +141,13 @@ void begin_path() noexcept;
  */
 void end_path(uint32_t color = {}, float thickness = {}) noexcept;
 
+/**
+ * discard the pixel of specific rectangle for last draw shape
+ * @param left_top
+ * @param right_bottom
+ */
+void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept;
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Basic Shape
 ////////////////////////////////////////////////////////////////////////////////

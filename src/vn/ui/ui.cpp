@@ -64,26 +64,13 @@ void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectan
   ctx->render_data.idx_beg += 4;
 }
 
-void add_shape(
-  ShapeProperty::Type                    type,
-  uint32_t                               color,
-  float                                  thickness,
-  std::vector<float> const&              values,
-  std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
+void add_shape_property(
+  ShapeProperty::Type       type,
+  uint32_t                  color,
+  float                     thickness,
+  std::vector<float> const& values) noexcept
 {
-  auto ctx        = UIContext::instance();
-  auto [min, max] = bounding_rectangle;
-
-  if (ctx->op_data.op != ShapeProperty::Operator::none)
-  {
-    ctx->op_data.points.emplace_back(min);
-    ctx->op_data.points.emplace_back(max);
-    goto add_shape_property;
-  }
-
-  add_vertices_indices(bounding_rectangle);
-
-add_shape_property:
+  auto ctx = UIContext::instance();
   ctx->render_data.shape_properties.emplace_back(ShapeProperty
   {
     type,
@@ -94,7 +81,30 @@ add_shape_property:
   });
   ctx->shape_properties_offset += ctx->render_data.shape_properties.back().byte_size();
 }
-  
+
+void add_shape(
+  ShapeProperty::Type                    type,
+  uint32_t                               color,
+  float                                  thickness,
+  std::vector<float> const&              values,
+  std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
+{
+  auto ctx        = UIContext::instance();
+  auto [min, max] = bounding_rectangle;
+
+  if (ctx->op_data.op == ShapeProperty::Operator::u)
+  {
+    ctx->op_data.points.emplace_back(min);
+    ctx->op_data.points.emplace_back(max);
+    goto add_shape_property;
+  }
+
+  add_vertices_indices(bounding_rectangle);
+
+add_shape_property:
+  add_shape_property(type, color, thickness, values);
+}
+
 }
 
 namespace vn { namespace ui {
@@ -263,6 +273,25 @@ void end_path(uint32_t color, float thickness) noexcept
   ctx->path_draw = {};
   ctx->path_draw_data.clear();
   ctx->path_draw_points.clear();
+}
+
+void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
+{
+  check_in_update_callback();
+  
+  auto ctx = UIContext::instance();
+  err_if(ctx->render_data.shape_properties.empty(), "failed must draw a shape then use discard rectangle");
+  err_if(ctx->using_union, "don't use discard rectangle in union operator, I'm not test for this");
+  err_if(ctx->path_draw, "don't use discard rectangle in part draw, I'm not test for this");
+
+  auto& shape_property = ctx->render_data.shape_properties.back();
+  shape_property.set_operator(ShapeProperty::Operator::discard);
+
+  auto render_pos = ctx->window_render_pos();
+  left_top     += render_pos;
+  right_bottom += render_pos;
+
+  add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { left_top.x, left_top.y, right_bottom.x, right_bottom.y });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
