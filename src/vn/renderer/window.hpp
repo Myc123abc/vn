@@ -44,7 +44,7 @@ struct Window
   RECT        backup_rect{};
   bool        need_resize_swapchain{};
 
-  std::vector<glm::vec<4, uint32_t>> move_invalid_area{};
+  std::vector<RECT> move_invalid_area{};
 
 public:
   Window() = default;

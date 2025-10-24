@@ -62,7 +62,7 @@ public:
   void add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept;
   void close_current_window() noexcept;
 
-  void add_move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
+  void add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept;
 
   void render() noexcept;
   void message_process() noexcept;

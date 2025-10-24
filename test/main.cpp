@@ -32,7 +32,6 @@ auto button(
   auto hovered = is_hover_on(left_top, right_bottom); // TODO: soft color exchange, color line change with a little time
 
   ui::rectangle(left_top, right_bottom, button_colors[hovered]);
-  ui::move_invalid_area(left_top.x, left_top.y, right_bottom.x, right_bottom.y); // TODO: every button add area will be so much!!
 
   auto x_offset = (width  - icon_width)  / 2;
   auto y_offset = (height - icon_height) / 2;
@@ -62,7 +61,7 @@ void title_bar() noexcept
   Tmp_Render_Pos(0, 0)
   {
     ui::rectangle({}, { w, btn_height }, background_colors[i]);
-    ui::move_invalid_area(0, btn_height, w, h);
+    ui::add_move_invalid_area({ 0, btn_height }, { w, h });
 
     // minimize button
     if (button(w - btn_width * 3, 0, btn_width, btn_height, background_colors[i], 0x0cececeff,
@@ -96,6 +95,8 @@ void title_bar() noexcept
         ui::line({ width, 0 }, { 0, height });
       }, icon_width, icon_height, 0x395063ff, 0xffffffff))
       close_window();
+
+    ui::add_move_invalid_area({ w - btn_width * 3, 0 }, { w, btn_width });
   }
 }
 
@@ -107,8 +108,6 @@ void render_window_1() noexcept
   // set background
   auto [width, height] = window_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
-
-  button(0, 0, 100, 100, 0xffffffff, 0xeeeeeeee);
 
   title_bar();
 }

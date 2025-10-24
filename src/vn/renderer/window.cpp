@@ -296,7 +296,7 @@ auto Window::is_move_area(int x, int y) const noexcept -> bool
   x -= this->x;
   y -= this->y;
   for (auto const& area : move_invalid_area)
-    if (x >= area.x && x <= area.z && y >= area.y && y <= area.w)
+    if (x >= area.left && x <= area.right && y >= area.top && y <= area.bottom)
       return false;
   return true;
 }

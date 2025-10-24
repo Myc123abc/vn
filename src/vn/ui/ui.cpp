@@ -134,11 +134,11 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
   return { UIContext::instance()->window.width, UIContext::instance()->window.height };
 }
 
-void move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept
+void add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
 {
   check_in_update_callback();
   auto render_pos = get_render_pos();
-  UIContext::instance()->add_move_invalid_area(render_pos.x + x, render_pos.y + y, width, height);
+  UIContext::instance()->add_move_invalid_area(left_top + render_pos, right_bottom + render_pos);
 }
 
 auto is_active() noexcept -> bool

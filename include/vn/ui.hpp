@@ -45,7 +45,7 @@ void close_window() noexcept;
  * @param width
  * @param height
  */
-void move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
+void add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept;
 
 /**
  * whether current window is active
