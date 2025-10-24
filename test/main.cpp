@@ -10,8 +10,6 @@ using namespace vn::ui;
 
 uint32_t secs;
 
-// TODO: restore : button, taskbar, move
-
 auto button(
   uint32_t                                x,
   uint32_t                                y,
@@ -49,32 +47,35 @@ auto button(
   return is_click_on(left_top, right_bottom);
 }
 
-void title_bar(uint32_t height) noexcept
+void title_bar() noexcept
 {
+  auto btn_width   = 46;
+  auto btn_height  = 34;
+  auto icon_width  = 10;
+  auto icon_height = 10;
+
+  uint32_t background_colors[2] = { 0xffffffff, 0xeeeeeeff };
+  auto i = is_active() || is_moving() || is_resizing();
+
+  auto [w, h] = window_extent();
+
   Tmp_Render_Pos(0, 0)
   {
-    auto width = 46.f / 34 * height;
-    
-    uint32_t background_colors[2] = { 0xffffffff, 0xeeeeeeff };
-    auto i = is_active() || is_moving() || is_resizing();
-
-    auto [w, h] = window_extent();
-    ui::rectangle({}, { w, height }, background_colors[i]);
-    ui::move_invalid_area(0, height, w, h);
+    ui::rectangle({}, { w, btn_height }, background_colors[i]);
+    ui::move_invalid_area(0, btn_height, w, h);
 
     // minimize button
-    if (button(w - width * 3, 0, width, height, background_colors[i], 0x0cececeff,
+    if (button(w - btn_width * 3, 0, btn_width, btn_height, background_colors[i], 0x0cececeff,
       [] (uint32_t width, uint32_t height) { ui::line({ 0, height / 2 }, { width, height / 2 }); },
-      10, 10, 0x395063ff, 0x395063ff))
+      icon_width, icon_height, 0x395063ff, 0x395063ff))
       minimize_window();
 
     // maximize / restore button
-    if (button(w - width * 2, 0, width, height, background_colors[i], 0x0cececeff, 
+    if (button(w - btn_width * 2, 0, btn_width, btn_height, background_colors[i], 0x0cececeff, 
       [&] (uint32_t width, uint32_t height)
       {
         if (is_maxmize())
         {
-          // TODO: seams button not need icon's extent? just do in lambda?
           auto padding_x = width / 3;
           auto padding_y = width / 3;
           ui::rectangle({ padding_x, 0 }, { width, height - padding_y }, 0, 1);
@@ -87,16 +88,16 @@ void title_bar(uint32_t height) noexcept
         else
           ui::rectangle({}, { width, height }, 0, 1);
       },
-      10, 10, 0x395063ff, 0x395063ff))
-      maximize_window();
+      icon_width, icon_height, 0x395063ff, 0x395063ff))
+      is_maxmize() ? restore_window() : maximize_window();
 
     // close button
-    if (button(w - width, 0, width, height, background_colors[i], 0xeb1123ff,
+    if (button(w - btn_width, 0, btn_width, btn_height, background_colors[i], 0xeb1123ff,
       [] (uint32_t width, uint32_t height)
       {
         ui::line({}, { width, height });
         ui::line({ width, 0 }, { 0, height });
-      }, 10, 10, 0x395063ff, 0xffffffff))
+      }, icon_width, icon_height, 0x395063ff, 0xffffffff))
       close_window();
   }
 }
@@ -112,7 +113,7 @@ void render_window_1() noexcept
 
   button(0, 0, 100, 100, 0xffffffff, 0xeeeeeeee);
 
-  title_bar(34);
+  title_bar();
 }
 
 void render_window_2() noexcept

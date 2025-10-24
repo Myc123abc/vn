@@ -176,7 +176,10 @@ void maximize_window() noexcept
 void restore_window() noexcept
 {
   check_in_update_callback();
-  ShowWindow(UIContext::instance()->window.handle, SW_RESTORE);
+  auto ctx = UIContext::instance();
+  ShowWindow(ctx->window.handle, SW_RESTORE);
+  if (is_maxmize())
+    PostMessageW(ctx->window.handle, static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -373,15 +376,7 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 {
   check_in_update_callback();
-
-  auto ctx = UIContext::instance();
-
-  auto render_pos = ctx->window_render_pos();
-  left_top     += render_pos;
-  right_bottom += render_pos;
-
-  if (!ctx->window.is_active() || !ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
-  return is_hover_on(left_top, right_bottom) && ctx->window.mouse_state == MouseState::left_button_down;
+  return UIContext::instance()->is_click_on(left_top, right_bottom);
 }
 
 }}

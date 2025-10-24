@@ -9,6 +9,15 @@
 
 using namespace vn::renderer;
 
+namespace {
+
+auto point_on_rect(glm::vec<2, int> const& p, glm::vec2 const& left_top, glm::vec2 const& right_bottom) noexcept
+{
+  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y;
+}
+
+}
+
 namespace vn { namespace ui {
 
 void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept
@@ -70,8 +79,7 @@ void UIContext::update_cursor() noexcept
   auto renderer = Renderer::instance();
   if (window.moving || window.resizing)
   {
-    auto pos = POINT{};
-    GetCursorPos(&pos);
+    auto pos = get_cursor_pos();
     pos.x -= window.x;
     pos.y -= window.y;
     if (window.cursor_type != CursorType::arrow)
@@ -108,6 +116,51 @@ void UIContext::update_wireframe() noexcept
   {
     ui::rectangle({}, { window.width, window.height }, 0xbbbbbbff, 1);
   }
+}
+
+void UIContext::message_process() noexcept
+{
+  auto wm = WindowManager::instance();
+
+  if (_mouse_up_window)
+  {
+    _mouse_down_window = {};
+    _mouse_down_pos    = {};
+    _mouse_up_window   = {};
+    _mouse_up_pos      = {};
+  }
+
+  for (auto const& [handle, _] : windows)
+  {
+    auto const& window = wm->_windows[handle];
+    if (window.mouse_state == MouseState::left_button_down)
+    {
+      _mouse_down_window = handle;
+      _mouse_down_pos    = window.cursor_pos();
+    }
+    else if (window.mouse_state == MouseState::left_button_up)
+    {
+      _mouse_up_window = handle;
+      _mouse_up_pos    = window.cursor_pos();
+    }
+  }
+}
+
+auto UIContext::is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
+{
+  auto render_pos = window_render_pos();
+  left_top     += render_pos;
+  right_bottom += render_pos;
+
+  if (!window.is_active()          ||
+      !window.cursor_valid_area()  ||
+      window.moving                ||
+      window.resizing              ||
+      !_mouse_down_pos.has_value() ||
+      !_mouse_up_pos.has_value()   ||
+      _mouse_down_window != _mouse_up_window) return false;
+  return point_on_rect(_mouse_down_pos.value(), left_top, right_bottom) &&
+         point_on_rect(_mouse_up_pos.value(),   left_top, right_bottom);
 }
 
 }}

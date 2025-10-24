@@ -38,8 +38,6 @@ inline auto get_cursor_pos() noexcept -> glm::vec<2, int>
   return { p.x, p.y };
 }
 
-inline auto is_mouse_down() noexcept { return GetKeyState(VK_LBUTTON) & 0x8000; }
-
 LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
 
 class WindowManager
@@ -64,6 +62,14 @@ public:
 
   void init() noexcept;
 
+  enum class Message
+  {
+    begin_use_fullscreen_window = WM_APP,
+    end_use_fullscreen_window,
+    left_button_press,
+    mouse_idle,
+    window_restore_from_maximize,
+  };
   void message_process() noexcept;
 
   auto create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept -> HWND;

@@ -65,9 +65,12 @@ public:
   void add_move_invalid_area(uint32_t x, uint32_t y, uint32_t width, uint32_t height) noexcept;
 
   void render() noexcept;
+  void message_process() noexcept;
 
   auto set_window_render_pos(int x, int y) noexcept { windows[window.handle].render_pos = { x, y }; }
   auto window_render_pos() noexcept { return windows[window.handle].render_pos; }
+
+  auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
 private:
   void update_cursor() noexcept;
@@ -94,6 +97,12 @@ public:
   bool using_union{};
 
   std::optional<uint32_t> tmp_color;
+
+private:
+  HWND                     _mouse_down_window{};
+  std::optional<glm::vec2> _mouse_down_pos{};
+  HWND                     _mouse_up_window{};
+  std::optional<glm::vec2> _mouse_up_pos{};
 };
 
 }}

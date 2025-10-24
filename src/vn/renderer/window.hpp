@@ -20,9 +20,10 @@ enum class CursorType
 
 enum class MouseState
 {
-  left_button_up,
+  idle,
   left_button_down,
   left_button_press,
+  left_button_up,
 };
 
 struct Window
@@ -41,6 +42,7 @@ struct Window
   bool        is_minimized{};
   bool        is_maximized{};
   RECT        backup_rect{};
+  bool        need_resize_swapchain{};
 
   std::vector<glm::vec<4, uint32_t>> move_invalid_area{};
 
@@ -51,6 +53,7 @@ public:
   auto pos() const noexcept { return glm::vec<2, int32_t>{ x, y }; }
 
   void move(int dx, int dy) noexcept;
+  void move_from_maximize(int x, int y) noexcept;
 
   static auto constexpr Resize_Width  = 5;
   static auto constexpr Resize_Height = 5;
@@ -76,11 +79,11 @@ public:
   void maximize() noexcept;
   void restore() noexcept;
 
-  auto get_resize_type(POINT const& p) const noexcept -> ResizeType;
+  auto get_resize_type(glm::vec<2, int> const& p) const noexcept -> ResizeType;
 
-  auto point_on(POINT const& p) const noexcept -> bool;
+  auto point_on(glm::vec<2, int> const& p) const noexcept -> bool;
 
-  void adjust_offset(ResizeType type, POINT const& point, LONG& dx, LONG& dy) const noexcept;
+  void adjust_offset(ResizeType type, glm::vec<2, int> const& point, int& dx, int& dy) const noexcept;
 
   auto cursor_pos() const noexcept -> glm::vec<2, int>;
 
