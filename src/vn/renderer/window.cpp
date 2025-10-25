@@ -1,6 +1,6 @@
 #include "window.hpp"
 #include "window_manager.hpp"
-#include "util.hpp"
+#include "error_handling.hpp"
 
 #include <algorithm>
 

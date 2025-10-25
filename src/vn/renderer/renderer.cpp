@@ -1,6 +1,6 @@
 #include "renderer.hpp"
 #include "core.hpp"
-#include "util.hpp"
+#include "error_handling.hpp"
 #include "message_queue.hpp"
 #include "../ui/ui_context.hpp"
 
@@ -60,6 +60,24 @@ auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer
   return cso;
 }
 
+auto read_file(std::string_view path) noexcept -> std::string
+{
+  FILE* file{};
+  fopen_s(&file, path.data(), "rb");
+  err_if(!file, "failed to open file {}", path);
+
+  fseek(file, 0, SEEK_END);
+  auto size = ftell(file);
+  rewind(file);
+
+  auto data = std::string{};
+  data.resize(size);
+  fread(data.data(), 1, size, file);
+  fclose(file);
+
+  return data;
+}
+
 auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::string_view pixel_main, std::span<LPCWSTR> args) noexcept -> std::pair<ComPtr<IDxcBlob>, ComPtr<IDxcBlob>>
 {
   auto compiler = ComPtr<IDxcCompiler3>{};
@@ -67,7 +85,7 @@ auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::
               "failed to create dxc compiler");
 
   DxcBuffer buffer{};
-  auto data       = vn::read_file(path);
+  auto data       = read_file(path);
   buffer.Ptr      = data.data();
   buffer.Size     = data.size();
   buffer.Encoding = DXC_CP_UTF8;
@@ -86,7 +104,7 @@ auto compile_comp(std::string_view path, std::string_view comp_main, std::span<L
               "failed to create dxc compiler");
 
   DxcBuffer buffer{};
-  auto data       = vn::read_file(path);
+  auto data       = read_file(path);
   buffer.Ptr      = data.data();
   buffer.Size     = data.size();
   buffer.Encoding = DXC_CP_UTF8;

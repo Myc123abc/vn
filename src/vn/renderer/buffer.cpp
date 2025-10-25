@@ -1,11 +1,12 @@
 #include "buffer.hpp"
-#include "util.hpp"
+#include "error_handling.hpp"
 #include "core.hpp"
 #include "renderer.hpp"
 
 #include <directx/d3dx12.h>
 
 using namespace vn;
+using namespace vn::renderer;
 
 namespace {
 

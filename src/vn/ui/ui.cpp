@@ -1,7 +1,7 @@
 #include "ui.hpp"
 #include "../renderer/window_manager.hpp"
 #include "ui_context.hpp"
-#include "util.hpp"
+#include "error_handling.hpp"
 
 #include <ranges>
 
@@ -13,6 +13,29 @@ namespace {
 
 inline void check_in_update_callback() noexcept { err_if(!UIContext::instance()->updating, "failed to call this function because it's not called in update callback"); }
 inline void check_not_path_draw()      noexcept { err_if(UIContext::instance()->path_draw, "failed ot call this function because it cannot be used in path draw"); }
+
+auto get_color(uint32_t color) noexcept -> glm::vec4
+{
+  auto r = static_cast<float>((color >> 24) & 0xFF) / 255;
+  auto g = static_cast<float>((color >> 16) & 0xFF) / 255;
+  auto b = static_cast<float>((color >> 8 ) & 0xFF) / 255;
+  auto a = static_cast<float>((color      ) & 0xFF) / 255;
+  return { r, g, b, a };
+}
+
+auto color_lerp(uint32_t x, uint32_t y, float v) noexcept
+{
+  auto x_color = get_color(x);
+  auto y_color = get_color(y);
+  auto lerp_color = glm::vec4
+  {
+    std::lerp(x_color.r, y_color.r, v),
+    std::lerp(x_color.g, y_color.g, v),
+    std::lerp(x_color.b, y_color.b, v),
+    std::lerp(x_color.a, y_color.a, v)
+  };
+  return lerp_color;
+}
 
 auto get_bounding_rectangle(std::vector<glm::vec2> const& data) -> std::pair<glm::vec2, glm::vec2>
 {
@@ -74,7 +97,7 @@ void add_shape_property(
   ctx->render_data.shape_properties.emplace_back(ShapeProperty
   {
     type,
-    ctx->tmp_color.value_or(color),
+    get_color(ctx->tmp_color.value_or(color)),
     thickness,
     ctx->op_data.op,
     values
@@ -238,7 +261,7 @@ void end_union(uint32_t color, float thickness) noexcept
   err_if(!ctx->using_union, "cannot call end union in an uncomplete unino operator");
   err_if(ctx->path_draw, "cannot call end union in an uncomplete path draw");
   ctx->using_union = false;
-  ctx->render_data.shape_properties.back().set_color(ctx->tmp_color.value_or(color));
+  ctx->render_data.shape_properties.back().set_color(get_color(ctx->tmp_color.value_or(color)));
   ctx->render_data.shape_properties.back().set_thickness(thickness);
   ctx->render_data.shape_properties.back().set_operator({});
 
@@ -292,6 +315,17 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
   right_bottom += render_pos;
 
   add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { left_top.x, left_top.y, right_bottom.x, right_bottom.y });
+}
+
+void lerp_color(uint32_t color_beg, uint32_t color_end, float value) noexcept
+{
+  check_in_update_callback();
+
+  auto ctx = UIContext::instance();
+  err_if(ctx->render_data.shape_properties.empty(), "failed must draw a shape then use discard rectangle");
+
+  auto& shape_property = ctx->render_data.shape_properties.back();
+  shape_property.set_color(color_lerp(color_beg, color_end, value));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

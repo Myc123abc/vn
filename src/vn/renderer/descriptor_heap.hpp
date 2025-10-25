@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core.hpp"
-#include "util.hpp"
+#include "error_handling.hpp"
 
 #include <d3d12.h>
 #include <wrl/client.h>

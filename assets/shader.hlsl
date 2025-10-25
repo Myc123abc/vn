@@ -48,18 +48,10 @@ enum : uint32_t
 struct ShapeProperty
 {
   uint32_t type;
-  uint32_t color;
+  float4   color;
   float    thickness;
   uint32_t op;
-
-  float4 get_color()
-  {
-    float r = float((color >> 24) & 0xFF) / 255;
-    float g = float((color >> 16) & 0xFF) / 255;
-    float b = float((color >> 8 ) & 0xFF) / 255;
-    float a = float((color      ) & 0xFF) / 255;
-    return float4(r, g, b, a);
-  }
+  uint32_t padding;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -237,7 +229,7 @@ PSParameter vs(Vertex vertex)
   PSParameter result;
   result.pos           = float4((vertex.pos + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
   result.uv            = vertex.uv;
-  result.color         = shape_property.get_color();
+  result.color         = shape_property.color;
   result.buffer_offset = vertex.buffer_offset;
   return result;
 }
@@ -265,7 +257,7 @@ float4 ps(PSParameter args) : SV_TARGET
     if (shape_property.op == op_union)
     {
       shape_property = get_shape_property(offset);
-      color = shape_property.get_color();
+      color = shape_property.color;
       d     = min(d, get_sd(args.pos.xy, shape_property.type, offset));
     }
     else if (shape_property.op == op_discard)

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <windows.h>
-
 #include <print>
 #include <string_view>
 
@@ -59,43 +57,6 @@ inline void debug(std::format_string<T...> const fmt, T&&... args) noexcept
 #ifndef NDEBUG
   std::println(stderr, ConsoleColor_Blue("[debug] {}"), std::format(fmt, std::forward<T>(args)...));
 #endif
-}
-
-inline void err_if(bool b, std::string_view msg) noexcept
-{
-  if (b)
-  {
-    error(msg);
-    exit(EXIT_FAILURE);
-  }
-}
-
-template <typename... T>
-inline void err_if(bool b, std::format_string<T...> const fmt, T&&... args) noexcept
-{
-  if (b)
-  {
-    error(fmt, std::forward<T>(args)...);
-    exit(EXIT_FAILURE);
-  }
-}
-
-inline void err_if(HRESULT hr, std::string_view msg) noexcept
-{
-  err_if(FAILED(hr), msg);
-}
-
-template <typename... T>
-inline void err_if(HRESULT hr, std::format_string<T...> const fmt, T&&... args) noexcept
-{
-  err_if(FAILED(hr), fmt, std::forward<T>(args)...);
-}
-
-auto read_file(std::string_view path) noexcept -> std::string;
-
-inline auto align(uint32_t value, uint32_t alignment) noexcept
-{
-  return (value + alignment - 1) / alignment * alignment;
 }
 
 }

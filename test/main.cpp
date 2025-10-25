@@ -1,14 +1,11 @@
 #include "vn.hpp"
-#include "vn/util.hpp"
+#include "vn/timer.hpp"
 #include "vn/ui.hpp"
-
-#include <chrono>
-#include <functional>
 
 using namespace vn;
 using namespace vn::ui;
 
-uint32_t secs;
+Timer timer;
 
 auto button(
   uint32_t                                x,
@@ -109,6 +106,48 @@ void render_window_1() noexcept
   auto [width, height] = window_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
 
+  static auto timer       = Timer{};
+  static auto anime_event = 0;
+  static auto color_beg   = 0xeeeeeeff;
+  static auto color_end   = 0xff0000ff;
+  static auto ratio       = 0.f;
+  static auto anime_dur   = 200;
+
+  static auto start_animation = false;
+
+  if (start_animation)
+    ratio = timer.get_progress(anime_event);
+
+  ui::rectangle({}, { 100, 100 });
+  ui::lerp_color(color_beg, color_end, ratio);
+
+  if (is_click_on({}, { 100, 100 }))
+  {
+    start_animation = true;
+
+    if (timer.contains(anime_event) && !timer.is_finished(anime_event))
+    {
+      std::swap(color_beg, color_end);
+      timer.set_progress(anime_event, 1.f - timer.get_progress(anime_event));
+    }
+    else
+    {
+      anime_event = timer.add_single_event(anime_dur, [&]
+      {
+        start_animation = false;
+        ratio = 1.0;
+      });
+    }
+
+    if (ratio == 1.0)
+    {
+      std::swap(color_beg, color_end);
+      ratio = {};
+    }
+  }
+
+  timer.process_events();
+
   title_bar();
 }
 
@@ -116,8 +155,22 @@ void render_window_2() noexcept
 {
   auto [width, height] = window_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
-  if (secs < 2)
-    ui::circle({ 40, 40 }, 20, 0x00ff00ff, 1);
+
+  static auto draw_circle = false;
+  static auto& timer = [&] -> Timer&
+  {
+    static auto timer = Timer{};
+    timer.add_repeat_event(1000, []
+    {
+      draw_circle = !draw_circle;
+    });
+    return timer;
+  }();
+
+  if (draw_circle) ui::circle({ 40, 40 }, 20, 0x00ff00ff, 1);
+
+  timer.process_events();
+  
   ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff, 1);
 }
 
@@ -151,27 +204,25 @@ int main()
   ui::create_window("first window", 100, 100, 200, 100, render_window_1);
   //ui::create_window("second window", 200, 200, 100, 100, render_window_2);
 
-  auto beg = std::chrono::steady_clock::now();
-  uint32_t count{};
+  auto fps_count = uint32_t{};
+
+  timer.add_repeat_event(1000, [&]
+  {
+    info("[fps] {}", fps_count);
+    fps_count = {};
+  });
+  //timer.add_single_event(3000, [&]
+  //{
+  //  ui::create_window("third window", 300, 300, 100, 100, render_window_3);
+  //});
 
   while (ui::window_count())
   {
     vn::message_process();
     vn::render();
 
-    ++count;
-    auto now = std::chrono::steady_clock ::now();
-    auto dur = std::chrono::duration<float>(now - beg).count();
-    if (dur >= 1.f)
-    {
-      ++secs;
-      info("[fps] {}", count / dur);
-      count = 0;
-      beg = now;
-
-      //if (secs == 3)
-      //  ui::create_window("third window", 300, 300, 100, 100, render_window_3);
-    }
+    ++fps_count;
+    timer.process_events();
   }
 
   vn::destroy();

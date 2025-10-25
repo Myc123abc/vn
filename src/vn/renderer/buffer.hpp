@@ -11,6 +11,11 @@
 
 namespace vn { namespace renderer {
 
+inline auto align(uint32_t value, uint32_t alignment) noexcept
+{
+  return (value + alignment - 1) / alignment * alignment;
+}
+
 class Buffer
 {
 public:

@@ -1,5 +1,5 @@
 #include "window_manager.hpp"
-#include "util.hpp"
+#include "error_handling.hpp"
 #include "renderer.hpp"
 #include "message_queue.hpp"
 #include "../ui/ui_context.hpp"

@@ -118,8 +118,18 @@ auto get_render_pos() noexcept -> glm::vec2;
  */
 void enable_tmp_color(uint32_t color) noexcept;
 
+// FIXME: use in internal
 /// disable temporary color
 void disable_tmp_color() noexcept;
+
+// FIXME: use in internal
+/**
+ * lerp color from color_beg to color_end for last shape
+ * @param color_beg
+ * @param color_end
+ * @param value lerp value, from 0.0 ~ 1.0
+ */
+void lerp_color(uint32_t color_beg, uint32_t color_end, float value) noexcept;
 
 /// use union operator between shapes
 void begin_union() noexcept;

@@ -45,19 +45,24 @@ struct ShapeProperty
 
   struct Header
   {
-    Type     type{};
-    uint32_t color{};
-    float    thickness{};
-    Operator op{};
+    Type      type{};
+    glm::vec4 color{};
+    float     thickness{};
+    Operator  op{};
+    uint32_t  padding{};
   };
 
-  ShapeProperty(Type type, uint32_t color = {}, float thickness = {}, Operator op = {}, std::vector<float> const& values = {}) noexcept
+  ShapeProperty(Type type, glm::vec4 color = {}, float thickness = {}, Operator op = {}, std::vector<float> const& values = {}) noexcept
   {
     _data.reserve(sizeof(Header) / sizeof(uint32_t) + values.size() * sizeof(float));
-    _data.emplace_back(static_cast<uint32_t>(type));
-    _data.emplace_back(color);
+    _data.emplace_back(std::bit_cast<uint32_t>(type));
+    _data.emplace_back(std::bit_cast<uint32_t>(color.r));
+    _data.emplace_back(std::bit_cast<uint32_t>(color.g));
+    _data.emplace_back(std::bit_cast<uint32_t>(color.b));
+    _data.emplace_back(std::bit_cast<uint32_t>(color.a));
     _data.emplace_back(std::bit_cast<uint32_t>(thickness));
-    _data.emplace_back(static_cast<uint32_t>(op));
+    _data.emplace_back(std::bit_cast<uint32_t>(op));
+    _data.emplace_back(std::bit_cast<uint32_t>(0)); // padding
     for (auto const& v : values)
       _data.emplace_back(std::bit_cast<uint32_t>(v));
   }
@@ -65,9 +70,15 @@ struct ShapeProperty
   auto data()      const noexcept { return _data.data();                    }
   auto byte_size() const noexcept { return _data.size() * sizeof(uint32_t); }
 
-  void set_color(uint32_t color)      noexcept { _data[1] = color;                              }
-  void set_thickness(float thickness) noexcept { _data[2] = std::bit_cast<uint32_t>(thickness); }
-  void set_operator(Operator op)      noexcept { _data[3] = static_cast<uint32_t>(op);          }
+  void set_color(glm::vec4 const& color) noexcept
+  { 
+    _data[1] = std::bit_cast<uint32_t>(color.r);
+    _data[2] = std::bit_cast<uint32_t>(color.g);
+    _data[3] = std::bit_cast<uint32_t>(color.b);
+    _data[4] = std::bit_cast<uint32_t>(color.a);
+  }
+  void set_thickness(float thickness) noexcept { _data[5] = std::bit_cast<uint32_t>(thickness); }
+  void set_operator(Operator op)      noexcept { _data[6] = std::bit_cast<uint32_t>(op);        }
 
 private:
   std::vector<uint32_t> _data{};
