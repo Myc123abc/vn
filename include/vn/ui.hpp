@@ -111,26 +111,6 @@ auto get_render_pos() noexcept -> glm::vec2;
     for (auto __old_render_pos = get_render_pos(); __call_once; set_render_pos(__old_render_pos.x, __old_render_pos.y)) \
       for (set_render_pos(__x, __y); __call_once; __call_once = false)
 
-// FIXME: use in internal
-/**
- * enable temporary color, use for global, independent windows
- * @param color
- */
-void enable_tmp_color(uint32_t color) noexcept;
-
-// FIXME: use in internal
-/// disable temporary color
-void disable_tmp_color() noexcept;
-
-// FIXME: use in internal
-/**
- * lerp color from color_beg to color_end for last shape
- * @param color_beg
- * @param color_end
- * @param value lerp value, from 0.0 ~ 1.0
- */
-void lerp_color(uint32_t color_beg, uint32_t color_end, float value) noexcept;
-
 /// use union operator between shapes
 void begin_union() noexcept;
 
@@ -225,6 +205,22 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
  */
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
+/**
+ * draw a button, can draw an icon in the center of button
+ * default have a color lerp animation when cursor hover on button and leave on it
+ * TODO: add bitmap draw replace draw icon by hand
+ * @param x
+ * @param y
+ * @param width
+ * @param height
+ * @param button_color
+ * @param button_hover_color
+ * @param icon_update_func the function be called for draw icon by ui draw api
+ * @param icon_width
+ * @param icon_height
+ * @param icon_color
+ * @param icon_hover_color
+ */
 auto button(
   uint32_t                                x,
   uint32_t                                y,

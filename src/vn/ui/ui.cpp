@@ -2,6 +2,7 @@
 #include "../renderer/window_manager.hpp"
 #include "ui_context.hpp"
 #include "error_handling.hpp"
+#include "lerp_animation.hpp"
 
 #include <ranges>
 
@@ -89,7 +90,7 @@ void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectan
 
 void add_shape_property(
   ShapeProperty::Type       type,
-  uint32_t                  color,
+  glm::vec4                 color,
   float                     thickness,
   std::vector<float> const& values) noexcept
 {
@@ -97,7 +98,7 @@ void add_shape_property(
   ctx->render_data.shape_properties.emplace_back(ShapeProperty
   {
     type,
-    get_color(ctx->tmp_color.value_or(color)),
+    ctx->tmp_color.value_or(color),
     thickness,
     ctx->op_data.op,
     values
@@ -107,7 +108,7 @@ void add_shape_property(
 
 void add_shape(
   ShapeProperty::Type                    type,
-  uint32_t                               color,
+  glm::vec4                              color,
   float                                  thickness,
   std::vector<float> const&              values,
   std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
@@ -127,6 +128,14 @@ void add_shape(
 add_shape_property:
   add_shape_property(type, color, thickness, values);
 }
+
+void add_shape(
+  ShapeProperty::Type                    type,
+  uint32_t                               color,
+  float                                  thickness,
+  std::vector<float> const&              values,
+  std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
+{ add_shape(type, get_color(color), thickness, values, bounding_rectangle); }
 
 template <typename T>
 inline void combine_hash(std::size_t& seed, const T& v) noexcept
@@ -245,7 +254,7 @@ auto get_render_pos() noexcept -> glm::vec2
   return UIContext::instance()->window_render_pos();
 }
 
-void enable_tmp_color(uint32_t color) noexcept
+void enable_tmp_color(glm::vec4 const& color) noexcept
 {
   check_in_update_callback();
   UIContext::instance()->tmp_color = color;
@@ -275,7 +284,7 @@ void end_union(uint32_t color, float thickness) noexcept
   err_if(!ctx->using_union, "cannot call end union in an uncomplete unino operator");
   err_if(ctx->path_draw, "cannot call end union in an uncomplete path draw");
   ctx->using_union = false;
-  ctx->render_data.shape_properties.back().set_color(get_color(ctx->tmp_color.value_or(color)));
+  ctx->render_data.shape_properties.back().set_color(ctx->tmp_color.value_or(get_color(color)));
   ctx->render_data.shape_properties.back().set_thickness(thickness);
   ctx->render_data.shape_properties.back().set_operator({});
 
@@ -329,17 +338,6 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
   right_bottom += render_pos;
 
   add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { left_top.x, left_top.y, right_bottom.x, right_bottom.y });
-}
-
-void lerp_color(uint32_t color_beg, uint32_t color_end, float value) noexcept
-{
-  check_in_update_callback();
-
-  auto ctx = UIContext::instance();
-  err_if(ctx->render_data.shape_properties.empty(), "failed must draw a shape then use discard rectangle");
-
-  auto& shape_property = ctx->render_data.shape_properties.back();
-  shape_property.set_color(color_lerp(color_beg, color_end, value));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -456,6 +454,46 @@ auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
   return UIContext::instance()->is_click_on(left_top, right_bottom);
 }
 
+auto is_hover_on(uint32_t id, glm::vec2 left_top, glm::vec2 right_bottom, LerpAnimation& lerp_anim) noexcept
+{
+  auto ctx = UIContext::instance();
+
+  auto state = lerp_anim.state();
+  using enum LerpAnimation::State;
+
+  auto hovered = false;
+  if (is_hover_on(left_top, right_bottom))
+  {
+    ctx->hovered_widget_ids.push_back(id);
+    hovered = id == ctx->prev_hovered_widget_id;
+  }
+
+  if (hovered)
+  {
+    if (lerp_anim.is_reversed())
+    {
+      if (state != idle)
+      {
+        lerp_anim.reverse();
+      }
+    }
+    else
+    {
+      if (state == idle)
+        lerp_anim.start();
+    }
+  }
+  else
+  {
+    if (!lerp_anim.is_reversed() && state != idle)
+    {
+      lerp_anim.reverse();
+    }
+  }
+
+  return hovered;
+}
+
 auto button(
   uint32_t                                x,
   uint32_t                                y,
@@ -473,28 +511,24 @@ auto button(
 
   auto id = generic_hash(++ctx->windows[ctx->window.handle].widget_count, ctx->window.handle, x, y, width, height);
 
+  auto lerp_anim  = ctx->add_lerp_anim(id, 200);
+  auto lerp_value = lerp_anim->get_lerp();
+
   auto left_top     = glm::vec<2, uint32_t>{ x,         y          };
   auto right_bottom = glm::vec<2, uint32_t>{ x + width, y + height };
 
-  uint32_t button_colors[2] = { button_color, button_hover_color };
-  uint32_t icon_colors[2]   = { icon_color,   icon_hover_color   };
+  auto hovered = is_hover_on(id, left_top, right_bottom, *lerp_anim);
 
-  // TODO: soft color exchange, color line change with a little time
-  auto hovered = false;
-  if (is_hover_on(left_top, right_bottom))
-  {
-    ctx->hovered_widget_ids.push_back(id);
-    hovered = id == ctx->prev_hovered_widget_id;
-  }
-
-  ui::rectangle(left_top, right_bottom, button_colors[hovered]);
+  enable_tmp_color(color_lerp(button_color, button_hover_color, lerp_value));
+  ui::rectangle(left_top, right_bottom);
+  disable_tmp_color();
 
   auto x_offset = (width  - icon_width)  / 2;
   auto y_offset = (height - icon_height) / 2;
 
   Tmp_Render_Pos(x + x_offset, y + y_offset)
   {
-    enable_tmp_color(icon_colors[hovered]);
+    enable_tmp_color(color_lerp(icon_color, icon_hover_color, lerp_value));
     if (icon_update_func) icon_update_func(icon_width, icon_height);
     disable_tmp_color();
   }

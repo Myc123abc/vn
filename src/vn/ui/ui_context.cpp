@@ -73,6 +73,8 @@ void UIContext::render() noexcept
   {
     if (!hovered_widget_ids.empty())
       prev_hovered_widget_id = hovered_widget_ids.back();
+
+    _lerp_anim_timer.process_events();
   }
   else
     Sleep(1); // FIXME: any better way?
@@ -170,6 +172,13 @@ auto UIContext::is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
       _mouse_down_window != _mouse_up_window) return false;
   return point_on_rect(_mouse_down_pos.value(), left_top, right_bottom) &&
          point_on_rect(_mouse_up_pos.value(),   left_top, right_bottom);
+}
+
+auto UIContext::add_lerp_anim(uint32_t id, uint32_t dur) noexcept -> LerpAnimation*
+{
+  if (!_lerp_anims.contains(id))
+    _lerp_anims[id].init(&_lerp_anim_timer, dur);
+  return &_lerp_anims[id];
 }
 
 }}

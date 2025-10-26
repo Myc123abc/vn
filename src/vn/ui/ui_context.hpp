@@ -2,6 +2,7 @@
 
 #include "../renderer/shader_type.hpp"
 #include "../renderer/window.hpp"
+#include "lerp_animation.hpp"
 
 #include <string_view>
 #include <functional>
@@ -73,6 +74,8 @@ public:
 
   auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
+  auto add_lerp_anim(uint32_t id, uint32_t dur) noexcept -> LerpAnimation*;
+
 private:
   void update_cursor()    noexcept;
   void update_wireframe() noexcept;
@@ -97,7 +100,7 @@ public:
   bool updating{}; // promise ui functinos only call in update callback
   bool using_union{};
 
-  std::optional<uint32_t> tmp_color;
+  std::optional<glm::vec4> tmp_color;
 
   size_t              prev_hovered_widget_id{};
   std::vector<size_t> hovered_widget_ids;
@@ -107,6 +110,9 @@ private:
   std::optional<glm::vec2> _mouse_down_pos{};
   HWND                     _mouse_up_window{};
   std::optional<glm::vec2> _mouse_up_pos{};
+
+  Timer                                     _lerp_anim_timer;
+  std::unordered_map<size_t, LerpAnimation> _lerp_anims;
 };
 
 }}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../timer.hpp"
+#include "timer.hpp"
 
 namespace vn { namespace ui {
 
@@ -14,8 +14,11 @@ public:
     finished,
   };
 
-  LerpAnimation(Timer* timer, uint32_t duration) noexcept
-    : _timer(timer), _duration(duration) {}
+  void init(Timer* timer, uint32_t duration) noexcept
+  {
+    _timer    = timer;
+    _duration = duration;
+  }
 
   void start() noexcept
   {
@@ -29,13 +32,14 @@ public:
 
   auto get_lerp() const noexcept
   {
+    auto value = 0.f;
     if (_state == State::idle)
-      return 0.f;
+      value = 0.f;
     else if (_state == State::running)
-      return _timer->get_progress(_event);
+      value = _timer->get_progress(_event);
     else if (_state == State::finished)
-      return 1.f;
-    return 0.f;
+      value = 1.f;
+    return _is_reversed ? 1.f - value : value;
   }
 
   void reverse() noexcept
