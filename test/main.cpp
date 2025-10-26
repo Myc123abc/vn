@@ -9,9 +9,7 @@ Timer timer;
 
 void render_window_1() noexcept
 {
-  // set background
-  auto [width, height] = content_extent();
-  ui::rectangle({}, { width, height }, 0x282C34FF, 0);
+  set_background_color(0x282C34FF);
 
   if (ui::button(0, 0, 50, 50, 0xffffffff, 0))
     info("1");
@@ -21,6 +19,8 @@ void render_window_1() noexcept
 
 void render_window_2() noexcept
 {
+  set_background_color(0xffffffff);
+
   auto [width, height] = content_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
 
@@ -44,6 +44,8 @@ void render_window_2() noexcept
 
 void render_window_3() noexcept
 {
+  set_background_color(0x000000ff);
+
   auto [width, height] = content_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff0f0ff, 1);
 
@@ -70,7 +72,7 @@ int main()
   vn::init();
 
   ui::create_window("first window", 100, 100, 200, 100, render_window_1);
-  ui::create_window("second window", 200, 200, 100, 100, render_window_2);
+  //ui::create_window("second window", 200, 200, 100, 100, render_window_2);
 
   auto fps_count = uint32_t{};
 
@@ -79,10 +81,10 @@ int main()
     info("[fps] {}", fps_count);
     fps_count = {};
   });
-  timer.add_single_event(3000, [&]
-  {
-    ui::create_window("third window", 300, 300, 100, 100, render_window_3);
-  });
+  //timer.add_single_event(3000, [&]
+  //{
+  //  ui::create_window("third window", 300, 300, 100, 100, render_window_3);
+  //});
 
   while (ui::window_count())
   {

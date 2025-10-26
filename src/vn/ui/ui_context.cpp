@@ -66,7 +66,7 @@ void UIContext::render() noexcept
     updating = true;
 
     window.widget_count = {};
-    
+
     // use title bar, move draw position under the title bar
     if (window.draw_title_bar)
       set_render_pos(0, Titler_Bar_Height);

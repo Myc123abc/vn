@@ -244,6 +244,12 @@ void restore_window() noexcept
     PostMessageW(ctx->window.handle, static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
 }
 
+void set_background_color(uint32_t color) noexcept
+{
+  auto [width, height] = content_extent();
+  ui::rectangle({}, { width, height }, color, 0);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////

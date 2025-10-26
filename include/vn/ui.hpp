@@ -92,6 +92,12 @@ void maximize_window() noexcept;
 /// restore window
 void restore_window() noexcept;
 
+/**
+ * set background color
+ * @param color
+ */
+void set_background_color(uint32_t color) noexcept;
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////
