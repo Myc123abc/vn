@@ -219,6 +219,7 @@ void Window::right_offset(int dx) noexcept
   auto p = get_cursor_pos();
   if (dx > 0 && rect.right > p.x && rect.right - rc.left > Min_Width) rect.right = p.x;
   if (rect.left < rc.left && rect.right - rc.left < Min_Width) rect.right = rc.left + Min_Width;
+  if (rect.right == rc.right - 1) rect.right = rc.right; // I don't know why this case the dx is always 0
 }
 
 void Window::bottom_offset(int dy) noexcept
@@ -232,6 +233,7 @@ void Window::bottom_offset(int dy) noexcept
   auto p = get_cursor_pos();
   if (dy > 0 && rect.bottom > p.y && rect.bottom - rc.top > Min_Height) rect.bottom = p.y;
   if (rect.top < rc.top && rect.bottom - rc.top < Min_Height) rect.bottom = rc.top + Min_Height;
+  if (rect.bottom == rc.bottom - 1) rect.bottom = rc.bottom; // I don't know why this case the dy is always 0
 }
 
 auto get_cursor_type(Window::ResizeType type) noexcept -> CursorType

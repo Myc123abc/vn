@@ -142,7 +142,15 @@ void UIContext::update_wireframe() noexcept
 {
   Tmp_Render_Pos(0, 0)
   {
-    ui::rectangle({}, { window.width, window.height }, 0xbbbbbbff, 1);
+    auto rc = get_maximize_rect();
+    if (window.rect.left != rc.left)
+      ui::line({}, { 0, window.height }, 0xbbbbbbff);
+    if (window.rect.right != rc.right)
+      ui::line({ window.width, 0 }, { window.width, window.height }, 0xbbbbbbff);
+    if (window.rect.top != rc.top)
+      ui::line({}, { window.width, 0 }, 0xbbbbbbff);
+    if (window.rect.bottom != rc.bottom)
+      ui::line({ 0, window.height }, { window.width, window.height }, 0xbbbbbbff);
   }
 }
 
