@@ -128,6 +128,20 @@ add_shape_property:
   add_shape_property(type, color, thickness, values);
 }
 
+template <typename T>
+inline void combine_hash(std::size_t& seed, const T& v) noexcept
+{
+  seed ^= std::hash<T>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+}
+
+template <typename... Args>
+constexpr std::size_t generic_hash(const Args&... args) noexcept
+{
+  auto seed = std::size_t{};
+  (combine_hash(seed, args), ...);
+  return seed;
+}
+
 }
 
 namespace vn { namespace ui {
@@ -440,6 +454,52 @@ auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 {
   check_in_update_callback();
   return UIContext::instance()->is_click_on(left_top, right_bottom);
+}
+
+auto button(
+  uint32_t                                x,
+  uint32_t                                y,
+  uint32_t                                width,
+  uint32_t                                height,
+  uint32_t                                button_color,
+  uint32_t                                button_hover_color,
+  std::function<void(uint32_t, uint32_t)> icon_update_func,
+  uint32_t                                icon_width,
+  uint32_t                                icon_height,
+  uint32_t                                icon_color,
+  uint32_t                                icon_hover_color) noexcept-> bool
+{
+  auto ctx = UIContext::instance();
+
+  auto id = generic_hash(++ctx->windows[ctx->window.handle].widget_count, ctx->window.handle, x, y, width, height);
+
+  auto left_top     = glm::vec<2, uint32_t>{ x,         y          };
+  auto right_bottom = glm::vec<2, uint32_t>{ x + width, y + height };
+
+  uint32_t button_colors[2] = { button_color, button_hover_color };
+  uint32_t icon_colors[2]   = { icon_color,   icon_hover_color   };
+
+  // TODO: soft color exchange, color line change with a little time
+  auto hovered = false;
+  if (is_hover_on(left_top, right_bottom))
+  {
+    ctx->hovered_widget_ids.push_back(id);
+    hovered = id == ctx->prev_hovered_widget_id;
+  }
+
+  ui::rectangle(left_top, right_bottom, button_colors[hovered]);
+
+  auto x_offset = (width  - icon_width)  / 2;
+  auto y_offset = (height - icon_height) / 2;
+
+  Tmp_Render_Pos(x + x_offset, y + y_offset)
+  {
+    enable_tmp_color(icon_colors[hovered]);
+    if (icon_update_func) icon_update_func(icon_width, icon_height);
+    disable_tmp_color();
+  }
+
+  return hovered && is_click_on(left_top, right_bottom);
 }
 
 }}

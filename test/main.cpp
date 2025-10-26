@@ -8,42 +8,6 @@ using namespace vn::ui;
 
 Timer timer;
 
-auto button(
-  uint32_t                                x,
-  uint32_t                                y,
-  uint32_t                                width,
-  uint32_t                                height,
-  uint32_t                                button_color,
-  uint32_t                                button_hover_color,
-  std::function<void(uint32_t, uint32_t)> icon_update_func = {},
-  uint32_t                                icon_width       = {},
-  uint32_t                                icon_height      = {},
-  uint32_t                                icon_color       = {},
-  uint32_t                                icon_hover_color = {}) noexcept
-{
-  auto left_top     = glm::vec<2, uint32_t>{ x,         y          };
-  auto right_bottom = glm::vec<2, uint32_t>{ x + width, y + height };
-
-  uint32_t button_colors[2] = { button_color, button_hover_color };
-  uint32_t icon_colors[2]   = { icon_color,   icon_hover_color   };
-
-  auto hovered = is_hover_on(left_top, right_bottom); // TODO: soft color exchange, color line change with a little time
-
-  ui::rectangle(left_top, right_bottom, button_colors[hovered]);
-
-  auto x_offset = (width  - icon_width)  / 2;
-  auto y_offset = (height - icon_height) / 2;
-
-  Tmp_Render_Pos(x + x_offset, y + y_offset)
-  {
-    enable_tmp_color(icon_colors[hovered]);
-    if (icon_update_func) icon_update_func(icon_width, icon_height);
-    disable_tmp_color();
-  }
-
-  return is_click_on(left_top, right_bottom);
-}
-
 void title_bar() noexcept
 {
   auto btn_width   = 46;
@@ -107,13 +71,18 @@ void render_window_1() noexcept
   auto [width, height] = window_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
 
+  if (button(0, 0, 50, 50, 0xeeeeeeff, 0xff0000ff))
+    info("1");
+  if (button(0, 0, 50, 50, 0xeeeeeeff, 0x00ff004f))
+    info("2");
+
   static auto timer     = Timer{};
   static auto lerp_anim = LerpAnimation{ &timer, 200 };
   static auto color_beg = 0xeeeeeeff;
   static auto color_end = 0xff0000ff;
 
-  ui::rectangle({}, { 100, 100 });
-  ui::lerp_color(color_beg, color_end, lerp_anim.get_lerp());
+  //ui::rectangle({}, { 100, 100 });
+  //ui::lerp_color(color_beg, color_end, lerp_anim.get_lerp());
 
   using enum LerpAnimation::State;
   auto state = lerp_anim.state();

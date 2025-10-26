@@ -41,6 +41,8 @@ void UIContext::render() noexcept
 {
   auto has_rendering = false;
   shape_properties_offset = {};
+  hovered_widget_ids.clear();
+
   for (auto& [handle, window] : windows)
   {
     this->window = WindowManager::instance()->get_window(handle);
@@ -52,6 +54,7 @@ void UIContext::render() noexcept
 
     updating = true;
 
+    window.widget_count = {};
     window.update();
 
     err_if(op_data.op != ShapeProperty::Operator::none, "must clear operator after using finish");
@@ -66,7 +69,13 @@ void UIContext::render() noexcept
     Renderer::instance()->render_window(handle, render_data);
   }
 
-  if (!has_rendering) Sleep(1); // FIXME: any better way?
+  if (has_rendering)
+  {
+    if (!hovered_widget_ids.empty())
+      prev_hovered_widget_id = hovered_widget_ids.back();
+  }
+  else
+    Sleep(1); // FIXME: any better way?
 }
 
 void UIContext::add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept

@@ -225,4 +225,17 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
  */
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
+auto button(
+  uint32_t                                x,
+  uint32_t                                y,
+  uint32_t                                width,
+  uint32_t                                height,
+  uint32_t                                button_color,
+  uint32_t                                button_hover_color,
+  std::function<void(uint32_t, uint32_t)> icon_update_func = {},
+  uint32_t                                icon_width       = {},
+  uint32_t                                icon_height      = {},
+  uint32_t                                icon_color       = {},
+  uint32_t                                icon_hover_color = {}) noexcept-> bool;
+
 }}

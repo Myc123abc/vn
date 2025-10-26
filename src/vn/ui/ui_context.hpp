@@ -38,6 +38,7 @@ struct Window
 {
   std::function<void()> update;
   glm::vec2             render_pos{};
+  uint32_t              widget_count{};
 };
 
 class UIContext
@@ -73,7 +74,7 @@ public:
   auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
 private:
-  void update_cursor() noexcept;
+  void update_cursor()    noexcept;
   void update_wireframe() noexcept;
 
 public:
@@ -97,6 +98,9 @@ public:
   bool using_union{};
 
   std::optional<uint32_t> tmp_color;
+
+  size_t              prev_hovered_widget_id{};
+  std::vector<size_t> hovered_widget_ids;
 
 private:
   HWND                     _mouse_down_window{};
