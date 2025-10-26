@@ -1,5 +1,6 @@
 #include "vn.hpp"
 #include "vn/timer.hpp"
+#include "vn/ui/lerp_animation.hpp"
 #include "vn/ui.hpp"
 
 using namespace vn;
@@ -106,43 +107,38 @@ void render_window_1() noexcept
   auto [width, height] = window_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
 
-  static auto timer       = Timer{};
-  static auto anime_event = 0;
-  static auto color_beg   = 0xeeeeeeff;
-  static auto color_end   = 0xff0000ff;
-  static auto ratio       = 0.f;
-  static auto anime_dur   = 200;
-
-  static auto start_animation = false;
-
-  if (start_animation)
-    ratio = timer.get_progress(anime_event);
+  static auto timer     = Timer{};
+  static auto lerp_anim = LerpAnimation{ &timer, 200 };
+  static auto color_beg = 0xeeeeeeff;
+  static auto color_end = 0xff0000ff;
 
   ui::rectangle({}, { 100, 100 });
-  ui::lerp_color(color_beg, color_end, ratio);
+  ui::lerp_color(color_beg, color_end, lerp_anim.get_lerp());
 
-  if (is_click_on({}, { 100, 100 }))
+  using enum LerpAnimation::State;
+  auto state = lerp_anim.state();
+  if (is_hover_on({}, { 100, 100 }))
   {
-    start_animation = true;
-
-    if (timer.contains(anime_event) && !timer.is_finished(anime_event))
+    if (lerp_anim.is_reversed())
     {
-      std::swap(color_beg, color_end);
-      timer.set_progress(anime_event, 1.f - timer.get_progress(anime_event));
+      if (state != idle)
+      {
+        std::swap(color_beg, color_end);
+        lerp_anim.reverse();
+      }
     }
     else
     {
-      anime_event = timer.add_single_event(anime_dur, [&]
-      {
-        start_animation = false;
-        ratio = 1.0;
-      });
+      if (state == idle)
+        lerp_anim.start();
     }
-
-    if (ratio == 1.0)
+  }
+  else
+  {
+    if (!lerp_anim.is_reversed() && state != idle)
     {
       std::swap(color_beg, color_end);
-      ratio = {};
+      lerp_anim.reverse();
     }
   }
 

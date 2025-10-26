@@ -2,6 +2,7 @@
 
 #include "error_handling.hpp"
 
+#include <algorithm>
 #include <unordered_map>
 #include <chrono>
 #include <functional>
@@ -37,7 +38,7 @@ private:
 
     auto get_progress() const noexcept
     {
-      return static_cast<float>(get_duration()) / duratoin;
+      return std::clamp(static_cast<float>(get_duration()) / duratoin, 0.f, 1.f);
     }
 
     auto process() noexcept
