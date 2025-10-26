@@ -7,80 +7,21 @@ using namespace vn::ui;
 
 Timer timer;
 
-void title_bar() noexcept
-{
-  auto btn_width   = 46;
-  auto btn_height  = 34;
-  auto icon_width  = 10;
-  auto icon_height = 10;
-
-  uint32_t background_colors[2] = { 0xffffffff, 0xeeeeeeff };
-  auto i = is_active() || is_moving() || is_resizing();
-
-  auto [w, h] = window_extent();
-
-  Tmp_Render_Pos(0, 0)
-  {
-    ui::rectangle({}, { w, btn_height }, background_colors[i]);
-    ui::add_move_invalid_area({ 0, btn_height }, { w, h });
-
-    // minimize button
-    if (button(w - btn_width * 3, 0, btn_width, btn_height, background_colors[i], 0x0cececeff,
-      [] (uint32_t width, uint32_t height) { ui::line({ 0, height / 2 }, { width, height / 2 }); },
-      icon_width, icon_height, 0x395063ff, 0x395063ff))
-      minimize_window();
-
-    // maximize / restore button
-    if (button(w - btn_width * 2, 0, btn_width, btn_height, background_colors[i], 0x0cececeff, 
-      [&] (uint32_t width, uint32_t height)
-      {
-        if (is_maxmize())
-        {
-          auto padding_x = width / 3;
-          auto padding_y = width / 3;
-          ui::rectangle({ padding_x, 0 }, { width, height - padding_y }, 0, 1);
-          ui::discard_rectangle({ 0, padding_y }, { width - padding_x, height });
-          ui::rectangle({ 0, padding_y }, { width - padding_x, height }, 0, 1);
-        }
-        else
-          ui::rectangle({}, { width, height }, 0, 1);
-      },
-      icon_width, icon_height, 0x395063ff, 0x395063ff))
-      is_maxmize() ? restore_window() : maximize_window();
-
-    // close button
-    if (button(w - btn_width, 0, btn_width, btn_height, background_colors[i], 0xeb1123ff,
-      [] (uint32_t width, uint32_t height)
-      {
-        ui::line({}, { width, height });
-        ui::line({ width, 0 }, { 0, height });
-      }, icon_width, icon_height, 0x395063ff, 0xffffffff))
-      close_window();
-
-    ui::add_move_invalid_area({ w - btn_width * 3, 0 }, { w, btn_width });
-  }
-}
-
 void render_window_1() noexcept
 {
-  // use title bar, move draw position under the title bar
-  set_render_pos(0, 34);
-
   // set background
-  auto [width, height] = window_extent();
+  auto [width, height] = content_extent();
   ui::rectangle({}, { width, height }, 0x282C34FF, 0);
 
   if (ui::button(0, 0, 50, 50, 0xffffffff, 0))
     info("1");
   if (ui::button(25, 0, 50, 50, 0xffffffff, 0x00ff00ff))
     info("2");
-
-  title_bar();
 }
 
 void render_window_2() noexcept
 {
-  auto [width, height] = window_extent();
+  auto [width, height] = content_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
 
   static auto draw_circle = false;
@@ -103,7 +44,7 @@ void render_window_2() noexcept
 
 void render_window_3() noexcept
 {
-  auto [width, height] = window_extent();
+  auto [width, height] = content_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff0f0ff, 1);
 
   ui::begin_union();
@@ -129,7 +70,7 @@ int main()
   vn::init();
 
   ui::create_window("first window", 100, 100, 200, 100, render_window_1);
-  //ui::create_window("second window", 200, 200, 100, 100, render_window_2);
+  ui::create_window("second window", 200, 200, 100, 100, render_window_2);
 
   auto fps_count = uint32_t{};
 
@@ -138,10 +79,10 @@ int main()
     info("[fps] {}", fps_count);
     fps_count = {};
   });
-  //timer.add_single_event(3000, [&]
-  //{
-  //  ui::create_window("third window", 300, 300, 100, 100, render_window_3);
-  //});
+  timer.add_single_event(3000, [&]
+  {
+    ui::create_window("third window", 300, 300, 100, 100, render_window_3);
+  });
 
   while (ui::window_count())
   {

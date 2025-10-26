@@ -40,6 +40,7 @@ struct Window
   std::function<void()> update;
   glm::vec2             render_pos{};
   uint32_t              widget_count{};
+  bool                  draw_title_bar{};
 };
 
 class UIContext
@@ -61,8 +62,10 @@ public:
     return &instance;
   }
 
-  void add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept;
+  void add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func, bool use_title_bar) noexcept;
   void close_current_window() noexcept;
+
+  auto content_extent() noexcept -> std::pair<uint32_t, uint32_t>;
 
   void add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept;
 
@@ -79,6 +82,12 @@ public:
 private:
   void update_cursor()    noexcept;
   void update_wireframe() noexcept;
+
+  static constexpr auto Titler_Bar_Height             = 35;
+  static constexpr auto Titler_Bar_Button_Width       = 46;
+  static constexpr auto Titler_Bar_Button_Icon_Width  = 10;
+  static constexpr auto Titler_Bar_Button_Icon_Height = 10;
+  void update_title_bar() noexcept;
 
 public:
   std::unordered_map<HWND, Window>  windows;

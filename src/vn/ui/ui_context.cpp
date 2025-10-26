@@ -20,7 +20,7 @@ auto point_on_rect(glm::vec<2, int> const& p, glm::vec2 const& left_top, glm::ve
 
 namespace vn { namespace ui {
 
-void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept
+void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func, bool use_title_bar) noexcept
 {
   auto wm = WindowManager::instance();
 
@@ -29,12 +29,23 @@ void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32
   err_if(std::ranges::any_of(windows | std::views::keys,
     [&] (auto handle) { return wm->get_window_name(handle) == name; }), "duplicate window of {}", name);
   
-  windows[wm->create_window(name, x, y, width, height)].update = update_func;
+  auto handle = wm->create_window(name, x, y, width, height);
+  windows[handle].update         = update_func;
+  windows[handle].draw_title_bar = use_title_bar;
 }
 
 void UIContext::close_current_window() noexcept
 {
   PostMessageW(window.handle, WM_CLOSE, 0, 0);
+}
+
+auto UIContext::content_extent() noexcept -> std::pair<uint32_t, uint32_t>
+{
+  auto width  = window.width;
+  auto height = window.height;
+  if (windows[window.handle].draw_title_bar)
+    height -= Titler_Bar_Height;
+  return { width, height };
 }
 
 void UIContext::render() noexcept
@@ -55,10 +66,16 @@ void UIContext::render() noexcept
     updating = true;
 
     window.widget_count = {};
+    
+    // use title bar, move draw position under the title bar
+    if (window.draw_title_bar)
+      set_render_pos(0, Titler_Bar_Height);
     window.update();
 
     err_if(op_data.op != ShapeProperty::Operator::none, "must clear operator after using finish");
 
+    if (window.draw_title_bar)
+      update_title_bar();
     if (!this->window.is_maximized)
       update_wireframe();
 
@@ -126,6 +143,60 @@ void UIContext::update_wireframe() noexcept
   Tmp_Render_Pos(0, 0)
   {
     ui::rectangle({}, { window.width, window.height }, 0xbbbbbbff, 1);
+  }
+}
+
+void UIContext::update_title_bar() noexcept
+{
+  auto btn_width   = Titler_Bar_Button_Width;
+  auto btn_height  = Titler_Bar_Height;
+  auto icon_width  = Titler_Bar_Button_Icon_Width;
+  auto icon_height = Titler_Bar_Button_Icon_Height;
+
+  uint32_t background_colors[2] = { 0xffffffff, 0xeeeeeeff };
+  auto i = is_active() || is_moving() || is_resizing();
+
+  auto [w, h] = window_extent();
+
+  Tmp_Render_Pos(0, 0)
+  {
+    ui::rectangle({}, { w, btn_height }, background_colors[i]);
+    ui::add_move_invalid_area({ 0, btn_height }, { w, h });
+
+    // minimize button
+    if (button(w - btn_width * 3, 0, btn_width, btn_height, background_colors[i], 0x0cececeff,
+      [] (uint32_t width, uint32_t height) { ui::line({ 0, height / 2 }, { width, height / 2 }); },
+      icon_width, icon_height, 0x395063ff, 0x395063ff))
+      minimize_window();
+
+    // maximize / restore button
+    if (button(w - btn_width * 2, 0, btn_width, btn_height, background_colors[i], 0x0cececeff, 
+      [&] (uint32_t width, uint32_t height)
+      {
+        if (is_maxmize())
+        {
+          auto padding_x = width / 3;
+          auto padding_y = width / 3;
+          ui::rectangle({ padding_x, 0 }, { width, height - padding_y }, 0, 1);
+          ui::discard_rectangle({ 0, padding_y }, { width - padding_x, height });
+          ui::rectangle({ 0, padding_y }, { width - padding_x, height }, 0, 1);
+        }
+        else
+          ui::rectangle({}, { width, height }, 0, 1);
+      },
+      icon_width, icon_height, 0x395063ff, 0x395063ff))
+      is_maxmize() ? restore_window() : maximize_window();
+
+    // close button
+    if (button(w - btn_width, 0, btn_width, btn_height, background_colors[i], 0xeb1123ff,
+      [] (uint32_t width, uint32_t height)
+      {
+        ui::line({}, { width, height });
+        ui::line({ width, 0 }, { 0, height });
+      }, icon_width, icon_height, 0x395063ff, 0xffffffff))
+      close_window();
+
+    ui::add_move_invalid_area({ w - btn_width * 3, 0 }, { w, btn_width });
   }
 }
 

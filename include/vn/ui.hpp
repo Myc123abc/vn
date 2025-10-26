@@ -19,8 +19,9 @@ namespace vn { namespace ui {
  * @param width width of window
  * @param height height of window
  * @param update_func update function for rendering
+ * @param use_title_bar
  */
-void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept;
+void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func, bool use_title_bar = true) noexcept;
 
 /**
  * get count of windows
@@ -33,6 +34,11 @@ auto window_count() noexcept -> uint32_t;
  * @return extent of window
  */
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>;
+
+/**
+ * get content extent which expect the title bar and wireframe
+ */
+auto content_extent() noexcept -> std::pair<uint32_t, uint32_t>;
 
 /// close current window
 void close_window() noexcept;

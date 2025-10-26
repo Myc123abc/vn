@@ -159,9 +159,9 @@ namespace vn { namespace ui {
 ///                                Window
 ////////////////////////////////////////////////////////////////////////////////
 
-void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func) noexcept
+void create_window(std::string_view name, uint32_t x, uint32_t y, uint32_t width, uint32_t height, std::function<void()> update_func, bool use_title_bar) noexcept
 {
-  UIContext::instance()->add_window(name, x, y, width, height, update_func);
+  UIContext::instance()->add_window(name, x, y, width, height, update_func, use_title_bar);
 }
 
 void close_window() noexcept
@@ -178,6 +178,12 @@ auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
 {
   check_in_update_callback();
   return { UIContext::instance()->window.width, UIContext::instance()->window.height };
+}
+
+auto content_extent() noexcept -> std::pair<uint32_t, uint32_t>
+{
+  check_in_update_callback();
+  return UIContext::instance()->content_extent();
 }
 
 void add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
