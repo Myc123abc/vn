@@ -9,6 +9,13 @@ TODO:
 dynamic set WS_EX_TRANSPARENT to make window can mouse pass through
 and in interactive area, remove WS_EX_TRANSPARENT
 so dynamic mosue pass through, this can be try
+
+LONG style = GetWindowLong(hwnd, GWL_EXSTYLE);
+if (PtInRect(&clickable, pt))
+    SetWindowLong(hwnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT);
+else
+    SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT);
+
 */
 
 namespace vn { namespace ui {
