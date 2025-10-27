@@ -48,6 +48,8 @@ public:
 
   void render_window(HWND handle, ui::WindowRenderData const& data) noexcept;
 
+  static constexpr auto enable_depth_test{ false };
+
 private:
   void create_pipeline_resource() noexcept;
 

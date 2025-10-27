@@ -93,6 +93,8 @@ public:
 
   auto cursor_valid_area() const noexcept -> bool;
 
+  auto is_mouse_pass_through_area() const noexcept -> bool;
+
 private:
   void left_offset(int dx)   noexcept;
   void top_offset(int dy)    noexcept;

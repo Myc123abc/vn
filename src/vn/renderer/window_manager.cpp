@@ -126,6 +126,15 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
     auto& window = wm->_windows[handle];
 
+    // change to mouse pass through when moving on shadow area
+    if (window.is_mouse_pass_through_area())
+    {
+      auto style = GetWindowLong(handle, GWL_EXSTYLE);
+      SetWindowLongPtrA(handle, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED);
+      wm->_using_mouse_pass_through_windows.push_back(handle);
+      return 0;
+    }
+
     // move or resize window
     if (window.mouse_state == MouseState::left_button_down || window.mouse_state == MouseState::left_button_press)
     {
@@ -265,6 +274,18 @@ void WindowManager::message_process() noexcept
       PostMessageW(handle, static_cast<int>(Message::left_button_press), 0, 0);
     else if (window.mouse_state == MouseState::left_button_up)
       PostMessageW(handle, static_cast<int>(Message::mouse_idle), 0, 0);
+  }
+
+  for (auto it = _using_mouse_pass_through_windows.begin(); it != _using_mouse_pass_through_windows.end();)
+  {
+    auto handle = *it;
+    if (!_windows[handle].is_mouse_pass_through_area())
+    {
+      SetWindowLongPtrA(handle, GWL_EXSTYLE, GetWindowLong(handle, GWL_EXSTYLE) & ~(WS_EX_TRANSPARENT | WS_EX_LAYERED));
+      it = _using_mouse_pass_through_windows.erase(it);
+    }
+    else
+      ++it;
   }
 }
 

@@ -30,7 +30,7 @@ public:
   void init() noexcept;
   void destroy() const noexcept;
 
-  void submit(ID3D12GraphicsCommandList * cmd) const noexcept;
+  void submit(ID3D12GraphicsCommandList1* cmd) const noexcept;
 
   void wait_gpu_complete()  noexcept;
   void move_to_next_frame() noexcept;
@@ -45,15 +45,15 @@ public:
   auto frame_index()   const noexcept { return _frame_index;         }
 
 private:
-  Microsoft::WRL::ComPtr<IDXGIFactory6>             _factory;
-  Microsoft::WRL::ComPtr<ID3D12Device>              _device;
-  Microsoft::WRL::ComPtr<ID3D12CommandQueue>        _command_queue;
-  Microsoft::WRL::ComPtr<ID3D12CommandAllocator>    _command_allocator;
-  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _command_list;
-  uint32_t                                          _frame_index{};
-  std::array<uint64_t, Frame_Count>                 _fence_values;
-  Microsoft::WRL::ComPtr<ID3D12Fence>               _fence;
-  HANDLE                                            _fence_event;
+  Microsoft::WRL::ComPtr<IDXGIFactory6>              _factory;
+  Microsoft::WRL::ComPtr<ID3D12Device2>              _device;
+  Microsoft::WRL::ComPtr<ID3D12CommandQueue>         _command_queue;
+  Microsoft::WRL::ComPtr<ID3D12CommandAllocator>     _command_allocator;
+  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1> _command_list;
+  uint32_t                                           _frame_index{};
+  std::array<uint64_t, Frame_Count>                  _fence_values;
+  Microsoft::WRL::ComPtr<ID3D12Fence>                _fence;
+  HANDLE                                             _fence_event;
 };
 
 }}

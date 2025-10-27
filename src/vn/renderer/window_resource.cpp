@@ -12,7 +12,8 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
 {
   this->transparent = transparent;
 
-  auto core = Core::instance();
+  auto core     = Core::instance();
+  auto renderer = Renderer::instance();
 
   // set viewport and scissor
   viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(width), static_cast<float>(height) };
@@ -58,14 +59,38 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   }
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
 
-  // create descriptor heaps
-  D3D12_DESCRIPTOR_HEAP_DESC rtv_heap_desc{};
+  // create rtv heap
+  auto rtv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
   rtv_heap_desc.NumDescriptors = Frame_Count;
   rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
   err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&rtv_heap)),
-    "failed to create render target view descriptor heap");
+    "failed to create descriptor heap");
 
-  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
+  if (renderer->enable_depth_test)
+  {
+    // create dsv heap
+    auto dsv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
+    dsv_heap_desc.NumDescriptors = 1;
+    dsv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    err_if(core->device()->CreateDescriptorHeap(&dsv_heap_desc, IID_PPV_ARGS(&dsv_heap)),
+      "failed to create descriptor heap");
+
+    // create dsv view
+    auto dsv_desc    = D3D12_DEPTH_STENCIL_VIEW_DESC{};
+    auto clear_value = D3D12_CLEAR_VALUE{};
+    dsv_desc.Format                = DXGI_FORMAT_D32_FLOAT;
+    dsv_desc.ViewDimension         = D3D12_DSV_DIMENSION_TEXTURE2D;
+    clear_value.Format             = DXGI_FORMAT_D32_FLOAT;
+    clear_value.DepthStencil.Depth = 1.f;
+    auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    auto resource_desc   = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+    err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear_value, IID_PPV_ARGS(&dsv)),
+           "failed to create depth stencil view");
+    core->device()->CreateDepthStencilView(dsv.Get(), &dsv_desc, dsv_heap->GetCPUDescriptorHandleForHeapStart());
+  }
+
+  // init swapchain images also create rtv views
+  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
   for (auto i = 0; i < Frame_Count; ++i)
   {
     // get swapchain image
@@ -78,7 +103,8 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 {
-  auto core = Core::instance();
+  auto core     = Core::instance();
+  auto renderer = Renderer::instance();
 
   // set viewport and scissor
   viewport = CD3DX12_VIEWPORT{ 0.f, 0.f, static_cast<float>(width), static_cast<float>(height) };
@@ -114,6 +140,22 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
                        .create_descriptor(rtv_handle);
     // offset next swapchain image
     rtv_handle.Offset(1, RTV_Size);
+  }
+
+  if (renderer->enable_depth_test)
+  {
+    // create dsv view
+    auto dsv_desc    = D3D12_DEPTH_STENCIL_VIEW_DESC{};
+    auto clear_value = D3D12_CLEAR_VALUE{};
+    dsv_desc.Format                = DXGI_FORMAT_D32_FLOAT;
+    dsv_desc.ViewDimension         = D3D12_DSV_DIMENSION_TEXTURE2D;
+    clear_value.Format             = DXGI_FORMAT_D32_FLOAT;
+    clear_value.DepthStencil.Depth = 1.f;
+    auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    auto resource_desc   = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+    err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear_value, IID_PPV_ARGS(&dsv)),
+           "failed to create depth stencil view"); 
+    core->device()->CreateDepthStencilView(dsv.Get(), &dsv_desc, dsv_heap->GetCPUDescriptorHandleForHeapStart());
   }
 }
 
@@ -158,6 +200,9 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   auto& swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : this->swapchain_resource;
   auto  swapchain_image    = swapchain_resource.current_image();
   auto  rtv_handle         = swapchain_resource.rtv();
+  auto  dsv_handle         = D3D12_CPU_DESCRIPTOR_HANDLE{};
+  if (renderer->enable_depth_test)
+    dsv_handle = swapchain_resource.dsv_heap->GetCPUDescriptorHandleForHeapStart();
 
   // reset command allocator and command list
   err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
@@ -180,11 +225,20 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   swapchain_image->set_state<ImageState::render_target>(cmd);
 
   // set render target view
-  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
+  if (renderer->enable_depth_test)
+    cmd->OMSetRenderTargets(1, &rtv_handle, false, &dsv_handle);
+  else
+    cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
   float constexpr clear_color[4]{};
   cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  if (renderer->enable_depth_test)
+  {
+    cmd->ClearDepthStencilView(dsv_handle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
+    // set depth range
+    cmd->OMSetDepthBounds(0.f, 1.f);
+  }
 
   // set primitive topology
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);

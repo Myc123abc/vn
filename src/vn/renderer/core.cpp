@@ -60,7 +60,7 @@ void Core::destroy() const noexcept
   CloseHandle(_fence_event);
 }
 
-void Core::submit(ID3D12GraphicsCommandList * cmd) const noexcept
+void Core::submit(ID3D12GraphicsCommandList1* cmd) const noexcept
 {
   err_if(cmd->Close(), "failed to close command list");
   auto cmds = std::array<ID3D12CommandList*, 1>{ cmd };

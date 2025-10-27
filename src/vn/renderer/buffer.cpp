@@ -103,7 +103,7 @@ void FrameBuffer::init(D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) noexcept
   _shape_properties_buffer.init(1024, descriptor_handle);
 }
 
-void FrameBuffer::upload(ID3D12GraphicsCommandList* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
+void FrameBuffer::upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
 {
   auto vertices_offset = _vertices_indices_buffer.append_range(vertices);
   auto indices_offset  = _vertices_indices_buffer.append_range(indices);

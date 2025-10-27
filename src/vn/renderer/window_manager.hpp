@@ -99,6 +99,7 @@ private:
   std::unordered_map<HWND, Window> _windows;
   HWND                             _fullscreen_window_handle;
   Window                           _moving_or_resizing_window;
+  std::vector<HWND>                _using_mouse_pass_through_windows;
 };
 
 }}

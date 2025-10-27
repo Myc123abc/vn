@@ -78,6 +78,9 @@ void UIContext::render() noexcept
       update_title_bar();
     if (!this->window.is_maximized)
       update_wireframe();
+    
+    // use window shadow
+    //update_window_shadow();
 
     updating = false;
 
@@ -117,10 +120,10 @@ void UIContext::update_cursor() noexcept
     }
     render_data.vertices.append_range(std::vector<Vertex>
     {
-      { { pos.x,      pos.y      }, { 0, 0 }, shape_properties_offset },
-      { { pos.x + 32, pos.y      }, { 1, 0 }, shape_properties_offset },
-      { { pos.x + 32, pos.y + 32 }, { 1, 1 }, shape_properties_offset },
-      { { pos.x,      pos.y + 32 }, { 0, 1 }, shape_properties_offset },
+      { { pos.x,      pos.y,      0.f }, { 0, 0 }, shape_properties_offset },
+      { { pos.x + 32, pos.y,      0.f }, { 1, 0 }, shape_properties_offset },
+      { { pos.x + 32, pos.y + 32, 0.f }, { 1, 1 }, shape_properties_offset },
+      { { pos.x,      pos.y + 32, 0.f }, { 0, 1 }, shape_properties_offset },
     });
     render_data.indices.append_range(std::vector<uint16_t>
     {
@@ -131,7 +134,7 @@ void UIContext::update_cursor() noexcept
       static_cast<uint16_t>(render_data.idx_beg + 2),
       static_cast<uint16_t>(render_data.idx_beg + 3),
     });
-    render_data.idx_beg += 6;
+    render_data.idx_beg += 4;
 
     render_data.shape_properties.emplace_back(ShapeProperty{ ShapeProperty::Type::cursor });
     shape_properties_offset += render_data.shape_properties.back().byte_size();
@@ -151,6 +154,15 @@ void UIContext::update_wireframe() noexcept
       ui::line({}, { window.width, 0 }, 0xbbbbbbff);
     if (window.rect.bottom != rc.bottom)
       ui::line({ 0, window.height }, { window.width, window.height }, 0xbbbbbbff);
+  }
+}
+
+void UIContext::update_window_shadow() noexcept
+{
+  Tmp_Render_Pos(0, 0)
+  {
+    ui::rectangle({ 20, 20 }, { window.width - 20, window.height - 20 });
+    render_data.shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
   }
 }
 

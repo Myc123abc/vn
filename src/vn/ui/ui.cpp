@@ -71,10 +71,10 @@ void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectan
 
   ctx->render_data.vertices.append_range(std::vector<Vertex>
   {
-    { min,              {}, offset },
-    { { max.x, min.y }, {}, offset },
-    { max,              {}, offset },
-    { { min.x, max.y }, {}, offset },
+    { { min.x, min.y, 0.f }, {}, offset },
+    { { max.x, min.y, 0.f }, {}, offset },
+    { { max.x, max.y, 0.f }, {}, offset },
+    { { min.x, max.y, 0.f }, {}, offset },
   });
   ctx->render_data.indices.append_range(std::vector<uint16_t>
   {

@@ -4,7 +4,7 @@
 
 struct Vertex
 {
-  float2   pos           : POSITION;
+  float3   pos           : POSITION;
   float2   uv            : TEXCOORD;
   uint32_t buffer_offset : BUFFER_OFFSET;
 };
@@ -45,13 +45,23 @@ enum : uint32_t
   op_discard
 };
 
+enum : uint32_t
+{
+  flag_window_shadow = 0b1
+};
+
 struct ShapeProperty
 {
   uint32_t type;
   float4   color;
   float    thickness;
   uint32_t op;
-  uint32_t padding;
+  uint32_t flags;
+
+  bool use_window_shadow()
+  {
+    return bool(flags & flag_window_shadow);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -227,7 +237,7 @@ PSParameter vs(Vertex vertex)
   ShapeProperty shape_property = buffer.Load<ShapeProperty>(vertex.buffer_offset);
 
   PSParameter result;
-  result.pos           = float4((vertex.pos + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), 0, 1);
+  result.pos           = float4((vertex.pos.xy + constants.window_pos) / constants.window_extent * float2(2, -2) + float2(-1, 1), vertex.pos.z, 1);
   result.uv            = vertex.uv;
   result.color         = shape_property.color;
   result.buffer_offset = vertex.buffer_offset;
@@ -243,6 +253,14 @@ float4 ps(PSParameter args) : SV_TARGET
   uint32_t offset = args.buffer_offset;
 
   ShapeProperty shape_property = get_shape_property(offset);
+
+  // process window shadow effect
+  if (shape_property.use_window_shadow())
+  {
+    float d = get_sd(args.pos.xy, shape_property.type, offset);
+    if (d < 0) discard;
+    return float4(0, 1, 0, 1);
+  }
 
   float4 color = args.color;
 

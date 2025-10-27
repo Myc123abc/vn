@@ -9,17 +9,21 @@ Timer timer;
 
 void render_window_1() noexcept
 {
-  set_background_color(0x282C34FF);
+  set_background_color(0xffffffff);
 
-  if (ui::button(0, 0, 50, 50, 0xffffffff, 0))
+  //ui::line({0, 25}, {100,25}, 0x0000ffff);
+  //ui::line({0, 25}, {100,25}, 0xff0000ff);
+
+  if (ui::button(0, 0, 50, 50, 0xff0000ff, 0x0000ffff))
     info("1");
-  if (ui::button(25, 0, 50, 50, 0xffffffff, 0x00ff00ff))
+  ////ui::circle({25,25}, 25, 0x0000ffff);
+  if (ui::button(0, 0, 50, 50, 0xffffffff, 0x00ff00ff))
     info("2");
 }
 
 void render_window_2() noexcept
 {
-  set_background_color(0xffffffff);
+  set_background_color(0x282C34FF);
 
   auto [width, height] = content_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);

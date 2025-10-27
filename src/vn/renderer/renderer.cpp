@@ -261,36 +261,70 @@ void Renderer::create_pipeline_resource() noexcept
   // create pipeline state
   D3D12_INPUT_ELEMENT_DESC layout[]
   {
-    { "POSITION",      0, DXGI_FORMAT_R32G32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "TEXCOORD",      0, DXGI_FORMAT_R32G32_FLOAT, 0,  8, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "BUFFER_OFFSET", 0, DXGI_FORMAT_R32_UINT,     0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "POSITION",      0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "TEXCOORD",      0, DXGI_FORMAT_R32G32_FLOAT,    0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    { "BUFFER_OFFSET", 0, DXGI_FORMAT_R32_UINT,        0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
   };
 
-  auto  blend_state = D3D12_BLEND_DESC{};
+  // use pipeline state stream
+  struct PipelienStateStream
+  {
+    CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE        root_signature;
+    CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT          input_layout;
+    CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY    primitive_topology;
+    CD3DX12_PIPELINE_STATE_STREAM_VS                    vs;
+    CD3DX12_PIPELINE_STATE_STREAM_PS                    ps;
+    CD3DX12_PIPELINE_STATE_STREAM_BLEND_DESC            blend_desc;
+    CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS render_target_formats;
+    CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL1        depth_stencil;
+    CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT  depth_stencil_format;
+  } ps_stream;
+
+  auto render_target_formats = D3D12_RT_FORMAT_ARRAY{};
+  render_target_formats.NumRenderTargets = 1;
+  render_target_formats.RTFormats[0]     = DXGI_FORMAT_B8G8R8A8_UNORM;
+
+  ps_stream.root_signature        = _root_signature.Get();
+  ps_stream.input_layout          = { layout, _countof(layout) };
+  ps_stream.primitive_topology    = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+  ps_stream.vs                    = CD3DX12_SHADER_BYTECODE{ vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize() };
+  ps_stream.ps                    = CD3DX12_SHADER_BYTECODE{ pixel_shader->GetBufferPointer(),  pixel_shader->GetBufferSize()  };
+  if (enable_depth_test)
+    ps_stream.depth_stencil_format = DXGI_FORMAT_D32_FLOAT;
+  ps_stream.render_target_formats = render_target_formats;
+  
+  auto size = sizeof(ps_stream);
+  if (!enable_depth_test)
+    size -= sizeof(CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL1) + sizeof(CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT);
+  auto pipeline_state_stream_desc = D3D12_PIPELINE_STATE_STREAM_DESC{ size, &ps_stream };
+
+  // check feature support
+  auto options = D3D12_FEATURE_DATA_D3D12_OPTIONS2{};
+  err_if(core->device()->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS2, &options, sizeof(options)),
+          "failed to get feature options");
+
+  if (enable_depth_test)
+  {
+    auto depth_stencil_desc = CD3DX12_DEPTH_STENCIL_DESC1(D3D12_DEFAULT);
+    depth_stencil_desc.DepthEnable = false;
+    err_if(!options.DepthBoundsTestSupported, "unsupport depth bounds test");
+    depth_stencil_desc.DepthBoundsTestEnable = true;
+    ps_stream.depth_stencil = depth_stencil_desc;
+  }
+
+  auto  blend_state = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
   auto& rt          = blend_state.RenderTarget[0];
-  rt.BlendEnable = true;
+  rt.BlendEnable           = true;
   rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
   rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
   rt.BlendOp               = D3D12_BLEND_OP_ADD;
   rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
   rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
   rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
-  rt.LogicOp               = D3D12_LOGIC_OP_NOOP;
   rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+  ps_stream.blend_desc = blend_state;
 
-  D3D12_GRAPHICS_PIPELINE_STATE_DESC pipeline_state_desc{};
-  pipeline_state_desc.InputLayout           = { layout, _countof(layout) };
-  pipeline_state_desc.pRootSignature        = _root_signature.Get();
-  pipeline_state_desc.VS                    = CD3DX12_SHADER_BYTECODE{ vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize() };
-  pipeline_state_desc.PS                    = CD3DX12_SHADER_BYTECODE{ pixel_shader->GetBufferPointer(),  pixel_shader->GetBufferSize()  };
-  pipeline_state_desc.RasterizerState       = CD3DX12_RASTERIZER_DESC{ D3D12_DEFAULT };
-  pipeline_state_desc.BlendState            = blend_state;
-  pipeline_state_desc.SampleMask            = UINT_MAX;
-  pipeline_state_desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-  pipeline_state_desc.NumRenderTargets      = 1;
-  pipeline_state_desc.RTVFormats[0]         = DXGI_FORMAT_B8G8R8A8_UNORM;
-  pipeline_state_desc.SampleDesc.Count      = 1;
-  err_if(core->device()->CreateGraphicsPipelineState(&pipeline_state_desc, IID_PPV_ARGS(&_pipeline_state)),
+  err_if(core->device()->CreatePipelineState(&pipeline_state_stream_desc, IID_PPV_ARGS(&_pipeline_state)),
           "failed to create pipeline state");
 }
 

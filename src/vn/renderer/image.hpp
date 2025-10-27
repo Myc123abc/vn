@@ -176,7 +176,7 @@ public:
   }
 
   template <ImageState state>
-  void set_state(ID3D12GraphicsCommandList* cmd) noexcept
+  void set_state(ID3D12GraphicsCommandList1* cmd) noexcept
   {
     if (_state == dx12_image_state<state>()) return;
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_handle.Get(), _state, dx12_image_state<state>());
@@ -199,7 +199,7 @@ private:
 template <ImageType SrcType, ImageFormat SrcFormat,
           ImageType DstType, ImageFormat DstFormat>
 inline void copy(
-  ID3D12GraphicsCommandList* cmd,
+  ID3D12GraphicsCommandList1* cmd,
   Image<SrcType, SrcFormat>& src,
   LONG left,
   LONG top,
@@ -221,20 +221,20 @@ inline void copy(
 template <ImageType SrcType, ImageFormat SrcFormat,
           ImageType DstType, ImageFormat DstFormat>
 inline void copy(
-  ID3D12GraphicsCommandList* cmd,
-  Image<SrcType, SrcFormat>& src,
-  Image<DstType, DstFormat>& dst) noexcept
+  ID3D12GraphicsCommandList1* cmd,
+  Image<SrcType, SrcFormat>&  src,
+  Image<DstType, DstFormat>&  dst) noexcept
 {
   copy(cmd, src, 0, 0, src.width(), src.height(), dst);
 }
 
 template <ImageType Type, ImageFormat Format>
 inline void copy(
-  ID3D12GraphicsCommandList* cmd,
-  Image<Type, Format>&       image,
-  ID3D12Resource*            upload_heap,
-  uint32_t                   offset,
-  D3D12_SUBRESOURCE_DATA&    data
+  ID3D12GraphicsCommandList1* cmd,
+  Image<Type, Format>&        image,
+  ID3D12Resource*             upload_heap,
+  uint32_t                    offset,
+  D3D12_SUBRESOURCE_DATA&     data
 )
 {
   image.template set_state<ImageState::copy_dst>(cmd);

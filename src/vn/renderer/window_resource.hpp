@@ -17,6 +17,8 @@ struct SwapchainResource
   Microsoft::WRL::ComPtr<IDXGISwapChain4>      swapchain;
   std::array<SwapchainImageType, Frame_Count>  swapchain_images;
   Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap;
+  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsv_heap;
+  Microsoft::WRL::ComPtr<ID3D12Resource>       dsv;
   CD3DX12_VIEWPORT                             viewport;
   CD3DX12_RECT                                 scissor;
   bool                                         transparent;
@@ -46,7 +48,7 @@ public:
 struct FrameResource
 {
   std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, Frame_Count> command_allocators;
-  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmd;
+  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1> cmd;
 
   void init() noexcept;
 };
