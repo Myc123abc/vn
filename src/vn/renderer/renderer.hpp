@@ -3,6 +3,7 @@
 #include "window_resource.hpp"
 #include "buffer.hpp"
 #include "descriptor_heap.hpp"
+#include "pipeline.hpp"
 
 #include <functional>
 #include <deque>
@@ -50,6 +51,8 @@ public:
 
   static constexpr auto enable_depth_test{ false };
 
+  auto get_descriptor(std::string_view tag, uint32_t offset = {}) const noexcept { return _cbv_srv_uav_heap.gpu_handle(tag, offset); }
+
 private:
   void create_pipeline_resource() noexcept;
 
@@ -57,6 +60,8 @@ private:
 
 private:
   std::deque<std::function<bool()>> _current_frame_render_finish_procs;
+
+  Pipeline _pipeline;
 
   struct Cursor
   {
@@ -67,11 +72,8 @@ private:
 
   DescriptorHeap<
     DescriptorHeapType::cbv_srv_uav,
-    static_cast<uint32_t>(CursorType::Number) + Frame_Count> _srv_heap;
+    static_cast<uint32_t>(CursorType::Number) + Frame_Count + 1> _cbv_srv_uav_heap;
   std::array<FrameBuffer, Frame_Count> _frame_buffers;
-
-  Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipeline_state;
-  Microsoft::WRL::ComPtr<ID3D12RootSignature> _root_signature;
 
   std::unordered_map<HWND, WindowResource> _window_resources;
   SwapchainResource                        _fullscreen_swapchain_resource;

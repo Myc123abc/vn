@@ -59,46 +59,18 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   }
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
 
-  // create rtv heap
-  auto rtv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
-  rtv_heap_desc.NumDescriptors = Frame_Count;
-  rtv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-  err_if(core->device()->CreateDescriptorHeap(&rtv_heap_desc, IID_PPV_ARGS(&rtv_heap)),
-    "failed to create descriptor heap");
+  rtv_heap.init();
+  for (auto i = 0; i < Frame_Count; ++i)
+    swapchain_images[i].init(swapchain.Get(), i).create_descriptor(rtv_heap.pop_handle());
 
   if (renderer->enable_depth_test)
   {
-    // create dsv heap
-    auto dsv_heap_desc = D3D12_DESCRIPTOR_HEAP_DESC{};
-    dsv_heap_desc.NumDescriptors = 1;
-    dsv_heap_desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-    err_if(core->device()->CreateDescriptorHeap(&dsv_heap_desc, IID_PPV_ARGS(&dsv_heap)),
-      "failed to create descriptor heap");
-
-    // create dsv view
-    auto dsv_desc    = D3D12_DEPTH_STENCIL_VIEW_DESC{};
-    auto clear_value = D3D12_CLEAR_VALUE{};
-    dsv_desc.Format                = DXGI_FORMAT_D32_FLOAT;
-    dsv_desc.ViewDimension         = D3D12_DSV_DIMENSION_TEXTURE2D;
-    clear_value.Format             = DXGI_FORMAT_D32_FLOAT;
-    clear_value.DepthStencil.Depth = 1.f;
-    auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    auto resource_desc   = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
-    err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear_value, IID_PPV_ARGS(&dsv)),
-           "failed to create depth stencil view");
-    core->device()->CreateDepthStencilView(dsv.Get(), &dsv_desc, dsv_heap->GetCPUDescriptorHandleForHeapStart());
+    dsv_heap.init();
+    dsv_image.init(width, height).create_descriptor(dsv_heap.pop_handle());
   }
 
-  // init swapchain images also create rtv views
-  auto rtv_handle = CD3DX12_CPU_DESCRIPTOR_HANDLE{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
-  for (auto i = 0; i < Frame_Count; ++i)
-  {
-    // get swapchain image
-    swapchain_images[i].init(swapchain.Get(), i)
-                       .create_descriptor(rtv_handle);
-    // offset next swapchain image
-    rtv_handle.Offset(1, RTV_Size);
-  }
+  uav_heap.init(true);
+  background_image.init(width, height).create_descriptor(uav_heap.pop_handle("background"));
 }
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
@@ -131,32 +103,13 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
             "failed to commit composition device");
   }
 
-  // reget swapchain images
-  CD3DX12_CPU_DESCRIPTOR_HANDLE rtv_handle{ rtv_heap->GetCPUDescriptorHandleForHeapStart() };
   for (auto i = 0; i < Frame_Count; ++i)
-  {
-    // get swapchain image
-    swapchain_images[i].init(swapchain.Get(), i)
-                       .create_descriptor(rtv_handle);
-    // offset next swapchain image
-    rtv_handle.Offset(1, RTV_Size);
-  }
+    swapchain_images[i].resize(swapchain.Get(), i);
 
   if (renderer->enable_depth_test)
-  {
-    // create dsv view
-    auto dsv_desc    = D3D12_DEPTH_STENCIL_VIEW_DESC{};
-    auto clear_value = D3D12_CLEAR_VALUE{};
-    dsv_desc.Format                = DXGI_FORMAT_D32_FLOAT;
-    dsv_desc.ViewDimension         = D3D12_DSV_DIMENSION_TEXTURE2D;
-    clear_value.Format             = DXGI_FORMAT_D32_FLOAT;
-    clear_value.DepthStencil.Depth = 1.f;
-    auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    auto resource_desc   = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, width, height, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
-    err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &resource_desc, D3D12_RESOURCE_STATE_DEPTH_WRITE, &clear_value, IID_PPV_ARGS(&dsv)),
-           "failed to create depth stencil view"); 
-    core->device()->CreateDepthStencilView(dsv.Get(), &dsv_desc, dsv_heap->GetCPUDescriptorHandleForHeapStart());
-  }
+    dsv_image.resize(width, height);
+
+  background_image.resize(width, height);
 }
 
 void FrameResource::init() noexcept
@@ -202,17 +155,14 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   auto  rtv_handle         = swapchain_resource.rtv();
   auto  dsv_handle         = D3D12_CPU_DESCRIPTOR_HANDLE{};
   if (renderer->enable_depth_test)
-    dsv_handle = swapchain_resource.dsv_heap->GetCPUDescriptorHandleForHeapStart();
+    dsv_handle = swapchain_resource.dsv_heap.cpu_handle();
 
   // reset command allocator and command list
   err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
   err_if(cmd->Reset(cmd_alloc, nullptr), "failed to reset command list");
 
-  // set pipeline state
-  cmd->SetPipelineState(renderer->_pipeline_state.Get());
-
-  // set root signature
-  cmd->SetGraphicsRootSignature(renderer->_root_signature.Get());
+  // bind pipeline
+  renderer->_pipeline.bind(cmd);
 
   // set viewport and scissor rectangle
   cmd->RSSetViewports(1, &swapchain_resource.viewport);
@@ -244,29 +194,29 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
   // set descriptor heaps
-  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_srv_heap.handle() };
+  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
   cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
+
+  // set current window's background image descriptor
+  copy(swapchain_resource.uav_heap, "background", renderer->_cbv_srv_uav_heap, "background");
 
   // upload data to buffer
   renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
 
-  // set byte address buffer
-  auto srv_heap_handle = CD3DX12_GPU_DESCRIPTOR_HANDLE{renderer->_srv_heap.gpu_handle()};
-  srv_heap_handle.Offset(static_cast<uint32_t>(CursorType::Number) + core->frame_index(), CBV_SRV_UAV_Size);
-  cmd->SetGraphicsRootDescriptorTable(2, srv_heap_handle);
-
-  // set constant
+  // set descriptors
   auto constants = Constants{};
   constants.window_extent = swapchain_image->extent();
   if (window.moving || window.resizing)
   {
     constants.window_pos   = window.pos();
     constants.cursor_index = static_cast<uint32_t>(window.cursor_type);
-
-    // set cursor texture
-    cmd->SetGraphicsRootDescriptorTable(1, renderer->_srv_heap.gpu_handle());
   }
-  cmd->SetGraphicsRoot32BitConstants(0, sizeof(Constants), &constants, 0);
+  renderer->_pipeline.set_descriptors(cmd, constants,
+  {
+    (window.moving || window.resizing) ? renderer->get_descriptor("cursors") : D3D12_GPU_DESCRIPTOR_HANDLE{},
+    renderer->get_descriptor("framebuffer", core->frame_index()),
+    renderer->get_descriptor("background"),
+  });
 
   // draw
   if (window.moving || window.resizing)

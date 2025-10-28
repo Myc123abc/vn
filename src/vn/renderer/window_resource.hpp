@@ -3,6 +3,7 @@
 #include "image.hpp"
 #include "shader_type.hpp"
 #include "window.hpp"
+#include "descriptor_heap.hpp"
 
 #include <dcomp.h>
 
@@ -14,14 +15,16 @@ struct SwapchainResource
 {
   using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
 
-  Microsoft::WRL::ComPtr<IDXGISwapChain4>      swapchain;
-  std::array<SwapchainImageType, Frame_Count>  swapchain_images;
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtv_heap;
-  Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsv_heap;
-  Microsoft::WRL::ComPtr<ID3D12Resource>       dsv;
-  CD3DX12_VIEWPORT                             viewport;
-  CD3DX12_RECT                                 scissor;
-  bool                                         transparent;
+  Microsoft::WRL::ComPtr<IDXGISwapChain4>              swapchain;
+  std::array<SwapchainImageType, Frame_Count>          swapchain_images;
+  DescriptorHeap<DescriptorHeapType::rtv, Frame_Count> rtv_heap;
+  DescriptorHeap<DescriptorHeapType::dsv, 1>           dsv_heap;
+  Image<ImageType::dsv, ImageFormat::d32>              dsv_image;
+  CD3DX12_VIEWPORT                                     viewport;
+  CD3DX12_RECT                                         scissor;
+  bool                                                 transparent;
+  DescriptorHeap<DescriptorHeapType::cbv_srv_uav, 1>   uav_heap;
+  Image<ImageType::uav, ImageFormat::bgra8_unorm>      background_image;
 
 private:
   Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
@@ -37,7 +40,7 @@ public:
   auto rtv() const noexcept
   {
     return CD3DX12_CPU_DESCRIPTOR_HANDLE{
-      rtv_heap->GetCPUDescriptorHandleForHeapStart(),
+      rtv_heap.cpu_handle(),
       static_cast<int>(swapchain->GetCurrentBackBufferIndex()),
       RTV_Size};
   }

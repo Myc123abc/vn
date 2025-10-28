@@ -4,120 +4,13 @@
 #include "message_queue.hpp"
 #include "../ui/ui_context.hpp"
 
-#include <dxcapi.h>
-
-#include <utf8.h>
-
 #include <algorithm>
 #include <ranges>
 
 using namespace vn;
 using namespace Microsoft::WRL;
 
-////////////////////////////////////////////////////////////////////////////////
-///                             Help Functions
-////////////////////////////////////////////////////////////////////////////////
-
 namespace {
-
-////////////////////////////////////////////////////////////////////////////////
-///                             Compiler Shader
-////////////////////////////////////////////////////////////////////////////////
-
-#ifdef _WIN32
-auto to_wstring(std::string_view str) noexcept -> std::wstring
-{
-  auto u16str = utf8::utf8to16(str);
-  return { reinterpret_cast<wchar_t*>(u16str.data()), u16str.size() };
-}
-#endif
-
-auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer, std::string_view main, std::string_view profile, std::span<LPCWSTR> args = {}) noexcept
-{
-  auto dxc_args = ComPtr<IDxcCompilerArgs>{};
-  err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), args.data(), args.size(), nullptr, 0, dxc_args.GetAddressOf()),
-              "failed to create dxc args");
-
-  auto include = ComPtr<IDxcIncludeHandler>{};
-  err_if(utils->CreateDefaultIncludeHandler(&include), "failed to create default include handler in dxc");
-
-  auto result = ComPtr<IDxcResult>{};
-  err_if(compiler->Compile(&buffer, dxc_args->GetArguments(), dxc_args->GetCount(), include.Get(), IID_PPV_ARGS(&result)),
-              "failed to compile {}", main);
-
-  auto hr = HRESULT{};
-  result->GetStatus(&hr);
-  if (FAILED(hr))
-  {
-    auto msg = ComPtr<IDxcBlobUtf8>{};
-    err_if(result->GetOutput(DXC_OUT_ERRORS,  IID_PPV_ARGS(&msg), nullptr), "failed to get error ouput of dxc");
-    err_if(true, "failed to compile {}\n{}", main, msg->GetStringPointer());
-  }
-
-  auto cso = ComPtr<IDxcBlob>{};
-  err_if(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&cso), nullptr), "failed to get compile result");
-
-  return cso;
-}
-
-auto read_file(std::string_view path) noexcept -> std::string
-{
-  FILE* file{};
-  fopen_s(&file, path.data(), "rb");
-  err_if(!file, "failed to open file {}", path);
-
-  fseek(file, 0, SEEK_END);
-  auto size = ftell(file);
-  rewind(file);
-
-  auto data = std::string{};
-  data.resize(size);
-  fread(data.data(), 1, size, file);
-  fclose(file);
-
-  return data;
-}
-
-auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::string_view pixel_main, std::span<LPCWSTR> args) noexcept -> std::pair<ComPtr<IDxcBlob>, ComPtr<IDxcBlob>>
-{
-  auto compiler = ComPtr<IDxcCompiler3>{};
-  err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
-              "failed to create dxc compiler");
-
-  DxcBuffer buffer{};
-  auto data       = read_file(path);
-  buffer.Ptr      = data.data();
-  buffer.Size     = data.size();
-  buffer.Encoding = DXC_CP_UTF8;
-
-  auto utils = ComPtr<IDxcUtils>{};
-  err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
-              "failed to create dxc utils");
-
-  return { compile_shader(compiler.Get(), utils.Get(), buffer, vert_main, "vs_6_0", args), compile_shader(compiler.Get(), utils.Get(), buffer, pixel_main, "ps_6_0", args) };
-}
-
-auto compile_comp(std::string_view path, std::string_view comp_main, std::span<LPCWSTR> args) noexcept
-{
-  auto compiler = ComPtr<IDxcCompiler3>{};
-  err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
-              "failed to create dxc compiler");
-
-  DxcBuffer buffer{};
-  auto data       = read_file(path);
-  buffer.Ptr      = data.data();
-  buffer.Size     = data.size();
-  buffer.Encoding = DXC_CP_UTF8;
-
-  auto utils = ComPtr<IDxcUtils>{};
-  err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
-              "failed to create dxc utils");
-  return compile_shader(compiler.Get(), utils.Get(), buffer, comp_main, "cs_6_0", args);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-///                             Load Cursor
-////////////////////////////////////////////////////////////////////////////////
 
 struct Bitmap
 {
@@ -214,118 +107,24 @@ void Renderer::destroy() noexcept
 
 void Renderer::create_pipeline_resource() noexcept
 {
-  auto core = Core::instance();
+  _cbv_srv_uav_heap.init();
 
-  _srv_heap.init();
-
-  // create root signature
-  auto root_parameters = std::array<CD3DX12_ROOT_PARAMETER1, 3>{};
-  root_parameters[0].InitAsConstants(sizeof(Constants), 0, 0, D3D12_SHADER_VISIBILITY_ALL);
-
-  auto ranges = std::array<CD3DX12_DESCRIPTOR_RANGE1, 2>{};
-  ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, static_cast<uint32_t>(CursorType::Number), 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
-  root_parameters[1].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
-  ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 1);
-  root_parameters[2].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
-
-  auto sampler_desc = D3D12_STATIC_SAMPLER_DESC{};
-  sampler_desc.AddressU         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  sampler_desc.AddressV         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  sampler_desc.AddressW         = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-  sampler_desc.ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER;
-  sampler_desc.MaxLOD           = D3D12_FLOAT32_MAX;
-  sampler_desc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-  auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{};
-  signature_desc.Init_1_1(root_parameters.size(), root_parameters.data(), 1, &sampler_desc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-  ComPtr<ID3DBlob> signature;
-  ComPtr<ID3DBlob> error;
-  err_if(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error),
-          "failed to serialize root signature");
-  err_if(core->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
-          "failed to create root signature");
-
-  // create shaders
-  auto compiler_args = std::vector<LPCWSTR>
-  {
-#ifndef NDEBUG
-    L"-Zi",
-    L"-Qembed_debug",
-    L"-Od",
-#endif
-    L"-Iassets"
-  };
-  auto [vertex_shader, pixel_shader] = compile_vert_pixel("assets/shader.hlsl", "vs", "ps", compiler_args);
-
-  // create pipeline state
-  D3D12_INPUT_ELEMENT_DESC layout[]
-  {
-    { "POSITION",      0, DXGI_FORMAT_R32G32B32_FLOAT, 0,  0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "TEXCOORD",      0, DXGI_FORMAT_R32G32_FLOAT,    0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-    { "BUFFER_OFFSET", 0, DXGI_FORMAT_R32_UINT,        0, 20, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-  };
-
-  // use pipeline state stream
-  struct PipelienStateStream
-  {
-    CD3DX12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE        root_signature;
-    CD3DX12_PIPELINE_STATE_STREAM_INPUT_LAYOUT          input_layout;
-    CD3DX12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY    primitive_topology;
-    CD3DX12_PIPELINE_STATE_STREAM_VS                    vs;
-    CD3DX12_PIPELINE_STATE_STREAM_PS                    ps;
-    CD3DX12_PIPELINE_STATE_STREAM_BLEND_DESC            blend_desc;
-    CD3DX12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS render_target_formats;
-    CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL1        depth_stencil;
-    CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT  depth_stencil_format;
-  } ps_stream;
-
-  auto render_target_formats = D3D12_RT_FORMAT_ARRAY{};
-  render_target_formats.NumRenderTargets = 1;
-  render_target_formats.RTFormats[0]     = DXGI_FORMAT_B8G8R8A8_UNORM;
-
-  ps_stream.root_signature        = _root_signature.Get();
-  ps_stream.input_layout          = { layout, _countof(layout) };
-  ps_stream.primitive_topology    = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-  ps_stream.vs                    = CD3DX12_SHADER_BYTECODE{ vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize() };
-  ps_stream.ps                    = CD3DX12_SHADER_BYTECODE{ pixel_shader->GetBufferPointer(),  pixel_shader->GetBufferSize()  };
-  if (enable_depth_test)
-    ps_stream.depth_stencil_format = DXGI_FORMAT_D32_FLOAT;
-  ps_stream.render_target_formats = render_target_formats;
-  
-  auto size = sizeof(ps_stream);
-  if (!enable_depth_test)
-    size -= sizeof(CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL1) + sizeof(CD3DX12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT);
-  auto pipeline_state_stream_desc = D3D12_PIPELINE_STATE_STREAM_DESC{ size, &ps_stream };
-
-  // check feature support
-  auto options = D3D12_FEATURE_DATA_D3D12_OPTIONS2{};
-  err_if(core->device()->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS2, &options, sizeof(options)),
-          "failed to get feature options");
-
-  if (enable_depth_test)
-  {
-    auto depth_stencil_desc = CD3DX12_DEPTH_STENCIL_DESC1(D3D12_DEFAULT);
-    depth_stencil_desc.DepthEnable = false;
-    err_if(!options.DepthBoundsTestSupported, "unsupport depth bounds test");
-    depth_stencil_desc.DepthBoundsTestEnable = true;
-    ps_stream.depth_stencil = depth_stencil_desc;
-  }
-
-  auto  blend_state = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-  auto& rt          = blend_state.RenderTarget[0];
-  rt.BlendEnable           = true;
-  rt.SrcBlend              = D3D12_BLEND_SRC_ALPHA;
-  rt.DestBlend             = D3D12_BLEND_INV_SRC_ALPHA;
-  rt.BlendOp               = D3D12_BLEND_OP_ADD;
-  rt.SrcBlendAlpha         = D3D12_BLEND_ONE;
-  rt.DestBlendAlpha        = D3D12_BLEND_INV_SRC_ALPHA;
-  rt.BlendOpAlpha          = D3D12_BLEND_OP_ADD;
-  rt.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-  ps_stream.blend_desc = blend_state;
-
-  err_if(core->device()->CreatePipelineState(&pipeline_state_stream_desc, IID_PPV_ARGS(&_pipeline_state)),
-          "failed to create pipeline state");
+  _pipeline.init({
+    "assets/shader.hlsl", "vs", "ps", "assets",
+    {
+      { 0, 0, DescriptorType::constants, sizeof(Constants),                         ShaderType::all,   {}                           },
+      { 0, 0, DescriptorType::srv,       static_cast<uint32_t>(CursorType::Number), ShaderType::pixel, DescriptorFlag::static_data  },
+      { 0, 1, DescriptorType::srv,       1,                                         ShaderType::all,   {}                           },
+      { 0, 0, DescriptorType::uav,       1,                                         ShaderType::pixel, {}                           },
+    }, true,
+    {
+      { "POSITION",      DXGIFormat::rgb32_float },
+      { "TEXCOORD",      DXGIFormat::rg32_float  },
+      { "BUFFER_OFFSET", DXGIFormat::r32_uint    },
+    },
+    DXGIFormat::bgra8_unorm,
+    true, false
+  });
 }
 
 void Renderer::load_cursor_images() noexcept
@@ -358,6 +157,7 @@ void Renderer::load_cursor_images() noexcept
 
   // upload bitmap to cursor tesxtures
   auto offset = uint32_t{};
+  _cbv_srv_uav_heap.add_tag("cursors");
   for (auto const& [index, pair] : std::views::enumerate(bitmaps))
   {
     auto& [cursor_type, bitmap] = pair;
@@ -377,11 +177,14 @@ void Renderer::load_cursor_images() noexcept
     offset += align(GetRequiredIntermediateSize(cursor_image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
 
     // create cursor texture descriptor
-    cursor_image.create_descriptor(_srv_heap.pop_handle());
+    cursor_image.create_descriptor(_cbv_srv_uav_heap.pop_handle());
   }
 
   // create buffers
-  for (auto& buf : _frame_buffers) buf.init(_srv_heap.pop_handle());
+  _cbv_srv_uav_heap.add_tag("framebuffer");
+  for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
+
+  _cbv_srv_uav_heap.add_tag("background", 1);
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete

@@ -1,5 +1,6 @@
 #include "core.hpp"
 #include "error_handling.hpp"
+#include "descriptor_heap.hpp"
 
 using namespace Microsoft::WRL;
 
@@ -39,6 +40,7 @@ void Core::init() noexcept
   // get render target view descriptor size
   RTV_Size         = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
   CBV_SRV_UAV_Size = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+  DSV_Size         = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
   // create fence resources
   err_if(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)),

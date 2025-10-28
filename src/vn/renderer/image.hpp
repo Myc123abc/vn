@@ -17,12 +17,14 @@ enum class ImageType
   uav,
   rtv,
   srv,
+  dsv,
 };
 
 enum class ImageFormat
 {
   bgra8_unorm,
   rgba8_unorm,
+  d32,
 };
 
 enum class ImageState
@@ -43,6 +45,8 @@ auto constexpr dx12_image_format() noexcept
     return DXGI_FORMAT_B8G8R8A8_UNORM;
   else if constexpr (T == ImageFormat::rgba8_unorm)
     return DXGI_FORMAT_R8G8B8A8_UNORM;
+  else if constexpr (T == ImageFormat::d32)
+    return DXGI_FORMAT_D32_FLOAT;
   else
     static_assert(false, "unsupport image format now");
 }
@@ -56,6 +60,8 @@ auto constexpr dx12_image_flags() noexcept
     static_assert(false, "rtv not need the image initialize flags");
   else if constexpr (T == ImageType::srv)
     return D3D12_RESOURCE_FLAG_NONE;
+  else if constexpr (T == ImageType::dsv)
+    return D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
   else
     static_assert(false, "unsupport image type now");
 }
@@ -69,6 +75,8 @@ auto constexpr dx12_init_image_state() noexcept
     return D3D12_RESOURCE_STATE_PRESENT;
   else if constexpr (T == ImageType::srv)
     return D3D12_RESOURCE_STATE_COMMON;
+  else if constexpr (T == ImageType::dsv)
+    return D3D12_RESOURCE_STATE_DEPTH_WRITE;
   else
     static_assert(false, "unsupport image state now");
 }
@@ -105,7 +113,7 @@ public:
   Image& operator=(Image const&) = default;
   Image& operator=(Image&&)      = delete;
 
-  void init(uint32_t width , uint32_t height) noexcept
+  auto init(uint32_t width , uint32_t height) noexcept -> Image&
   {
     _state  = dx12_init_image_state<Type>();
     _width  = width;
@@ -113,7 +121,6 @@ public:
 
     // create image
     D3D12_RESOURCE_DESC texture_desc{};
-    texture_desc.MipLevels        = 1;
     texture_desc.Format           = dx12_image_format<Format>();
     texture_desc.Width            = width;
     texture_desc.Height           = height;
@@ -122,15 +129,26 @@ public:
     texture_desc.Dimension        = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     texture_desc.Flags            = dx12_image_flags<Type>();
     auto heap_properties          = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_DEFAULT };
-    err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, nullptr, IID_PPV_ARGS(&_handle)),
-            "failed to create image");
+    
+    if constexpr (Type == ImageType::dsv)
+    {
+      auto clear_value = D3D12_CLEAR_VALUE{};
+      clear_value.Format             = DXGI_FORMAT_D32_FLOAT;
+      clear_value.DepthStencil.Depth = 1.f;
+      err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, &clear_value, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
+              "failed to create image");
+    }
+    else
+      err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, nullptr, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
+              "failed to create image");
+    return *this;
   }
 
   auto init(IDXGISwapChain1* swapchain, uint32_t index) noexcept -> Image&
   {
     _state = dx12_init_image_state<Type>();
     err_if(Type != ImageType::rtv, "must be rtv");
-    err_if(swapchain->GetBuffer(index, IID_PPV_ARGS(&_handle)),
+    err_if(swapchain->GetBuffer(index, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
            "failed to get descriptor");
     DXGI_SWAP_CHAIN_DESC1 desc{};
     err_if(swapchain->GetDesc1(&desc), "failed to get swapchain description");
@@ -139,37 +157,47 @@ public:
     return *this;
   }
 
-  void init(HANDLE handle, uint32_t width, uint32_t height) noexcept
+  auto init(HANDLE handle, uint32_t width, uint32_t height) noexcept -> Image&
   {
     _state  = dx12_init_image_state<Type>();
     _width  = width;
     _height = height;
-    err_if(Core::instance()->device()->OpenSharedHandle(handle, IID_PPV_ARGS(&_handle)), "failed to share d3d11 texture");
+    err_if(Core::instance()->device()->OpenSharedHandle(handle, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())), "failed to share d3d11 texture");
+    return *this;
   }
 
   void destroy() noexcept { _handle.Reset(); }
 
-  void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) const noexcept
+  void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) noexcept
   {
+    _destriptor_handle = handle;
+    auto device = Core::instance()->device();
     if constexpr (Type == ImageType::uav)
     {
       auto uav_desc = D3D12_UNORDERED_ACCESS_VIEW_DESC{};
       uav_desc.Format        = dx12_image_format<Format>();
       uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-      Core::instance()->device()->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, handle);
+      device->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, handle);
     }
     else if constexpr (Type == ImageType::rtv)
     {
-      Core::instance()->device()->CreateRenderTargetView(_handle.Get(), nullptr, handle);
+      device->CreateRenderTargetView(_handle.Get(), nullptr, handle);
     }
     else if constexpr (Type == ImageType::srv)
     {
-      D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
+      auto srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC{};
       srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
       srv_desc.Format                  = dx12_image_format<Format>();
       srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
       srv_desc.Texture2D.MipLevels     = 1;
-      Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, handle);
+      device->CreateShaderResourceView(_handle.Get(), &srv_desc, handle);
+    }
+    else if constexpr (Type == ImageType::dsv)
+    {
+      auto dsv_desc = D3D12_DEPTH_STENCIL_VIEW_DESC{};
+      dsv_desc.Format        = DXGI_FORMAT_D32_FLOAT;
+      dsv_desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+      device->CreateDepthStencilView(_handle.Get(), &dsv_desc, handle);
     }
     else
       static_assert(false, "unsupport image type now");
@@ -184,6 +212,18 @@ public:
     _state = dx12_image_state<state>();
   }
 
+  void resize(uint32_t width, uint32_t height) noexcept
+  {
+    init(width, height);
+    create_descriptor(_destriptor_handle);
+  }
+
+  void resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept
+  {
+    init(swapchain, index);
+    create_descriptor(_destriptor_handle);
+  }
+
   auto handle() const noexcept { return _handle.Get(); }
   auto width()  const noexcept { return _width;        }
   auto height() const noexcept { return _height;       }
@@ -194,6 +234,7 @@ private:
   D3D12_RESOURCE_STATES                  _state{};
   uint32_t                               _width{};
   uint32_t                               _height{};
+  D3D12_CPU_DESCRIPTOR_HANDLE            _destriptor_handle{};
 };
 
 template <ImageType SrcType, ImageFormat SrcFormat,

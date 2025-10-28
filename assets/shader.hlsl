@@ -72,6 +72,7 @@ ConstantBuffer<Constants> constants         : register(b0);
 SamplerState              g_sampler         : register(s0);
 Texture2D                 cursor_textures[] : register(t0);
 ByteAddressBuffer         buffer            : register(t0, space1);
+RWTexture2D<float4>       background        : register(u0);
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                              Functions
@@ -107,7 +108,7 @@ uint32_t get_uint(inout uint32_t offset)
 
 #include "sdf.h"
 
-float4 get_color(float4 color, float w, float d, float t)
+float4 get_color(float4 color, float w, float d, float t, float2 xy)
 {
   float value;
   if (t == 0)
@@ -122,8 +123,14 @@ float4 get_color(float4 color, float w, float d, float t)
       value = -d - t + 1.0;
   }
   if (value >= w) discard;
+
   float alpha = 1.0 - smoothstep(0.0, w, value);
-  return float4(color.rgb, color.a * alpha);
+  color = float4(color.rgb, color.a * alpha);
+
+  if (value < 0.0)
+    background[uint2(xy)] = color;
+
+  return color;
 }
 
 float get_distance_parition(float2 pos, inout uint offset)
@@ -287,5 +294,5 @@ float4 ps(PSParameter args) : SV_TARGET
     }
   }
 
-  return get_color(color, w, d, shape_property.thickness);
+  return get_color(color, w, d, shape_property.thickness, args.pos.xy);
 }
