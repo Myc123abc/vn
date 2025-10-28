@@ -8,6 +8,8 @@ using namespace vn::ui;
 Timer timer;
 
 /*
+FIXME:
+render3 has problem, when render shape has same partitions...
 
 an image use to record the background color
 which should only store the background pixel
@@ -65,27 +67,20 @@ void render_window_2() noexcept
 
 void render_window_3() noexcept
 {
-  set_background_color(0x000000ff);
+  set_background_color(0xffffffff);
 
-  auto [width, height] = content_extent();
-  ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff0f0ff, 1);
+  if (ui::button(0, 0, 50, 50, 0xff0000ff, 0x0000ffff))
+    info("1");
+  if (ui::button(0, 0, 50, 50, 0xffffffff, 0xff0000ff))
+    info("2");
 
-  ui::begin_union();
-  ui::circle({ 50, 40 }, 20);
-  ui::circle({ 30, 40 }, 20);
-  ui::end_union(0x00ff00ff, 4);
+  ui::circle({25,25}, 25, 0x0000ffff);
 
-  ui::begin_union();
-  ui::circle({ 50, 60 }, 20);
-  ui::circle({ 30, 60 }, 20);
-  ui::end_union(0x00ff004f, 1);
+  ui::line({0, 60}, {100,60}, 0x0000ffff);
+  ui::line({0, 60}, {100,60}, 0xff0000ff);
 
-  ui::begin_union();
-  ui::circle({ 50, 70 }, 20);
-  ui::circle({ 30, 80 }, 20);
-  ui::end_union(0x00ff0fff);
-
-  ui::rectangle({ 60, 10 }, { 80, 30 }, 0x0ff0f0ff, 4);
+  ui::rectangle({ 60, 0 }, { 110, 50 }, 0x0000ffff);
+  ui::rectangle({ 80, 0 }, { 130, 50 }, 0xff0000ff);
 }
 
 int main()

@@ -13,7 +13,7 @@ namespace vn { namespace renderer {
 
 struct SwapchainResource
 {
-  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::bgra8_unorm>;
+  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::rgba8_unorm>;
 
   Microsoft::WRL::ComPtr<IDXGISwapChain4>              swapchain;
   std::array<SwapchainImageType, Frame_Count>          swapchain_images;
@@ -23,8 +23,6 @@ struct SwapchainResource
   CD3DX12_VIEWPORT                                     viewport;
   CD3DX12_RECT                                         scissor;
   bool                                                 transparent;
-  DescriptorHeap<DescriptorHeapType::cbv_srv_uav, 1>   uav_heap;
-  Image<ImageType::uav, ImageFormat::bgra8_unorm>      background_image;
 
 private:
   Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;

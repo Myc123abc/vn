@@ -147,6 +147,7 @@ auto get_dxgi_format(DXGIFormat format) noexcept
   case rg32_float:  return DXGI_FORMAT_R32G32_FLOAT;
   case r32_uint:    return DXGI_FORMAT_R32_UINT;
   case bgra8_unorm: return DXGI_FORMAT_B8G8R8A8_UNORM;
+  case rgba8_unorm: return DXGI_FORMAT_R8G8B8A8_UNORM;
   }
 }
 
@@ -157,8 +158,10 @@ auto get_dxgi_format_offset(DXGIFormat format) noexcept
   {
   case rgb32_float: return 12;
   case rg32_float:  return 8;
-  case r32_uint:    return 4;
-  case bgra8_unorm: return 4;
+  
+  case r32_uint:
+  case bgra8_unorm:
+  case rgba8_unorm: return 4;
   }
 }
 

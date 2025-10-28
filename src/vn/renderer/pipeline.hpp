@@ -43,6 +43,7 @@ enum class DXGIFormat
   rg32_float,
   r32_uint,
   bgra8_unorm,
+  rgba8_unorm,
 };
 
 struct VertexInputParameter

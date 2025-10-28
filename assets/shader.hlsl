@@ -72,7 +72,6 @@ ConstantBuffer<Constants> constants         : register(b0);
 SamplerState              g_sampler         : register(s0);
 Texture2D                 cursor_textures[] : register(t0);
 ByteAddressBuffer         buffer            : register(t0, space1);
-RWTexture2D<float4>       background        : register(u0);
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                              Functions
@@ -125,12 +124,7 @@ float4 get_color(float4 color, float w, float d, float t, float2 xy)
   if (value >= w) discard;
 
   float alpha = 1.0 - smoothstep(0.0, w, value);
-  color = float4(color.rgb, color.a * alpha);
-
-  if (value < 0.0)
-    background[uint2(xy)] = color;
-
-  return color;
+  return float4(color.rgb, color.a * alpha);
 }
 
 float get_distance_parition(float2 pos, inout uint offset)

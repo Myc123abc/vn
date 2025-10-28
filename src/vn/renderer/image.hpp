@@ -224,10 +224,21 @@ public:
     create_descriptor(_destriptor_handle);
   }
 
+  void clear(ID3D12GraphicsCommandList1* cmd, D3D12_GPU_DESCRIPTOR_HANDLE handle) const noexcept
+  {
+    float values[4]{};
+    auto rect = D3D12_RECT{};
+    rect.right  = _width;
+    rect.bottom = _height;
+    cmd->ClearUnorderedAccessViewFloat(handle, _destriptor_handle, _handle.Get(), values, 1, &rect);
+  }
+
   auto handle() const noexcept { return _handle.Get(); }
   auto width()  const noexcept { return _width;        }
   auto height() const noexcept { return _height;       }
   auto extent() const noexcept { return glm::vec<2, uint32_t>{ _width, _height }; }
+
+  auto constexpr format() const noexcept { return dx12_image_format<Format>(); }
 
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;

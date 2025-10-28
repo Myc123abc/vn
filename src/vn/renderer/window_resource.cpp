@@ -25,7 +25,7 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   swapchain_desc.BufferCount      = Frame_Count;
   swapchain_desc.Width            = width;
   swapchain_desc.Height           = height;
-  swapchain_desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
+  swapchain_desc.Format           = swapchain_images[0].format();
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
@@ -68,9 +68,6 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
     dsv_heap.init();
     dsv_image.init(width, height).create_descriptor(dsv_heap.pop_handle());
   }
-
-  uav_heap.init(true);
-  background_image.init(width, height).create_descriptor(uav_heap.pop_handle("background"));
 }
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
@@ -108,8 +105,6 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 
   if (renderer->enable_depth_test)
     dsv_image.resize(width, height);
-
-  background_image.resize(width, height);
 }
 
 void FrameResource::init() noexcept
@@ -197,9 +192,6 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
   cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
-  // set current window's background image descriptor
-  copy(swapchain_resource.uav_heap, "background", renderer->_cbv_srv_uav_heap, "background");
-
   // upload data to buffer
   renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
 
@@ -215,7 +207,6 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   {
     (window.moving || window.resizing) ? renderer->get_descriptor("cursors") : D3D12_GPU_DESCRIPTOR_HANDLE{},
     renderer->get_descriptor("framebuffer", core->frame_index()),
-    renderer->get_descriptor("background"),
   });
 
   // draw

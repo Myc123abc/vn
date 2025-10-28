@@ -115,14 +115,13 @@ void Renderer::create_pipeline_resource() noexcept
       { 0, 0, DescriptorType::constants, sizeof(Constants),                         ShaderType::all,   {}                           },
       { 0, 0, DescriptorType::srv,       static_cast<uint32_t>(CursorType::Number), ShaderType::pixel, DescriptorFlag::static_data  },
       { 0, 1, DescriptorType::srv,       1,                                         ShaderType::all,   {}                           },
-      { 0, 0, DescriptorType::uav,       1,                                         ShaderType::pixel, {}                           },
     }, true,
     {
       { "POSITION",      DXGIFormat::rgb32_float },
       { "TEXCOORD",      DXGIFormat::rg32_float  },
       { "BUFFER_OFFSET", DXGIFormat::r32_uint    },
     },
-    DXGIFormat::bgra8_unorm,
+    DXGIFormat::rgba8_unorm,
     true, false
   });
 }
@@ -183,8 +182,6 @@ void Renderer::load_cursor_images() noexcept
   // create buffers
   _cbv_srv_uav_heap.add_tag("framebuffer");
   for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
-
-  _cbv_srv_uav_heap.add_tag("background", 1);
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete
