@@ -38,7 +38,7 @@ auto color_lerp(uint32_t x, uint32_t y, float v) noexcept
   return lerp_color;
 }
 
-auto get_bounding_rectangle(std::vector<glm::vec2> const& data) -> std::pair<glm::vec2, glm::vec2>
+auto get_bounding_rectangle(std::vector<glm::vec2> const& data) noexcept -> std::pair<glm::vec2, glm::vec2>
 {
   assert(data.size() > 1);
 
@@ -54,56 +54,23 @@ auto get_bounding_rectangle(std::vector<glm::vec2> const& data) -> std::pair<glm
     if (p.y > max.y) max.y = p.y;
   }
 
+  if (max.x == min.x)
+  {
+    if (min.x > 1.f)
+      --min.x;
+    else
+      ++max.x;
+  }
+
+  if (max.y == min.y)
+  {
+    if (min.y > 1.f)
+      --min.y;
+    else
+      ++max.y;
+  }
+
   return { min, max };
-}
-
-void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle)
-{
-  auto ctx        = UIContext::instance();
-  auto [min, max] = bounding_rectangle;
-
-  if (min.x > 0)                  --min.x;
-  if (min.y > 0)                  --min.y;
-  if (max.x < ctx->window.width)  ++max.x;
-  if (max.y < ctx->window.height) ++max.y;
-
-  auto offset = ctx->op_data.op == ShapeProperty::Operator::none ? ctx->shape_properties_offset : ctx->op_data.offset;
-
-  ctx->render_data.vertices.append_range(std::vector<Vertex>
-  {
-    { { min.x, min.y, 0.f }, {}, offset },
-    { { max.x, min.y, 0.f }, {}, offset },
-    { { max.x, max.y, 0.f }, {}, offset },
-    { { min.x, max.y, 0.f }, {}, offset },
-  });
-  ctx->render_data.indices.append_range(std::vector<uint16_t>
-  {
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 1),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 3),
-  });
-  ctx->render_data.idx_beg += 4;
-}
-
-void add_shape_property(
-  ShapeProperty::Type       type,
-  glm::vec4                 color,
-  float                     thickness,
-  std::vector<float> const& values) noexcept
-{
-  auto ctx = UIContext::instance();
-  ctx->render_data.shape_properties.emplace_back(ShapeProperty
-  {
-    type,
-    ctx->tmp_color.value_or(color),
-    thickness,
-    ctx->op_data.op,
-    values
-  });
-  ctx->shape_properties_offset += ctx->render_data.shape_properties.back().byte_size();
 }
 
 void add_shape(
@@ -154,6 +121,50 @@ constexpr std::size_t generic_hash(const Args&... args) noexcept
 }
 
 namespace vn { namespace ui {
+
+void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
+{
+  auto ctx        = UIContext::instance();
+  auto [min, max] = bounding_rectangle;
+
+  auto offset = ctx->op_data.op == ShapeProperty::Operator::none ? ctx->shape_properties_offset : ctx->op_data.offset;
+
+  ctx->render_data.vertices.append_range(std::vector<Vertex>
+  {
+    { { min.x, min.y, 0.f }, {}, offset },
+    { { max.x, min.y, 0.f }, {}, offset },
+    { { max.x, max.y, 0.f }, {}, offset },
+    { { min.x, max.y, 0.f }, {}, offset },
+  });
+  ctx->render_data.indices.append_range(std::vector<uint16_t>
+  {
+    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
+    static_cast<uint16_t>(ctx->render_data.idx_beg + 1),
+    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
+    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
+    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
+    static_cast<uint16_t>(ctx->render_data.idx_beg + 3),
+  });
+  ctx->render_data.idx_beg += 4;
+}
+
+void add_shape_property(
+  ShapeProperty::Type       type,
+  glm::vec4                 color,
+  float                     thickness,
+  std::vector<float> const& values) noexcept
+{
+  auto ctx = UIContext::instance();
+  ctx->render_data.shape_properties.emplace_back(ShapeProperty
+  {
+    type,
+    ctx->tmp_color.value_or(color),
+    thickness,
+    ctx->op_data.op,
+    values
+  });
+  ctx->shape_properties_offset += ctx->render_data.shape_properties.back().byte_size();
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                                Window
@@ -389,7 +400,9 @@ void circle(glm::vec2 center, float radius, uint32_t color, float thickness) noe
   auto render_pos = UIContext::instance()->window_render_pos();
   center += render_pos;
 
-  add_shape(ShapeProperty::Type::circle, color, thickness, { center.x, center.y, radius }, { center - radius, center + radius });
+  auto r = radius - 1;
+  if (r < 0) r = 1;
+  add_shape(ShapeProperty::Type::circle, color, thickness, { center.x, center.y, r }, { center - radius, center + radius });
 }
 
 void line(glm::vec2 p0, glm::vec2 p1, uint32_t color) noexcept

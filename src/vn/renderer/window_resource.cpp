@@ -124,10 +124,10 @@ void FrameResource::init() noexcept
   err_if(cmd->Close(), "failed to close command list");
 }
 
-void WindowResource::init(Window const& window) noexcept
+void WindowResource::init(Window const& window, bool transparent) noexcept
 {
   this->window = window;
-  swapchain_resource.init(window.handle, window.width, window.height);
+  swapchain_resource.init(window.handle, window.width, window.height, transparent);
   frame_resource.init();
 
   // first frame rendered then display

@@ -309,12 +309,12 @@ void WindowManager::process_message(MSG const& msg) noexcept
 
 auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept -> HWND
 {
-  auto handle = CreateWindowExW(0, Window_Class, nullptr, WS_POPUP | WS_MINIMIZEBOX,
+  auto handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, Window_Class, nullptr, WS_POPUP | WS_MINIMIZEBOX,
     x, y, width, height, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!handle,  "failed to create window");
   auto window = Window{ handle, name, x, y, width, height};
   _windows.emplace(handle, window);
-  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window });
+  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window, true });
   return handle;
 }
 

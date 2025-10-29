@@ -107,7 +107,7 @@ uint32_t get_uint(inout uint32_t offset)
 
 #include "sdf.h"
 
-float4 get_color(float4 color, float w, float d, float t, float2 xy)
+float4 get_color(float4 color, float w, float d, float t)
 {
   float value;
   if (t == 0)
@@ -260,7 +260,7 @@ float4 ps(PSParameter args) : SV_TARGET
   {
     float d = get_sd(args.pos.xy, shape_property.type, offset);
     if (d < 0) discard;
-    return float4(0, 1, 0, 1);
+    return float4(177.0 / 255, 177.0 / 255, 177.0 / 255, 1.0 / d);
   }
 
   float4 color = args.color;
@@ -288,5 +288,5 @@ float4 ps(PSParameter args) : SV_TARGET
     }
   }
 
-  return get_color(color, w, d, shape_property.thickness, args.pos.xy);
+  return get_color(color, w, d, shape_property.thickness);
 }

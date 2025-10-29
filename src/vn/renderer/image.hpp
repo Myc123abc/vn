@@ -57,7 +57,7 @@ auto constexpr dx12_image_flags() noexcept
   if constexpr (T == ImageType::uav)
     return D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
   else if constexpr (T == ImageType::rtv)
-    static_assert(false, "rtv not need the image initialize flags");
+    return D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
   else if constexpr (T == ImageType::srv)
     return D3D12_RESOURCE_FLAG_NONE;
   else if constexpr (T == ImageType::dsv)
@@ -130,17 +130,24 @@ public:
     texture_desc.Flags            = dx12_image_flags<Type>();
     auto heap_properties          = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_DEFAULT };
     
+    auto clear_value = D3D12_CLEAR_VALUE{};
     if constexpr (Type == ImageType::dsv)
     {
-      auto clear_value = D3D12_CLEAR_VALUE{};
       clear_value.Format             = DXGI_FORMAT_D32_FLOAT;
       clear_value.DepthStencil.Depth = 1.f;
+      err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, &clear_value, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
+              "failed to create image");
+    }
+    else if constexpr (Type == ImageType::rtv)
+    {
+      clear_value.Format = dx12_image_format<Format>();
       err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, &clear_value, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
               "failed to create image");
     }
     else
       err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, nullptr, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
               "failed to create image");
+
     return *this;
   }
 
@@ -168,9 +175,21 @@ public:
 
   void destroy() noexcept { _handle.Reset(); }
 
+  void create_srv(D3D12_CPU_DESCRIPTOR_HANDLE handle) noexcept
+  {
+    auto device   = Core::instance()->device();
+    auto srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC{};
+    srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv_desc.Format                  = dx12_image_format<Format>();
+    srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv_desc.Texture2D.MipLevels     = 1;
+    device->CreateShaderResourceView(_handle.Get(), &srv_desc, handle);
+    _srv_handle = handle;
+  }
+
   void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle) noexcept
   {
-    _destriptor_handle = handle;
+    _cpu_handle = handle;
     auto device = Core::instance()->device();
     if constexpr (Type == ImageType::uav)
     {
@@ -215,13 +234,15 @@ public:
   void resize(uint32_t width, uint32_t height) noexcept
   {
     init(width, height);
-    create_descriptor(_destriptor_handle);
+    create_descriptor(_cpu_handle);
+    if (_srv_handle.ptr) create_srv(_srv_handle);
   }
 
   void resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept
   {
     init(swapchain, index);
-    create_descriptor(_destriptor_handle);
+    create_descriptor(_cpu_handle);
+    if (_srv_handle.ptr) create_srv(_srv_handle);
   }
 
   void clear(ID3D12GraphicsCommandList1* cmd, D3D12_GPU_DESCRIPTOR_HANDLE handle) const noexcept
@@ -230,13 +251,14 @@ public:
     auto rect = D3D12_RECT{};
     rect.right  = _width;
     rect.bottom = _height;
-    cmd->ClearUnorderedAccessViewFloat(handle, _destriptor_handle, _handle.Get(), values, 1, &rect);
+    cmd->ClearUnorderedAccessViewFloat(handle, _cpu_handle, _handle.Get(), values, 1, &rect);
   }
 
-  auto handle() const noexcept { return _handle.Get(); }
-  auto width()  const noexcept { return _width;        }
-  auto height() const noexcept { return _height;       }
-  auto extent() const noexcept { return glm::vec<2, uint32_t>{ _width, _height }; }
+  auto handle()     const noexcept { return _handle.Get(); }
+  auto cpu_handle() const noexcept { return _cpu_handle;   }
+  auto width()      const noexcept { return _width;        }
+  auto height()     const noexcept { return _height;       }
+  auto extent()     const noexcept { return glm::vec<2, uint32_t>{ _width, _height }; }
 
   auto constexpr format() const noexcept { return dx12_image_format<Format>(); }
 
@@ -245,7 +267,8 @@ private:
   D3D12_RESOURCE_STATES                  _state{};
   uint32_t                               _width{};
   uint32_t                               _height{};
-  D3D12_CPU_DESCRIPTOR_HANDLE            _destriptor_handle{};
+  D3D12_CPU_DESCRIPTOR_HANDLE            _cpu_handle{};
+  D3D12_CPU_DESCRIPTOR_HANDLE            _srv_handle{};
 };
 
 template <ImageType SrcType, ImageFormat SrcFormat,

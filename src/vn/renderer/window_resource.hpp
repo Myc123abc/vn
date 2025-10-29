@@ -13,10 +13,10 @@ namespace vn { namespace renderer {
 
 struct SwapchainResource
 {
-  using SwapchainImageType = Image<ImageType::rtv, ImageFormat::rgba8_unorm>;
+  using RenderTargetType = Image<ImageType::rtv, ImageFormat::rgba8_unorm>;
 
   Microsoft::WRL::ComPtr<IDXGISwapChain4>              swapchain;
-  std::array<SwapchainImageType, Frame_Count>          swapchain_images;
+  std::array<RenderTargetType, Frame_Count>            swapchain_images;
   DescriptorHeap<DescriptorHeapType::rtv, Frame_Count> rtv_heap;
   DescriptorHeap<DescriptorHeapType::dsv, 1>           dsv_heap;
   Image<ImageType::dsv, ImageFormat::d32>              dsv_image;
@@ -60,7 +60,7 @@ struct WindowResource
   SwapchainResource swapchain_resource;
   FrameResource     frame_resource;
 
-  void init(Window const& window) noexcept;
+  void init(Window const& window, bool transparent) noexcept;
 
   void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
 };

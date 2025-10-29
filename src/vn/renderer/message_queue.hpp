@@ -27,6 +27,7 @@ public:
   struct Message_Create_Window_Render_Resource
   {
     Window window;
+    bool   transparent;
   };
 
   struct Message_Destroy_Window_Render_Resource

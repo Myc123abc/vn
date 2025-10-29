@@ -19,7 +19,7 @@ void MessageQueue::process_messages() noexcept
       using T = std::decay_t<decltype(data)>;
       if constexpr (std::is_same_v<T, Message_Create_Window_Render_Resource>)
       {
-        wr[data.window.handle].init(data.window);
+        wr[data.window.handle].init(data.window, data.transparent);
       }
       else if constexpr (std::is_same_v<T, Message_Destroy_Window_Render_Resource>)
       {

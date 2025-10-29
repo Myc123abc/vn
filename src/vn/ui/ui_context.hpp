@@ -19,6 +19,10 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
 namespace vn { namespace ui {
 
+void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept;
+
+void add_shape_property(renderer::ShapeProperty::Type type, glm::vec4 color, float thickness, std::vector<float> const& values) noexcept;
+
 struct WindowRenderData
 {
   std::vector<renderer::Vertex>        vertices;

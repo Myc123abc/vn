@@ -112,9 +112,9 @@ void Renderer::create_pipeline_resource() noexcept
   _pipeline.init({
     "assets/shader.hlsl", "vs", "ps", "assets",
     {
-      { 0, 0, DescriptorType::constants, sizeof(Constants),                         ShaderType::all,   {}                           },
-      { 0, 0, DescriptorType::srv,       static_cast<uint32_t>(CursorType::Number), ShaderType::pixel, DescriptorFlag::static_data  },
-      { 0, 1, DescriptorType::srv,       1,                                         ShaderType::all,   {}                           },
+      { 0, 0, DescriptorType::constants, sizeof(Constants),                         ShaderType::all,   {}                          },
+      { 0, 0, DescriptorType::srv,       static_cast<uint32_t>(CursorType::Number), ShaderType::pixel, DescriptorFlag::static_data },
+      { 0, 1, DescriptorType::srv,       1,                                         ShaderType::all,   {}                          },
     }, true,
     {
       { "POSITION",      DXGIFormat::rgb32_float },

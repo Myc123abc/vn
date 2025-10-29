@@ -76,11 +76,11 @@ void UIContext::render() noexcept
 
     if (window.draw_title_bar)
       update_title_bar();
-    if (!this->window.is_maximized)
-      update_wireframe();
+    //if (!this->window.is_maximized)
+    //  update_wireframe();
     
     // use window shadow
-    //update_window_shadow();
+    update_window_shadow();
 
     updating = false;
 
@@ -159,11 +159,10 @@ void UIContext::update_wireframe() noexcept
 
 void UIContext::update_window_shadow() noexcept
 {
-  Tmp_Render_Pos(0, 0)
-  {
-    ui::rectangle({ 20, 20 }, { window.width - 20, window.height - 20 });
-    render_data.shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
-  }
+  add_vertices_indices({{}, { window.width, window.height }});
+  auto shadow_thickness = 10.f;
+  add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { shadow_thickness, shadow_thickness, static_cast<float>(window.width - shadow_thickness), static_cast<float>(window.height - shadow_thickness) });
+  render_data.shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
 }
 
 void UIContext::update_title_bar() noexcept
@@ -195,8 +194,8 @@ void UIContext::update_title_bar() noexcept
       {
         if (is_maxmize())
         {
-          auto padding_x = width / 3;
-          auto padding_y = width / 3;
+          auto padding_x = width / 5;
+          auto padding_y = width / 5;
           ui::rectangle({ padding_x, 0 }, { width, height - padding_y }, 0, 1);
           ui::discard_rectangle({ 0, padding_y }, { width - padding_x, height });
           ui::rectangle({ 0, padding_y }, { width - padding_x, height }, 0, 1);
