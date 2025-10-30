@@ -3,6 +3,7 @@
 #include "ui_context.hpp"
 #include "error_handling.hpp"
 #include "lerp_animation.hpp"
+#include "../hash.hpp"
 
 #include <ranges>
 
@@ -103,20 +104,6 @@ void add_shape(
   std::vector<float> const&              values,
   std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
 { add_shape(type, get_color(color), thickness, values, bounding_rectangle); }
-
-template <typename T>
-inline void combine_hash(std::size_t& seed, const T& v) noexcept
-{
-  seed ^= std::hash<T>{}(v) + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-}
-
-template <typename... Args>
-constexpr std::size_t generic_hash(const Args&... args) noexcept
-{
-  auto seed = std::size_t{};
-  (combine_hash(seed, args), ...);
-  return seed;
-}
 
 }
 

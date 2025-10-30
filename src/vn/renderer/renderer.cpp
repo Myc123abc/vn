@@ -3,6 +3,7 @@
 #include "error_handling.hpp"
 #include "message_queue.hpp"
 #include "../ui/ui_context.hpp"
+#include "compiler.hpp"
 
 #include <algorithm>
 #include <ranges>
@@ -90,6 +91,8 @@ namespace vn { namespace renderer {
 void Renderer::init() noexcept
 {
   auto core = Core::instance();
+  
+  Compiler::instance()->init();
 
   // initialize resources
   core->init();
@@ -115,11 +118,6 @@ void Renderer::create_pipeline_resource() noexcept
       { 0, 0, DescriptorType::constants, sizeof(Constants),                         ShaderType::all,   {}                          },
       { 0, 0, DescriptorType::srv,       static_cast<uint32_t>(CursorType::Number), ShaderType::pixel, DescriptorFlag::static_data },
       { 0, 1, DescriptorType::srv,       1,                                         ShaderType::all,   {}                          },
-    }, true,
-    {
-      { "POSITION",      DXGIFormat::rgb32_float },
-      { "TEXCOORD",      DXGIFormat::rg32_float  },
-      { "BUFFER_OFFSET", DXGIFormat::r32_uint    },
     },
     DXGIFormat::rgba8_unorm,
     true, false

@@ -46,24 +46,16 @@ enum class DXGIFormat
   rgba8_unorm,
 };
 
-struct VertexInputParameter
-{
-  std::string name;
-  DXGIFormat  format;
-};
-
 struct PipelineConfig
 {
-  std::string                       shader;
-  std::string                       vs;
-  std::string                       ps;
-  std::string                       include;
-  std::vector<DescriptorInfo>       descriptor_infos;
-  bool                              sampler{};
-  std::vector<VertexInputParameter> vertex_params;
-  DXGIFormat                        rtv_format{};
-  bool                              use_blend{};
-  bool                              use_depth_test{};
+  std::string                 shader;
+  std::string                 vs;
+  std::string                 ps;
+  std::string                 include;
+  std::vector<DescriptorInfo> descriptor_infos;
+  DXGIFormat                  rtv_format{};
+  bool                        use_blend{};
+  bool                        use_depth_test{};
 };
 
 class Pipeline

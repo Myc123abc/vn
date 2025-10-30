@@ -1,13 +1,9 @@
 #include "pipeline.hpp"
 #include "error_handling.hpp"
 #include "core.hpp"
+#include "compiler.hpp"
 
-#include <dxcapi.h>
 #include <directx/d3dx12.h>
-
-#include <utf8.h>
-
-#include <span>
 
 using namespace Microsoft::WRL;
 using namespace vn;
@@ -15,97 +11,6 @@ using namespace vn::renderer;
 
 namespace
 {
-
-#ifdef _WIN32
-auto to_wstring(std::string_view str) noexcept -> std::wstring
-{
-  auto u16str = utf8::utf8to16(str);
-  return { reinterpret_cast<wchar_t*>(u16str.data()), u16str.size() };
-}
-#endif
-
-auto compile_shader(IDxcCompiler3* compiler, IDxcUtils* utils, DxcBuffer& buffer, std::string_view main, std::string_view profile, std::span<LPCWSTR> args = {}) noexcept
-{
-  auto dxc_args = ComPtr<IDxcCompilerArgs>{};
-  err_if(utils->BuildArguments(nullptr, to_wstring(main).data(), to_wstring(profile).data(), args.data(), args.size(), nullptr, 0, dxc_args.GetAddressOf()),
-              "failed to create dxc args");
-
-  auto include = ComPtr<IDxcIncludeHandler>{};
-  err_if(utils->CreateDefaultIncludeHandler(&include), "failed to create default include handler in dxc");
-
-  auto result = ComPtr<IDxcResult>{};
-  err_if(compiler->Compile(&buffer, dxc_args->GetArguments(), dxc_args->GetCount(), include.Get(), IID_PPV_ARGS(&result)),
-              "failed to compile {}", main);
-
-  auto hr = HRESULT{};
-  result->GetStatus(&hr);
-  if (FAILED(hr))
-  {
-    auto msg = ComPtr<IDxcBlobUtf8>{};
-    err_if(result->GetOutput(DXC_OUT_ERRORS,  IID_PPV_ARGS(&msg), nullptr), "failed to get error ouput of dxc");
-    err_if(true, "failed to compile {}\n{}", main, msg->GetStringPointer());
-  }
-
-  auto cso = ComPtr<IDxcBlob>{};
-  err_if(result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&cso), nullptr), "failed to get compile result");
-
-  return cso;
-}
-
-auto read_file(std::string_view path) noexcept -> std::string
-{
-  FILE* file{};
-  fopen_s(&file, path.data(), "rb");
-  err_if(!file, "failed to open file {}", path);
-
-  fseek(file, 0, SEEK_END);
-  auto size = ftell(file);
-  rewind(file);
-
-  auto data = std::string{};
-  data.resize(size);
-  fread(data.data(), 1, size, file);
-  fclose(file);
-
-  return data;
-}
-
-auto compile_vert_pixel(std::string_view path, std::string_view vert_main, std::string_view pixel_main, std::span<LPCWSTR> args) noexcept -> std::pair<ComPtr<IDxcBlob>, ComPtr<IDxcBlob>>
-{
-  auto compiler = ComPtr<IDxcCompiler3>{};
-  err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
-              "failed to create dxc compiler");
-
-  DxcBuffer buffer{};
-  auto data       = read_file(path);
-  buffer.Ptr      = data.data();
-  buffer.Size     = data.size();
-  buffer.Encoding = DXC_CP_UTF8;
-
-  auto utils = ComPtr<IDxcUtils>{};
-  err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
-              "failed to create dxc utils");
-
-  return { compile_shader(compiler.Get(), utils.Get(), buffer, vert_main, "vs_6_0", args), compile_shader(compiler.Get(), utils.Get(), buffer, pixel_main, "ps_6_0", args) };
-}
-
-auto compile_comp(std::string_view path, std::string_view comp_main, std::span<LPCWSTR> args) noexcept
-{
-  auto compiler = ComPtr<IDxcCompiler3>{};
-  err_if(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler)),
-              "failed to create dxc compiler");
-
-  DxcBuffer buffer{};
-  auto data       = read_file(path);
-  buffer.Ptr      = data.data();
-  buffer.Size     = data.size();
-  buffer.Encoding = DXC_CP_UTF8;
-
-  auto utils = ComPtr<IDxcUtils>{};
-  err_if(DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&utils)),
-              "failed to create dxc utils");
-  return compile_shader(compiler.Get(), utils.Get(), buffer, comp_main, "cs_6_0", args);
-}
 
 auto get_shader_visibility(ShaderType type) noexcept
 {
@@ -173,6 +78,9 @@ void Pipeline::init(PipelineConfig const& cfg) noexcept
 {
   auto core = Core::instance();
 
+  auto compile_result = Compiler::instance()->compile(cfg.shader, cfg.vs, cfg.ps, cfg.include);
+  _root_signature = compile_result.root_signature;
+#if 1
   // create root signature
   auto root_params = std::vector<CD3DX12_ROOT_PARAMETER1>(cfg.descriptor_infos.size());
   auto ranges      = std::vector<CD3DX12_DESCRIPTOR_RANGE1>(root_params.size());
@@ -204,10 +112,7 @@ void Pipeline::init(PipelineConfig const& cfg) noexcept
   sampler_desc.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; 
 
   auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{};
-  if (cfg.sampler)
-    signature_desc.Init_1_1(root_params.size(), root_params.data(), 1, &sampler_desc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-  else
-    signature_desc.Init_1_1(root_params.size(), root_params.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+  signature_desc.Init_1_1(root_params.size(), root_params.data(), 1, &sampler_desc, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
   auto signature = ComPtr<ID3DBlob>{};
   auto error     = ComPtr<ID3DBlob>{};
@@ -215,32 +120,7 @@ void Pipeline::init(PipelineConfig const& cfg) noexcept
           "failed to serialize root signature");
   err_if(core->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&_root_signature)),
           "failed to create root signature");
-
-  // create shaders
-  auto include = std::wstring{ L"-I" };
-  if (!cfg.include.empty())
-    include += to_wstring(cfg.include);
-
-  auto compiler_args = std::vector<LPCWSTR>
-  {
-#ifndef NDEBUG
-    L"-Zi",
-    L"-Qembed_debug",
-    L"-Od",
 #endif
-    include.c_str()
-  };
-  auto [vertex_shader, pixel_shader] = compile_vert_pixel(cfg.shader, cfg.vs, cfg.ps, compiler_args);
-  
-  // create pipeline state
-  auto layouts = std::vector<D3D12_INPUT_ELEMENT_DESC>{};
-  layouts.reserve(cfg.vertex_params.size());
-  auto offset = uint32_t{};
-  for (auto const& info : cfg.vertex_params)
-  {
-    layouts.emplace_back(info.name.c_str(), 0, get_dxgi_format(info.format), 0, offset, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0);
-    offset += get_dxgi_format_offset(info.format);
-  }
   
   // use pipeline state stream
   struct PipelienStateStream
@@ -261,10 +141,10 @@ void Pipeline::init(PipelineConfig const& cfg) noexcept
   render_target_formats.RTFormats[0]     = get_dxgi_format(cfg.rtv_format);
   
   ps_stream.root_signature        = _root_signature.Get();
-  ps_stream.input_layout          = { layouts.data(), static_cast<uint32_t>(layouts.size()) };
+  ps_stream.input_layout          = compile_result.input_layout_desc;
   ps_stream.primitive_topology    = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-  ps_stream.vs                    = CD3DX12_SHADER_BYTECODE{ vertex_shader->GetBufferPointer(), vertex_shader->GetBufferSize() };
-  ps_stream.ps                    = CD3DX12_SHADER_BYTECODE{ pixel_shader->GetBufferPointer(),  pixel_shader->GetBufferSize()  };
+  ps_stream.vs                    = compile_result.vs;
+  ps_stream.ps                    = compile_result.ps;
   if (cfg.use_depth_test)
     ps_stream.depth_stencil_format = DXGI_FORMAT_D32_FLOAT;
   ps_stream.render_target_formats = render_target_formats;
