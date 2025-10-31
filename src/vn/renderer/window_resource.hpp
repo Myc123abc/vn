@@ -22,7 +22,10 @@ struct SwapchainResource
   Image<ImageType::dsv, ImageFormat::d32>              dsv_image;
   CD3DX12_VIEWPORT                                     viewport;
   CD3DX12_RECT                                         scissor;
-  bool                                                 transparent;
+  bool                                                 is_transparent{};
+
+  Image<ImageType::uav, ImageFormat::rgba8_unorm>      window_shadow_image;
+  DescriptorHeap<DescriptorHeapType::cbv_srv_uav, 1>   uav_heap;
 
 private:
   Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
@@ -31,7 +34,7 @@ private:
 
 public:
 
-  void init(HWND handle, uint32_t width, uint32_t height, bool transparent = false) noexcept;
+  void init(HWND handle, uint32_t width, uint32_t height, bool is_transparent = false) noexcept;
 
   auto current_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
 
@@ -63,6 +66,7 @@ struct WindowResource
   void init(Window const& window, bool transparent) noexcept;
 
   void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
+  void window_shadow_render(ID3D12GraphicsCommandList1* cmd, SwapchainResource& current_swapchain_resource) const noexcept;
 };
 
 }}

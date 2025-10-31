@@ -38,6 +38,18 @@ enum class ImageState
   pixel_shader_resource,
 };
 
+inline auto get_dx12_image_format(ImageFormat format) noexcept
+{
+  if (format == ImageFormat::bgra8_unorm)
+    return DXGI_FORMAT_B8G8R8A8_UNORM;
+  else if (format == ImageFormat::rgba8_unorm)
+    return DXGI_FORMAT_R8G8B8A8_UNORM;
+  else if (format == ImageFormat::d32)
+    return DXGI_FORMAT_D32_FLOAT;
+  err_if(true, "unsupport image format now");
+  return DXGI_FORMAT_UNKNOWN;
+}
+
 template <ImageFormat T>
 auto constexpr dx12_image_format() noexcept
 {
@@ -275,14 +287,14 @@ template <ImageType SrcType, ImageFormat SrcFormat,
           ImageType DstType, ImageFormat DstFormat>
 inline void copy(
   ID3D12GraphicsCommandList1* cmd,
-  Image<SrcType, SrcFormat>& src,
-  LONG left,
-  LONG top,
-  LONG right,
-  LONG bottom,
-  Image<DstType, DstFormat>& dst,
-  uint32_t x = 0,
-  uint32_t y = 0) noexcept
+  Image<SrcType, SrcFormat>&  src,
+  LONG                        left,
+  LONG                        top,
+  LONG                        right,
+  LONG                        bottom,
+  Image<DstType, DstFormat>&  dst,
+  uint32_t                    x = 0,
+  uint32_t                    y = 0) noexcept
 {
   src.template set_state<ImageState::copy_src>(cmd);
   dst.template set_state<ImageState::copy_dst>(cmd);

@@ -2,8 +2,6 @@
 #include "error_handling.hpp"
 #include "core.hpp"
 
-#include <directx/d3dx12.h>
-
 #include <utf8.h>
 
 #include <vector>
@@ -118,18 +116,13 @@ void Compiler::init() noexcept
           "failed to create default include handler in dxc");
 }
 
-auto Compiler::compile(std::string_view shader_path, std::string_view include, ShaderType type, std::string_view entry_point) noexcept -> std::pair<Microsoft::WRL::ComPtr<IDxcResult>, Microsoft::WRL::ComPtr<IDxcBlob>>
+auto Compiler::compile(std::string_view shader_path, std::string_view include, std::wstring_view profile, std::string_view entry_point) noexcept -> std::pair<Microsoft::WRL::ComPtr<IDxcResult>, Microsoft::WRL::ComPtr<IDxcBlob>>
 {
   auto buffer = DxcBuffer{};
   auto data   = read_file(shader_path);
   buffer.Ptr      = data.data();
   buffer.Size     = data.size();
   buffer.Encoding = DXC_CP_UTF8;
-
-  auto profile = std::wstring{};
-  if (type == ShaderType::vs) profile = L"vs_6_0";
-  else if (type == ShaderType::ps) profile = L"ps_6_0";
-  else if (type == ShaderType::cs) profile = L"cs_6_0";
 
   auto include_str = std::wstring{};
   if (!include.empty())
@@ -170,8 +163,8 @@ auto Compiler::compile(std::string_view shader_path, std::string_view include, S
 auto Compiler::compile(std::string_view shader, std::string_view vertex_shader_entry_point, std::string_view pixel_shader_entry_point, std::string_view include) noexcept -> CompileResult
 {
   // compile shaders
-  auto [vs_res, vs_cso] = compile(shader, include, ShaderType::vs, vertex_shader_entry_point);
-  auto [ps_res, ps_cso] = compile(shader, include, ShaderType::ps, pixel_shader_entry_point);
+  auto [vs_res, vs_cso] = compile(shader, include, L"vs_6_0", vertex_shader_entry_point);
+  auto [ps_res, ps_cso] = compile(shader, include, L"ps_6_0", pixel_shader_entry_point);
 
   // get reflection
   auto compile_result = CompileResult{};
@@ -179,8 +172,8 @@ auto Compiler::compile(std::string_view shader, std::string_view vertex_shader_e
   compile_result._ps_cso = ps_cso;
   compile_result.vs      = { vs_cso->GetBufferPointer(), vs_cso->GetBufferSize() };
   compile_result.ps      = { ps_cso->GetBufferPointer(), ps_cso->GetBufferSize() };
-  auto vs_reflection = compile_result.get_shader_reflection(vs_res.Get(), ShaderType::vs);
-  auto ps_reflection = compile_result.get_shader_reflection(ps_res.Get(), ShaderType::ps);
+  auto vs_reflection = compile_result.get_shader_reflection(vs_res.Get());
+  auto ps_reflection = compile_result.get_shader_reflection(ps_res.Get());
 
   // get vertex input layout
   compile_result.get_vertex_input_layout(vs_reflection.Get());
@@ -212,13 +205,42 @@ auto Compiler::compile(std::string_view shader, std::string_view vertex_shader_e
     memcpy(msg.data(), error->GetBufferPointer(), msg.size());
     err_if(true, "failed to serialize root signature.\n{}", msg);
   }
-  //err_if(Core::instance()->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&compile_result.root_signature)),
-  //        "failed to create root signature");
+  err_if(Core::instance()->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&compile_result.root_signature)),
+          "failed to create root signature");
 
   return compile_result;
 }
 
-auto Compiler::CompileResult::get_shader_reflection(IDxcResult* result, ShaderType type) noexcept -> Microsoft::WRL::ComPtr<ID3D12ShaderReflection>
+auto Compiler::compile(std::string_view shader, std::string_view compute_shader_entry_point, std::string_view include) noexcept -> CompileResult
+{
+  auto [res, cso] = compile(shader, include, L"cs_6_0", compute_shader_entry_point);
+
+  auto compile_result = CompileResult{};
+  compile_result._cs_cso = cso;
+  compile_result.cs      = { cso->GetBufferPointer(), cso->GetBufferSize() };
+
+  auto reflection = compile_result.get_shader_reflection(res.Get());
+  compile_result.get_root_parameters(reflection.Get());
+
+  auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{};
+  signature_desc.Init_1_1(compile_result._root_params.size(), compile_result._root_params.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+  auto signature = ComPtr<ID3DBlob>{};
+  auto error     = ComPtr<ID3DBlob>{};
+  if (FAILED(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error)))
+  {
+    auto msg = std::string{};
+    msg.resize(error->GetBufferSize());
+    memcpy(msg.data(), error->GetBufferPointer(), msg.size());
+    err_if(true, "failed to serialize root signature.\n{}", msg);
+  }
+  err_if(Core::instance()->device()->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&compile_result.root_signature)),
+          "failed to create root signature");
+
+  return compile_result;
+}
+
+auto Compiler::CompileResult::get_shader_reflection(IDxcResult* result) noexcept -> Microsoft::WRL::ComPtr<ID3D12ShaderReflection>
 {
   // get reflection interface
   auto reflection = ComPtr<IDxcBlob>{};
@@ -277,32 +299,29 @@ void Compiler::CompileResult::get_root_parameters(ID3D12ShaderReflection* shader
     if (!_resource_keys.emplace(resource_desc.Type, resource_desc.BindPoint, resource_desc.Space).second)
       continue;
 
+    auto root_param = CD3DX12_ROOT_PARAMETER1{};
+    auto range      = CD3DX12_DESCRIPTOR_RANGE1{};
     switch (resource_desc.Type)
     {
     case D3D_SIT_CBUFFER:
     {
+      err_if(std::ranges::find_if(_root_params, [](auto const& param) { return param.ParameterType == D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS; }) != _root_params.end(),
+              "Please only use single constant buffer");
+
       resource_indexs[resource_desc.Name] = _root_params.size();
 
       auto constant_buffer = shader_reflection->GetConstantBufferByIndex(i);
       auto buffer_desc = D3D12_SHADER_BUFFER_DESC{};
       err_if(constant_buffer->GetDesc(&buffer_desc), "faild to get constant buffer description");
 
-      _root_params.emplace_back(D3D12_ROOT_PARAMETER1
-      {
-        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV,
-        .Descriptor
-        {
-          .ShaderRegister = resource_desc.BindPoint,
-          .RegisterSpace  = resource_desc.Space,
-          .Flags          = D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-        },
-      });
+      root_param.InitAsConstants(buffer_desc.Size, resource_desc.BindPoint, resource_desc.Space);
+      _root_params.emplace_back(root_param);
       break;
     }
     
     case D3D_SIT_SAMPLER:
     {
-      err_if(_has_sampler, "TODO: duplication sampler, currently, assume I only use single sampler");
+      err_if(_has_sampler, "duplication sampler, currently, assume I only use single sampler");
       _has_sampler = true;
       break;
     }
@@ -311,18 +330,11 @@ void Compiler::CompileResult::get_root_parameters(ID3D12ShaderReflection* shader
     {
       resource_indexs[resource_desc.Name] = _root_params.size();
 
-      _ranges.emplace(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1u, resource_desc.BindPoint, resource_desc.Space, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+      range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, resource_desc.BindPoint, resource_desc.Space, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+      _ranges.emplace(range);
 
-      _root_params.emplace_back(D3D12_ROOT_PARAMETER1
-      {
-        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-        .DescriptorTable =
-        {
-          .NumDescriptorRanges = 1u,
-          .pDescriptorRanges   = &_ranges.back(),
-        },
-        .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL,
-      });
+      root_param.InitAsDescriptorTable(1, &_ranges.back(), D3D12_SHADER_VISIBILITY_PIXEL);
+      _root_params.emplace_back(root_param);
       break;
     }
 
@@ -330,23 +342,28 @@ void Compiler::CompileResult::get_root_parameters(ID3D12ShaderReflection* shader
     {
       resource_indexs[resource_desc.Name] = _root_params.size();
 
-      _ranges.emplace(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1u, resource_desc.BindPoint, resource_desc.Space);
+      range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, resource_desc.BindPoint, resource_desc.Space, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+      _ranges.emplace(range);
 
-      _root_params.emplace_back(D3D12_ROOT_PARAMETER1
-      {
-        .ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-        .DescriptorTable =
-        {
-          .NumDescriptorRanges = 1u,
-          .pDescriptorRanges   = &_ranges.back(),
-        },
-        .ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL,
-      });
+      root_param.InitAsDescriptorTable(1, &_ranges.back(), D3D12_SHADER_VISIBILITY_ALL);
+      _root_params.emplace_back(root_param);
+      break;
+    }
+
+    case D3D_SIT_UAV_RWTYPED:
+    {
+      resource_indexs[resource_desc.Name] = _root_params.size();
+
+      range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, resource_desc.BindPoint, resource_desc.Space, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+      _ranges.emplace(range);
+
+      root_param.InitAsDescriptorTable(1, &_ranges.back(), D3D12_SHADER_VISIBILITY_ALL);
+      _root_params.emplace_back(root_param);
       break;
     }
 
     default:
-      err_if(true, "TODO: expand more parameter type of shader resources");
+      err_if(true, "Please expand more parameter type of shader resources");
     }
   }
 }

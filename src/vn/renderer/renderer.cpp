@@ -111,17 +111,9 @@ void Renderer::destroy() noexcept
 void Renderer::create_pipeline_resource() noexcept
 {
   _cbv_srv_uav_heap.init();
-
-  _pipeline.init({
-    "assets/shader.hlsl", "vs", "ps", "assets",
-    {
-      { 0, 0, DescriptorType::constants, sizeof(Constants),                         ShaderType::all,   {}                          },
-      { 0, 0, DescriptorType::srv,       static_cast<uint32_t>(CursorType::Number), ShaderType::pixel, DescriptorFlag::static_data },
-      { 0, 1, DescriptorType::srv,       1,                                         ShaderType::all,   {}                          },
-    },
-    DXGIFormat::rgba8_unorm,
-    true, false
-  });
+  _pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", ImageFormat::rgba8_unorm, true);
+  
+  _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
 }
 
 void Renderer::load_cursor_images() noexcept
@@ -180,6 +172,8 @@ void Renderer::load_cursor_images() noexcept
   // create buffers
   _cbv_srv_uav_heap.add_tag("framebuffer");
   for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
+
+  _cbv_srv_uav_heap.add_tag("window shadow image", 1);
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete

@@ -8,9 +8,9 @@ using namespace Microsoft::WRL;
 
 namespace vn { namespace renderer {
 
-void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool transparent) noexcept
+void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool is_transparent) noexcept
 {
-  this->transparent = transparent;
+  this->is_transparent = is_transparent;
 
   auto core     = Core::instance();
   auto renderer = Renderer::instance();
@@ -29,7 +29,7 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  if (transparent)
+  if (is_transparent)
   {
     swapchain_desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
     err_if(core->factory()->CreateSwapChainForComposition(core->command_queue(), &swapchain_desc, nullptr, &swapchain),
@@ -68,6 +68,9 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
     dsv_heap.init();
     dsv_image.init(width, height).create_descriptor(dsv_heap.pop_handle());
   }
+
+  uav_heap.init(true);
+  window_shadow_image.init(width, height).create_descriptor(uav_heap.pop_handle("window shadow image"));
 }
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
@@ -84,14 +87,14 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 
   // reset swapchain relation resources
   std::ranges::for_each(swapchain_images, [](auto& image) { image.destroy(); });
-  if (transparent)
+  if (is_transparent)
     _comp_visual->SetContent(nullptr);
 
   // resize swapchain
   err_if(swapchain->ResizeBuffers(Frame_Count, width, height, DXGI_FORMAT_UNKNOWN, 0),
           "failed to resize swapchain");
 
-  if (transparent)
+  if (is_transparent)
   {
     // rebind composition resources
     err_if(_comp_visual->SetContent(swapchain.Get()),
@@ -105,6 +108,8 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 
   if (renderer->enable_depth_test)
     dsv_image.resize(width, height);
+
+  window_shadow_image.resize(width, height);
 }
 
 void FrameResource::init() noexcept
@@ -145,26 +150,20 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   auto cmd_alloc = frame_resource.command_allocators[core->frame_index()].Get();
   auto cmd       = frame_resource.cmd.Get();
 
-  auto& swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : this->swapchain_resource;
-  auto  swapchain_image    = swapchain_resource.current_image();
-  auto  rtv_handle         = swapchain_resource.rtv();
-  auto  dsv_handle         = D3D12_CPU_DESCRIPTOR_HANDLE{};
+  auto& current_swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
+  auto  swapchain_image            = current_swapchain_resource.current_image();
+  auto  rtv_handle                 = current_swapchain_resource.rtv();
+  auto  dsv_handle                 = D3D12_CPU_DESCRIPTOR_HANDLE{};
   if (renderer->enable_depth_test)
-    dsv_handle = swapchain_resource.dsv_heap.cpu_handle();
+    dsv_handle = current_swapchain_resource.dsv_heap.cpu_handle();
 
   // reset command allocator and command list
   err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
   err_if(cmd->Reset(cmd_alloc, nullptr), "failed to reset command list");
-
-  // bind pipeline
-  renderer->_pipeline.bind(cmd);
-
-  // set viewport and scissor rectangle
-  cmd->RSSetViewports(1, &swapchain_resource.viewport);
-  if (window.moving || window.resizing)
-    cmd->RSSetScissorRects(1, &window.rect);
-  else
-    cmd->RSSetScissorRects(1, &swapchain_resource.scissor);
+  
+  // set descriptor heaps
+  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
+  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
   // convert render target view from present type to render target type
   swapchain_image->set_state<ImageState::render_target>(cmd);
@@ -185,12 +184,21 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     cmd->OMSetDepthBounds(0.f, 1.f);
   }
 
-  // set primitive topology
-  cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  // window shadow render pass
+  window_shadow_render(cmd, current_swapchain_resource);
 
-  // set descriptor heaps
-  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
-  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
+  // bind pipeline
+  renderer->_pipeline.bind(cmd);
+
+  // set viewport and scissor rectangle
+  cmd->RSSetViewports(1, &current_swapchain_resource.viewport);
+  if (window.moving || window.resizing)
+    cmd->RSSetScissorRects(1, &window.rect);
+  else
+    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
+
+  // convert render target view from present type to render target type
+  swapchain_image->set_state<ImageState::render_target>(cmd);
 
   // upload data to buffer
   renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
@@ -203,17 +211,17 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     constants.window_pos   = window.pos();
     constants.cursor_index = static_cast<uint32_t>(window.cursor_type);
   }
-  renderer->_pipeline.set_descriptors(cmd, constants,
+  renderer->_pipeline.set_descriptors(cmd, "constants", constants,
   {
-    (window.moving || window.resizing) ? renderer->get_descriptor("cursors") : D3D12_GPU_DESCRIPTOR_HANDLE{},
-    renderer->get_descriptor("framebuffer", core->frame_index()),
+    { "cursor_textures", renderer->get_descriptor("cursors")                          },
+    { "buffer",          renderer->get_descriptor("framebuffer", core->frame_index()) },
   });
 
   // draw
   if (window.moving || window.resizing)
   {
     cmd->DrawIndexedInstanced(indices.size() - 6, 1, 0, 0, 0);
-    cmd->RSSetScissorRects(1, &swapchain_resource.scissor);
+    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
     cmd->DrawIndexedInstanced(6, 1, indices.size() - 6, 0, 0);
   }
   else
@@ -226,7 +234,43 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   core->submit(cmd);
 
   // present
-  err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
+  err_if(current_swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
+}
+
+void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, SwapchainResource& current_swapchain_resource) const noexcept
+{
+  auto renderer        = Renderer::instance();
+  auto swapchain_image = current_swapchain_resource.current_image();
+
+  renderer->_window_shadow_pipeline.bind(cmd);
+  copy(current_swapchain_resource.uav_heap, "window shadow image", renderer->_cbv_srv_uav_heap, "window shadow image");
+  renderer->_window_shadow_pipeline.set_descriptors(cmd, "constants", glm::vec2(window.width, window.height), {{ "image", renderer->get_descriptor("window shadow image") }});
+  cmd->Dispatch(current_swapchain_resource.window_shadow_image.width() / 8, current_swapchain_resource.window_shadow_image.height() / 8, 1);
+  if (window.resizing || window.moving)
+  {
+    auto x      = window.x;
+    auto y      = window.y;
+    auto left   = uint32_t{};
+    auto top    = uint32_t{};
+    auto right  = window.width;
+    auto bottom = window.height;
+    if (window.x < 0)
+    {
+      x    = 0;
+      left = -window.x;
+    }
+    if (window.y < 0)
+    {
+      y   = 0;
+      top = -window.y;
+    }
+    copy(cmd, current_swapchain_resource.window_shadow_image, left, top,
+      std::clamp(right,  0u, swapchain_image->width()  - window.x),
+      std::clamp(bottom, 0u, swapchain_image->height() - window.y),
+      *swapchain_image, x, y);
+  }
+  else
+    copy(cmd, current_swapchain_resource.window_shadow_image, *swapchain_image);
 }
 
 }}
