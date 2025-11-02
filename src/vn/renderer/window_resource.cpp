@@ -185,7 +185,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   }
 
   // window shadow render pass
-  window_shadow_render(cmd, current_swapchain_resource);
+  //window_shadow_render(cmd, current_swapchain_resource);
 
   // bind pipeline
   renderer->_pipeline.bind(cmd);
@@ -245,7 +245,7 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, Swapc
   renderer->_window_shadow_pipeline.bind(cmd);
   copy(current_swapchain_resource.uav_heap, "window shadow image", renderer->_cbv_srv_uav_heap, "window shadow image");
   renderer->_window_shadow_pipeline.set_descriptors(cmd, "constants", glm::vec2(window.width, window.height), {{ "image", renderer->get_descriptor("window shadow image") }});
-  cmd->Dispatch(current_swapchain_resource.window_shadow_image.width() / 8, current_swapchain_resource.window_shadow_image.height() / 8, 1);
+  cmd->Dispatch((current_swapchain_resource.window_shadow_image.width() + 7) / 8, (current_swapchain_resource.window_shadow_image.height() + 7) / 8, 1);
   if (window.resizing || window.moving)
   {
     auto x      = window.x;

@@ -114,6 +114,7 @@ void Renderer::create_pipeline_resource() noexcept
   _pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", ImageFormat::rgba8_unorm, true);
   
   _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
+  _window_mask_pipeline.init_compute("assets/window_mask.hlsl", "main");
 }
 
 void Renderer::load_cursor_images() noexcept

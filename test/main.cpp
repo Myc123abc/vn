@@ -9,20 +9,7 @@ Timer timer;
 
 void render_window_1() noexcept
 {
-  //set_background_color(0xffffffff);
 
-  if (ui::button(0, 0, 50, 50, 0xff0000ff, 0x0000ffff))
-    info("1");
-  if (ui::button(0, 0, 50, 50, 0xffffffff, 0xff0000ff))
-    info("2");
-
-  ui::circle({25,25}, 25, 0x0000ffff);
-
-  ui::line({0, 60}, {100,60}, 0x0000ffff);
-  ui::line({0, 60}, {100,60}, 0xff0000ff);
-
-  ui::rectangle({ 60, 0 }, { 110, 50 }, 0x0000ffff);
-  ui::rectangle({ 80, 0 }, { 130, 50 }, 0xff0000ff);
 }
 
 void render_window_2() noexcept

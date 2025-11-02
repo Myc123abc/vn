@@ -62,6 +62,7 @@ private:
   std::deque<std::function<bool()>> _current_frame_render_finish_procs;
 
   Pipeline _pipeline;
+  Pipeline _window_mask_pipeline;
   Pipeline _window_shadow_pipeline;
 
   struct Cursor
