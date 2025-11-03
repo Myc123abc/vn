@@ -1,6 +1,8 @@
 #include "window_resource.hpp"
 #include "renderer.hpp"
 #include "config.hpp"
+#include "core.hpp"
+#include "error_handling.hpp"
 
 #include <algorithm>
 
@@ -25,7 +27,7 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   swapchain_desc.BufferCount      = Frame_Count;
   swapchain_desc.Width            = width;
   swapchain_desc.Height           = height;
-  swapchain_desc.Format           = swapchain_images[0].format();
+  swapchain_desc.Format           = dxgi_format(ImageFormat::rgba8_unorm);
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
@@ -59,18 +61,18 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   }
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
 
-  rtv_heap.init();
+  rtv_heap.init(DescriptorHeapType::rtv, Frame_Count);
   for (auto i = 0; i < Frame_Count; ++i)
     swapchain_images[i].init(swapchain.Get(), i).create_descriptor(rtv_heap.pop_handle());
 
   if (renderer->enable_depth_test)
   {
-    dsv_heap.init();
-    dsv_image.init(width, height).create_descriptor(dsv_heap.pop_handle());
+    dsv_heap.init(DescriptorHeapType::dsv);
+    dsv_image.init(ImageType::dsv, ImageFormat::d32, width, height).create_descriptor(dsv_heap.pop_handle());
   }
 
-  uav_heap.init(true);
-  window_shadow_image.init(width, height).create_descriptor(uav_heap.pop_handle("window shadow image"));
+  uav_heap.init(DescriptorHeapType::cbv_srv_uav, 1, true);
+  window_shadow_image.init(ImageType::uav, ImageFormat::rgba8_unorm, width, height).create_descriptor(uav_heap.pop_handle("window shadow image"));
 }
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
@@ -166,7 +168,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
   // convert render target view from present type to render target type
-  swapchain_image->set_state<ImageState::render_target>(cmd);
+  swapchain_image->set_state(cmd, ImageState::render_target);
 
   // set render target view
   if (renderer->enable_depth_test)
@@ -185,7 +187,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   }
 
   // window shadow render pass
-  //window_shadow_render(cmd, current_swapchain_resource);
+  // window_shadow_render(cmd, current_swapchain_resource);
 
   // bind pipeline
   renderer->_pipeline.bind(cmd);
@@ -198,7 +200,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
 
   // convert render target view from present type to render target type
-  swapchain_image->set_state<ImageState::render_target>(cmd);
+  swapchain_image->set_state(cmd, ImageState::render_target);
 
   // upload data to buffer
   renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
@@ -228,7 +230,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
 
   // record finish, change render target view type to present
-  swapchain_image->set_state<ImageState::present>(cmd);
+  swapchain_image->set_state(cmd, ImageState::present);
 
   // submit command
   core->submit(cmd);

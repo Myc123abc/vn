@@ -26,7 +26,7 @@ public:
   Buffer& operator=(Buffer const&) = delete;
   Buffer& operator=(Buffer&&)      = delete;
 
-  void init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle = {}) noexcept;
+  void init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle = {}) noexcept;
 
   void clear() noexcept { _size = {}; }
 
@@ -44,7 +44,7 @@ public:
 
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;
-  D3D12_CPU_DESCRIPTOR_HANDLE            _descriptor_handle{};
+  D3D12_CPU_DESCRIPTOR_HANDLE            _cpu_handle{};
   uint8_t*                               _data{};
   uint32_t                               _capacity{};
   uint32_t                               _size{};
@@ -60,7 +60,7 @@ public:
   FrameBuffer& operator=(FrameBuffer const&) = delete;
   FrameBuffer& operator=(FrameBuffer&&)      = delete;
 
-  void init(D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) noexcept;
+  void init(D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept;
 
   void clear() noexcept
   {

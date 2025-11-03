@@ -63,18 +63,17 @@ private:
 
   Pipeline _pipeline;
   Pipeline _window_mask_pipeline;
+  Image    _window_mask_image;
   Pipeline _window_shadow_pipeline;
 
   struct Cursor
   {
-    Image<ImageType::srv, ImageFormat::rgba8_unorm> image;
-    glm::vec2                                       pos;
+    Image     image;
+    glm::vec2 pos;
   };
   std::unordered_map<CursorType, Cursor> _cursors;
 
-  DescriptorHeap<
-    DescriptorHeapType::cbv_srv_uav,
-    static_cast<uint32_t>(CursorType::Number) + Frame_Count + 1> _cbv_srv_uav_heap;
+  DescriptorHeap                       _cbv_srv_uav_heap;
   std::array<FrameBuffer, Frame_Count> _frame_buffers;
 
   std::unordered_map<HWND, WindowResource> _window_resources;

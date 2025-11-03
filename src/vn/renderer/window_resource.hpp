@@ -4,33 +4,33 @@
 #include "shader_type.hpp"
 #include "window.hpp"
 #include "descriptor_heap.hpp"
+#include "config.hpp"
 
 #include <dcomp.h>
 
+#include <array>
 #include <span>
 
 namespace vn { namespace renderer {
 
 struct SwapchainResource
 {
-  using RenderTargetType = Image<ImageType::rtv, ImageFormat::rgba8_unorm>;
+  Microsoft::WRL::ComPtr<IDXGISwapChain4> swapchain;
+  std::array<Image, Frame_Count>          swapchain_images;
+  DescriptorHeap                          rtv_heap;
+  DescriptorHeap                          dsv_heap;
+  Image                                   dsv_image;
+  CD3DX12_VIEWPORT                        viewport;
+  CD3DX12_RECT                            scissor;
+  bool                                    is_transparent{};
 
-  Microsoft::WRL::ComPtr<IDXGISwapChain4>              swapchain;
-  std::array<RenderTargetType, Frame_Count>            swapchain_images;
-  DescriptorHeap<DescriptorHeapType::rtv, Frame_Count> rtv_heap;
-  DescriptorHeap<DescriptorHeapType::dsv, 1>           dsv_heap;
-  Image<ImageType::dsv, ImageFormat::d32>              dsv_image;
-  CD3DX12_VIEWPORT                                     viewport;
-  CD3DX12_RECT                                         scissor;
-  bool                                                 is_transparent{};
-
-  Image<ImageType::uav, ImageFormat::rgba8_unorm>      window_shadow_image;
-  DescriptorHeap<DescriptorHeapType::cbv_srv_uav, 1>   uav_heap;
+  Image                                   window_shadow_image;
+  DescriptorHeap                          uav_heap;
 
 private:
-  Microsoft::WRL::ComPtr<IDCompositionDevice>  _comp_device;
-  Microsoft::WRL::ComPtr<IDCompositionTarget>  _comp_target;
-  Microsoft::WRL::ComPtr<IDCompositionVisual>  _comp_visual;
+  Microsoft::WRL::ComPtr<IDCompositionDevice> _comp_device;
+  Microsoft::WRL::ComPtr<IDCompositionTarget> _comp_target;
+  Microsoft::WRL::ComPtr<IDCompositionVisual> _comp_visual;
 
 public:
 

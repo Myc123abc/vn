@@ -33,7 +33,7 @@ void Pipeline::init_graphics(
   
   auto render_target_formats = D3D12_RT_FORMAT_ARRAY{};
   render_target_formats.NumRenderTargets = 1;
-  render_target_formats.RTFormats[0]     = get_dx12_image_format(rtv_format);
+  render_target_formats.RTFormats[0]     = dxgi_format(rtv_format);
   
   stream.pRootSignature        = _root_signature.Get();
   stream.InputLayout           = compile_result.input_layout_desc;
@@ -102,6 +102,19 @@ void Pipeline::bind(ID3D12GraphicsCommandList1* cmd) const noexcept
   }
   else
     cmd->SetComputeRootSignature(_root_signature.Get());
+}
+
+void Pipeline::set_descriptors(ID3D12GraphicsCommandList1* cmd, std::vector<std::pair<std::string_view, D3D12_GPU_DESCRIPTOR_HANDLE>> const& handles) const noexcept
+{
+  for (auto const& [name, handle] : handles)
+    if (_resource_indexs.contains(name.data()))
+    {
+      err_if(!handle.ptr, "failed to set descriptor table, the invalid gpu handle of 0");
+      if (_is_graphics_pipeline)
+        cmd->SetGraphicsRootDescriptorTable(_resource_indexs.at(name.data()), handle);
+      else
+        cmd->SetComputeRootDescriptorTable(_resource_indexs.at(name.data()), handle);
+    }
 }
 
 }}

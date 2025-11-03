@@ -32,12 +32,12 @@ auto calculate_capacity(uint32_t old_capacity, uint32_t need_capacity)
 
 namespace vn { namespace renderer {
 
-void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) noexcept
+void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept
 {
-  _size              = {};
-  _capacity          = align(size, 8);
-  _descriptor_handle = descriptor_handle;
-
+  _size       = {};
+  _capacity   = align(size, 8);
+  _cpu_handle = cpu_handle;
+  
   // create buffer
   auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
   auto resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(_capacity * Frame_Count);
@@ -54,7 +54,7 @@ void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) 
   auto range = CD3DX12_RANGE{};
   err_if(_handle->Map(0, &range, reinterpret_cast<void**>(&_data)), "failed to map pointer from buffer");
 
-  if (descriptor_handle.ptr)
+  if (cpu_handle.ptr)
   {
     // create view
     D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
@@ -63,7 +63,7 @@ void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) 
     srv_desc.ViewDimension              = D3D12_SRV_DIMENSION_BUFFER;
     srv_desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_RAW;
     srv_desc.Buffer.NumElements         = _capacity * Frame_Count / 4;
-    Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, descriptor_handle);
+      Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, cpu_handle);
   }
 }
 
@@ -87,7 +87,7 @@ auto Buffer::append(void const* data, uint32_t size) noexcept -> uint32_t
     memcpy(old_data.data(), _data, _size);
 
     // create new bigger one
-    init(calculate_capacity(_capacity, total_size), _descriptor_handle);
+    init(calculate_capacity(_capacity, total_size), _cpu_handle);
 
     // copy old data to new buffer
     append(old_data.data(), old_data.size());
@@ -97,10 +97,10 @@ auto Buffer::append(void const* data, uint32_t size) noexcept -> uint32_t
   return size;
 }
 
-void FrameBuffer::init(D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle) noexcept
+void FrameBuffer::init(D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept
 {
   _vertices_indices_buffer.init(1024);
-  _shape_properties_buffer.init(1024, descriptor_handle);
+  _shape_properties_buffer.init(1024, cpu_handle);
 }
 
 void FrameBuffer::upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept

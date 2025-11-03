@@ -110,7 +110,7 @@ void Renderer::destroy() noexcept
 
 void Renderer::create_pipeline_resource() noexcept
 {
-  _cbv_srv_uav_heap.init();
+  _cbv_srv_uav_heap.init(DescriptorHeapType::cbv_srv_uav, static_cast<uint32_t>(CursorType::Number) + Frame_Count + 1);
   _pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", ImageFormat::rgba8_unorm, true);
   
   _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
@@ -133,7 +133,7 @@ void Renderer::load_cursor_images() noexcept
   // create cursors
   for (auto& [cursor_type, bitmap] : bitmaps)
   {
-    _cursors[cursor_type].image.init(bitmap.width, bitmap.height);
+    _cursors[cursor_type].image.init(ImageType::srv, ImageFormat::rgba8_unorm, bitmap.width, bitmap.height);
     _cursors[cursor_type].pos = bitmap.pos;
   }
 
@@ -161,7 +161,7 @@ void Renderer::load_cursor_images() noexcept
     copy(core->cmd(), cursor_image, upload_heap.Get(), offset, texture_data);
 
     // convert state to pixel shader resource
-    cursor_image.set_state<ImageState::pixel_shader_resource>(core->cmd());
+    cursor_image.set_state(core->cmd(), ImageState::pixel_shader_resource);
 
     // move to next upload heap position
     offset += align(GetRequiredIntermediateSize(cursor_image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
