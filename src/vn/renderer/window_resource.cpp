@@ -70,9 +70,6 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
     dsv_heap.init(DescriptorHeapType::dsv);
     dsv_image.init(ImageType::dsv, ImageFormat::d32, width, height).create_descriptor(dsv_heap.pop_handle());
   }
-
-  uav_heap.init(DescriptorHeapType::cbv_srv_uav, 1, true);
-  window_shadow_image.init(ImageType::uav, ImageFormat::rgba8_unorm, width, height).create_descriptor(uav_heap.pop_handle("window shadow image"));
 }
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
@@ -110,8 +107,6 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 
   if (renderer->enable_depth_test)
     dsv_image.resize(width, height);
-
-  window_shadow_image.resize(width, height);
 }
 
 void FrameResource::init() noexcept
@@ -187,7 +182,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   }
 
   // window shadow render pass
-  // window_shadow_render(cmd, current_swapchain_resource);
+  window_shadow_render(cmd, current_swapchain_resource);
 
   // bind pipeline
   renderer->_pipeline.bind(cmd);
@@ -244,10 +239,18 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, Swapc
   auto renderer        = Renderer::instance();
   auto swapchain_image = current_swapchain_resource.current_image();
 
+  copy(renderer->_uav_clear_heap, "window mask image", renderer->_cbv_srv_uav_heap, "window mask image");
+  renderer->_window_mask_image.clear(cmd, renderer->_uav_clear_heap.cpu_handle("window mask image"), renderer->_cbv_srv_uav_heap.gpu_handle("window mask image"));
+  renderer->_window_mask_pipeline.bind(cmd);
+  renderer->_window_mask_pipeline.set_descriptors(cmd,
+    "constants", glm::vec4(window.rect.left, window.rect.top, window.rect.right, window.rect.bottom),
+    {{ "window_mask_image", renderer->get_descriptor("window mask image") }});
+  cmd->Dispatch((renderer->_window_mask_image.width() + 7) / 8, (renderer->_window_mask_image.height() + 7) / 8, 1);
+  return;
+
   renderer->_window_shadow_pipeline.bind(cmd);
-  copy(current_swapchain_resource.uav_heap, "window shadow image", renderer->_cbv_srv_uav_heap, "window shadow image");
   renderer->_window_shadow_pipeline.set_descriptors(cmd, "constants", glm::vec2(window.width, window.height), {{ "image", renderer->get_descriptor("window shadow image") }});
-  cmd->Dispatch((current_swapchain_resource.window_shadow_image.width() + 7) / 8, (current_swapchain_resource.window_shadow_image.height() + 7) / 8, 1);
+  cmd->Dispatch((renderer->_window_shadow_image.width() + 7) / 8, (renderer->_window_shadow_image.height() + 7) / 8, 1);
   if (window.resizing || window.moving)
   {
     auto x      = window.x;
@@ -266,13 +269,13 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, Swapc
       y   = 0;
       top = -window.y;
     }
-    copy(cmd, current_swapchain_resource.window_shadow_image, left, top,
+    copy(cmd, renderer->_window_shadow_image, left, top,
       std::clamp(right,  0u, swapchain_image->width()  - window.x),
       std::clamp(bottom, 0u, swapchain_image->height() - window.y),
       *swapchain_image, x, y);
   }
   else
-    copy(cmd, current_swapchain_resource.window_shadow_image, *swapchain_image);
+    copy(cmd, renderer->_window_shadow_image, *swapchain_image);
 }
 
 }}

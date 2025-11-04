@@ -59,7 +59,7 @@ public:
   void resize(uint32_t width, uint32_t height)            noexcept;
   void resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept;
 
-  void clear(ID3D12GraphicsCommandList1* cmd, D3D12_GPU_DESCRIPTOR_HANDLE handle) const noexcept;
+  void clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept;
 
   auto handle()     const noexcept { return _handle.Get(); }
   auto width()      const noexcept { return _width;        }

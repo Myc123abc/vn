@@ -24,9 +24,6 @@ struct SwapchainResource
   CD3DX12_RECT                            scissor;
   bool                                    is_transparent{};
 
-  Image                                   window_shadow_image;
-  DescriptorHeap                          uav_heap;
-
 private:
   Microsoft::WRL::ComPtr<IDCompositionDevice> _comp_device;
   Microsoft::WRL::ComPtr<IDCompositionTarget> _comp_target;

@@ -198,14 +198,14 @@ void Image::create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle, std::optional<
     err_if(true, "unsupport image type now");
 }
 
-void Image::clear(ID3D12GraphicsCommandList1* cmd, D3D12_GPU_DESCRIPTOR_HANDLE handle) const noexcept
+void Image::clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept
 {
   err_if(_type != ImageType::uav, "clear operator only use on uav");
   float values[4]{};
   auto rect = D3D12_RECT{};
   rect.right  = _width;
   rect.bottom = _height;
-  cmd->ClearUnorderedAccessViewFloat(handle, _cpu_handles.at(_type), _handle.Get(), values, 1, &rect);
+  cmd->ClearUnorderedAccessViewFloat(gpu_handle, cpu_handle, _handle.Get(), values, 1, &rect);
 }
 
 void copy(

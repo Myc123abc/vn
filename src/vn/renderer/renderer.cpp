@@ -4,6 +4,7 @@
 #include "message_queue.hpp"
 #include "../ui/ui_context.hpp"
 #include "compiler.hpp"
+#include "window_manager.hpp"
 
 #include <algorithm>
 #include <ranges>
@@ -94,12 +95,17 @@ void Renderer::init() noexcept
   
   Compiler::instance()->init();
 
-  // initialize resources
   core->init();
-  create_pipeline_resource();
 
-  // load gpu resources
+  _cbv_srv_uav_heap.init(DescriptorHeapType::cbv_srv_uav, static_cast<uint32_t>(CursorType::Number) + Frame_Count + 2);
+
   load_cursor_images();
+
+  // create buffers
+  _cbv_srv_uav_heap.add_tag("framebuffer");
+  for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
+
+  create_pipeline_resource();
 }
 
 void Renderer::destroy() noexcept
@@ -110,11 +116,19 @@ void Renderer::destroy() noexcept
 
 void Renderer::create_pipeline_resource() noexcept
 {
-  _cbv_srv_uav_heap.init(DescriptorHeapType::cbv_srv_uav, static_cast<uint32_t>(CursorType::Number) + Frame_Count + 1);
   _pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", ImageFormat::rgba8_unorm, true);
   
   _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
   _window_mask_pipeline.init_compute("assets/window_mask.hlsl", "main");
+
+  auto size = get_screen_size();
+  _uav_clear_heap.init(DescriptorHeapType::cbv_srv_uav, 1, true);
+  _window_mask_image.init(ImageType::uav, ImageFormat::r8_unorm, size.x, size.y)
+                    .create_descriptor(_uav_clear_heap.pop_handle("window mask image"));
+  _cbv_srv_uav_heap.add_tag("window mask image", 1);
+  
+  _window_shadow_image.init(ImageType::uav, ImageFormat::rgba8_unorm, size.x, size.y)
+                      .create_descriptor(_cbv_srv_uav_heap.pop_handle("window shadow image"));
 }
 
 void Renderer::load_cursor_images() noexcept
@@ -169,12 +183,6 @@ void Renderer::load_cursor_images() noexcept
     // create cursor texture descriptor
     cursor_image.create_descriptor(_cbv_srv_uav_heap.pop_handle());
   }
-
-  // create buffers
-  _cbv_srv_uav_heap.add_tag("framebuffer");
-  for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
-
-  _cbv_srv_uav_heap.add_tag("window shadow image", 1);
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete
