@@ -9,7 +9,8 @@ Timer timer;
 
 void render_window_1() noexcept
 {
-
+  set_background_color(0x0000006f);
+  circle({100,100}, 100, 0x0000ffff, 1);
 }
 
 void render_window_2() noexcept
@@ -60,7 +61,7 @@ int main()
   vn::init();
 
   ui::create_window("first window", 100, 100, 200, 100, render_window_1, false);
-  //ui::create_window("second window", 200, 200, 100, 100, render_window_2);
+  ui::create_window("second window", 200, 200, 100, 100, render_window_2);
 
   auto fps_count = uint32_t{};
 
@@ -69,10 +70,10 @@ int main()
     info("[fps] {}", fps_count);
     fps_count = {};
   });
-  //timer.add_single_event(3000, [&]
-  //{
-  //  ui::create_window("third window", 300, 300, 100, 100, render_window_3);
-  //});
+  timer.add_single_event(3000, [&]
+  {
+    ui::create_window("third window", 300, 300, 100, 100, render_window_3);
+  });
 
   while (ui::window_count())
   {

@@ -213,12 +213,14 @@ void Renderer::message_process() noexcept
 
 void Renderer::render_begin() noexcept
 {
-  _frame_buffers[Core::instance()->frame_index()].clear();
+  auto core = Core::instance();
+  _frame_buffers[core->frame_index()].clear();
+  core->frame_begin();
 }
 
 void Renderer::render_end() noexcept
 {
-  Core::instance()->move_to_next_frame();
+  Core::instance()->frame_end();
 }
 
 void Renderer::render_window(HWND handle, ui::WindowRenderData const& data) noexcept

@@ -109,28 +109,10 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
     dsv_image.resize(width, height);
 }
 
-void FrameResource::init() noexcept
-{
-  auto core = Core::instance();
-
-  for (auto i = 0; i < Frame_Count; ++i)
-  {
-    // get command allocator
-    err_if(core->device()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&command_allocators[i])),
-        "failed to create command allocator");
-  }
-
-  // create command list
-  err_if(core->device()->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, command_allocators[0].Get(), nullptr, IID_PPV_ARGS(&cmd)),
-          "failed to create command list");
-  err_if(cmd->Close(), "failed to close command list");
-}
-
 void WindowResource::init(Window const& window, bool transparent) noexcept
 {
   this->window = window;
   swapchain_resource.init(window.handle, window.width, window.height, transparent);
-  frame_resource.init();
 
   // first frame rendered then display
   Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle]
@@ -140,23 +122,57 @@ void WindowResource::init(Window const& window, bool transparent) noexcept
   });
 }
 
+void SwapchainResource::clear_rtv() noexcept
+{
+  auto  core            = Core::instance();
+  auto  cmd             = core->cmd();
+  auto  swapchain_image = current_image();
+  auto  rtv_handle      = rtv();
+
+  core->reset_cmd();
+
+  swapchain_image->set_state(cmd, ImageState::render_target);
+
+  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
+
+  float constexpr clear_color[4]{};
+  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+
+  // record finish, change render target view type to present
+  swapchain_image->set_state(cmd, ImageState::present);
+
+  // submit command
+  core->submit(cmd);
+
+  // present
+  err_if(swapchain->Present(1, 0), "failed to present swapchain");
+}
+
 void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
 {
-  auto core      = Core::instance();
-  auto renderer  = Renderer::instance();
-  auto cmd_alloc = frame_resource.command_allocators[core->frame_index()].Get();
-  auto cmd       = frame_resource.cmd.Get();
+  auto core     = Core::instance();
+  auto renderer = Renderer::instance();
+
+  if (clear_window_self_content)
+  {
+    swapchain_resource.clear_rtv();
+    clear_window_self_content = {};
+  }
+  else if (clear_fullscreen_window_content)
+  {
+    renderer->_fullscreen_swapchain_resource.clear_rtv();
+    clear_fullscreen_window_content = {};
+  }
 
   auto& current_swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
+  auto  cmd                        = core->cmd();
   auto  swapchain_image            = current_swapchain_resource.current_image();
   auto  rtv_handle                 = current_swapchain_resource.rtv();
   auto  dsv_handle                 = D3D12_CPU_DESCRIPTOR_HANDLE{};
   if (renderer->enable_depth_test)
     dsv_handle = current_swapchain_resource.dsv_heap.cpu_handle();
 
-  // reset command allocator and command list
-  err_if(cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
-  err_if(cmd->Reset(cmd_alloc, nullptr), "failed to reset command list");
+  core->reset_cmd();
   
   // set descriptor heaps
   auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
@@ -182,7 +198,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   }
 
   // window shadow render pass
-  window_shadow_render(cmd, current_swapchain_resource);
+  //window_shadow_render(cmd, current_swapchain_resource);
 
   // bind pipeline
   renderer->_pipeline.bind(cmd);

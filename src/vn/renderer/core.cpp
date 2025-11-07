@@ -51,9 +51,10 @@ void Core::init() noexcept
     fence_value = 1;
 
   // create command allocator and list
-  err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_command_allocator)),
-          "failed to create command allocator");
-  err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _command_allocator.Get(), nullptr, IID_PPV_ARGS(&_command_list)),
+  for (auto& alloc : _cmd_allocators)
+    err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&alloc)),
+            "failed to create command allocator");
+  err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _cmd_allocators[0].Get(), nullptr, IID_PPV_ARGS(&_cmd)),
           "failed to create command list");
 }
 
@@ -90,7 +91,17 @@ void Core::wait_gpu_complete() noexcept
   _fence_values[_frame_index] = fence_value + 1;
 }
 
-void Core::move_to_next_frame() noexcept
+void Core::reset_cmd() const noexcept
+{
+  err_if(_cmd->Reset(_cmd_allocators[_frame_index].Get(), nullptr), "failed to reset command list");
+}
+
+void Core::frame_begin() const noexcept
+{
+  err_if(_cmd_allocators[_frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
+}
+
+void Core::frame_end() noexcept
 {
   // get current fence value
   auto const fence_value = _fence_values[_frame_index];

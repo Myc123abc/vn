@@ -50,22 +50,22 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       {
         window.moving = {};
         BringWindowToTop(handle);
-        wm->_moving_or_resizing_window = window;
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
         if (window.need_resize_swapchain)
         {
           window.need_resize_swapchain = false;
           msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
         }
+        SetWindowPos(window.handle, 0, window.x, window.y, window.width, window.height, 0);
       }
       else if (lm_downresize_type != Window::ResizeType::none)
       {
         window.resizing    = {};
         BringWindowToTop(handle);
         window.cursor_type = {};
-        wm->_moving_or_resizing_window = window;
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
         msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
+        SetWindowPos(window.handle, 0, window.x, window.y, window.width, window.height, 0);
       }
     }
   };
@@ -83,8 +83,9 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     break;
   }
 
-  case WM_DESTROY:
+  case WM_CLOSE:
   {
+    ShowWindow(handle, SW_HIDE);
     msg_queue->send_message(MessageQueue::Message_Destroy_Window_Render_Resource{ handle });
     ui::UIContext::instance()->windows.erase(handle);
     wm->_windows.erase(handle);
@@ -152,7 +153,6 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
           if (window.is_move_area(lm_down_pos.x, lm_down_pos.y))
           {
             window.is_maximized ? window.move_from_maximize(cursor_pos.x, cursor_pos.y) : window.move(offset_x, offset_y);
-            wm->_moving_or_resizing_window = window;
             msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
           }
         }
@@ -172,7 +172,6 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
         if (!window.resizing)
         {
           window.resize(lm_downresize_type, offset_x, offset_y);
-          wm->_moving_or_resizing_window = window;
           msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
         }
         // continuely resizing
@@ -248,9 +247,10 @@ void WindowManager::init() noexcept
 
   // create fullscreen
   auto screen_size = get_screen_size();
-  _fullscreen_window_handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, Fullscreen_Class, nullptr, WS_POPUP,
+  _fullscreen_window_handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST, Fullscreen_Class, nullptr, WS_POPUP,
     0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!_fullscreen_window_handle,  "failed to create window");
+  ShowWindow(_fullscreen_window_handle, SW_SHOW);
   MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Window_Render_Resource{ Window{ _fullscreen_window_handle, {}, 0, 0, screen_size.x, screen_size.y } });
 }
 
@@ -331,19 +331,13 @@ void WindowManager::end_use_fullscreen_window() const noexcept
 void WindowManager::process_begin_use_fullscreen_window() noexcept
 {
   while (ShowCursor(false) >= 0);
-  ShowWindow(_fullscreen_window_handle, SW_SHOW);
-  auto rect = RECT{};
-  SetWindowRgn(_moving_or_resizing_window.handle, CreateRectRgnIndirect(&rect), false);
-  rect = get_maximize_rect();
+  auto rect = get_maximize_rect();
   ClipCursor(&rect);
 }
 
 void WindowManager::process_end_use_fullscreen_window() noexcept
 {
   while (ShowCursor(true) < 0);
-  SetWindowPos(_moving_or_resizing_window.handle, 0, _moving_or_resizing_window.x, _moving_or_resizing_window.y, _moving_or_resizing_window.width, _moving_or_resizing_window.height, 0);
-  SetWindowRgn(_moving_or_resizing_window.handle, nullptr, false);
-  ShowWindow(_fullscreen_window_handle, SW_HIDE);
   ClipCursor(nullptr);
 }
 
@@ -351,6 +345,21 @@ auto WindowManager::get_window_name(HWND handle) noexcept -> std::string_view
 {
   err_if(!_windows.contains(handle), "failed to get name of window");
   return _windows[handle].name;
+}
+
+auto WindowManager::get_window_z_orders() const noexcept -> std::vector<HWND>
+{
+  auto handles = std::vector<HWND>();
+  handles.reserve(_windows.size());
+
+  auto top = GetTopWindow(nullptr);
+  while (top)
+  {
+    if (_windows.contains(top)) handles.emplace_back(top);
+    top = GetWindow(top, GW_HWNDNEXT);
+  }
+
+  return handles;
 }
 
 }}

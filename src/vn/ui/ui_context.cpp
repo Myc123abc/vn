@@ -59,13 +59,10 @@ void UIContext::render() noexcept
     this->window = WindowManager::instance()->get_window(handle);
     if (this->window.is_minimized) break;
 
-    has_rendering = true;
-
-    render_data.clear();
-
-    updating = true;
-
+    has_rendering       = true;
+    updating            = true;
     window.widget_count = {};
+    op_data.offset      = {};
 
     // use title bar, move draw position under the title bar
     if (window.draw_title_bar)
@@ -80,13 +77,14 @@ void UIContext::render() noexcept
     //  update_wireframe();
     
     // use window shadow
-    update_window_shadow();
+    // update_window_shadow();
 
     updating = false;
 
     update_cursor();
 
     Renderer::instance()->render_window(handle, render_data);
+    render_data.clear();
   }
 
   if (has_rendering)
@@ -230,6 +228,13 @@ void UIContext::message_process() noexcept
     _mouse_up_window   = {};
     _mouse_up_pos      = {};
   }
+
+  auto z_orders = wm->get_window_z_orders();
+  if (auto it = std::ranges::find_if(z_orders, [wm](auto handle) { return wm->_windows[handle].point_on(get_cursor_pos()); });
+      it != z_orders.end())
+    mouse_on_window = *it;
+  else
+    mouse_on_window = {};
 
   for (auto const& [handle, _] : windows)
   {

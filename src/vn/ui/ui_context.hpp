@@ -95,10 +95,10 @@ private:
   void update_title_bar() noexcept;
 
 public:
-  std::unordered_map<HWND, Window>  windows;
-  WindowRenderData                  render_data;
-  renderer::Window                  window;
-  uint32_t                          shape_properties_offset{};
+  std::unordered_map<HWND, Window> windows;
+  WindowRenderData                 render_data;
+  renderer::Window                 window;
+  uint32_t                         shape_properties_offset{};
 
   struct OperatorShapeRenderData
   {
@@ -118,6 +118,8 @@ public:
 
   size_t              prev_hovered_widget_id{};
   std::vector<size_t> hovered_widget_ids;
+
+  HWND mouse_on_window{};
 
 private:
   HWND                     _mouse_down_window{};

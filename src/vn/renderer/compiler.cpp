@@ -223,7 +223,7 @@ auto Compiler::compile(std::string_view shader, std::string_view compute_shader_
   compile_result.get_root_parameters(reflection.Get());
 
   auto signature_desc = CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC{};
-  signature_desc.Init_1_1(compile_result._root_params.size(), compile_result._root_params.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+  signature_desc.Init_1_1(compile_result._root_params.size(), compile_result._root_params.data(), 0, nullptr);
 
   auto signature = ComPtr<ID3DBlob>{};
   auto error     = ComPtr<ID3DBlob>{};

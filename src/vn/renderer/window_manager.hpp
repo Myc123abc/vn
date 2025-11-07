@@ -89,6 +89,8 @@ public:
   auto get_window_name(HWND handle) noexcept -> std::string_view;
   auto get_window(HWND handle) noexcept { return _windows[handle]; }
 
+  auto get_window_z_orders() const noexcept -> std::vector<HWND>;
+
 private:
   void process_message(MSG const& msg) noexcept;
 
@@ -98,7 +100,6 @@ private:
 private:
   std::unordered_map<HWND, Window> _windows;
   HWND                             _fullscreen_window_handle;
-  Window                           _moving_or_resizing_window;
   std::vector<HWND>                _using_mouse_pass_through_windows;
 };
 

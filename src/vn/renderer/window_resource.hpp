@@ -44,21 +44,17 @@ public:
   }
 
   void resize(uint32_t width, uint32_t height) noexcept;
-};
 
-struct FrameResource
-{
-  std::array<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>, Frame_Count> command_allocators;
-  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1> cmd;
-
-  void init() noexcept;
+  void clear_rtv() noexcept;
 };
 
 struct WindowResource
 {
   Window            window;
   SwapchainResource swapchain_resource;
-  FrameResource     frame_resource;
+
+  bool clear_window_self_content{};
+  bool clear_fullscreen_window_content{};
 
   void init(Window const& window, bool transparent) noexcept;
 

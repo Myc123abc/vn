@@ -333,7 +333,8 @@ void Window::restore() noexcept
 auto Window::is_mouse_pass_through_area() const noexcept -> bool
 {
   auto pos = get_cursor_pos();
-  return pos.x >= rect.left && pos.x <= rect.left + 20;
+  return false;
+  //return pos.x >= rect.left && pos.x <= rect.left + 20;
 }
 
 }}

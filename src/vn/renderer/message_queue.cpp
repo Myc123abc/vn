@@ -23,7 +23,7 @@ void MessageQueue::process_messages() noexcept
       }
       else if constexpr (std::is_same_v<T, Message_Destroy_Window_Render_Resource>)
       {
-        renderer->add_current_frame_render_finish_proc([old_window_resource = wr[data.handle]] {});
+        renderer->add_current_frame_render_finish_proc([old_window_resource = wr[data.handle], handle = data.handle] { DestroyWindow(handle); });
         wr.erase(data.handle);
       }
       else if constexpr (std::is_same_v<T, Message_Create_Fullscreen_Window_Render_Resource>)
@@ -36,7 +36,9 @@ void MessageQueue::process_messages() noexcept
         {
           wm->begin_use_fullscreen_window();
         });
-        std::swap(wr[data.window.handle].window, data.window);
+        auto& window_resource = wr[data.window.handle];
+        std::swap(window_resource.window, data.window);
+        window_resource.clear_window_self_content = true;
       }
       else if constexpr (std::is_same_v<T, Message_Update_Window>)
       {
@@ -48,7 +50,9 @@ void MessageQueue::process_messages() noexcept
         {
           wm->end_use_fullscreen_window();
         });
-        std::swap(wr[data.window.handle].window, data.window);
+        auto& window_resource = wr[data.window.handle];
+        std::swap(window_resource.window, data.window);
+        window_resource.clear_fullscreen_window_content = true;
       }
       else if constexpr (std::is_same_v<T, Message_Resize_Window>)
       {

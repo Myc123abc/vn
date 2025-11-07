@@ -457,7 +457,7 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 
   if (!ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
   auto p = ctx->window.cursor_pos();
-  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y;
+  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y && ctx->mouse_on_window == ctx->window.handle;
 }
 
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
