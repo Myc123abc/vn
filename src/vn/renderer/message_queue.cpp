@@ -19,7 +19,7 @@ void MessageQueue::process_messages() noexcept
       using T = std::decay_t<decltype(data)>;
       if constexpr (std::is_same_v<T, Message_Create_Window_Render_Resource>)
       {
-        wr[data.window.handle].init(data.window, data.transparent);
+        wr[data.window.handle()].init(data.window, data.transparent);
       }
       else if constexpr (std::is_same_v<T, Message_Destroy_Window_Render_Resource>)
       {
@@ -28,7 +28,7 @@ void MessageQueue::process_messages() noexcept
       }
       else if constexpr (std::is_same_v<T, Message_Create_Fullscreen_Window_Render_Resource>)
       {
-        renderer->_fullscreen_swapchain_resource.init(data.window.handle, data.window.width, data.window.height, true);
+        renderer->_fullscreen_swapchain_resource.init(data.window.handle(), data.window.real_width(), data.window.real_height(), true);
       }
       else if constexpr (std::is_same_v<T, Message_Begin_Use_Fullscreen_Window>)
       {
@@ -36,13 +36,13 @@ void MessageQueue::process_messages() noexcept
         {
           wm->begin_use_fullscreen_window();
         });
-        auto& window_resource = wr[data.window.handle];
+        auto& window_resource = wr[data.window.handle()];
         std::swap(window_resource.window, data.window);
         window_resource.clear_window_self_content = true;
       }
       else if constexpr (std::is_same_v<T, Message_Update_Window>)
       {
-        std::swap(wr[data.window.handle].window, data.window);
+        std::swap(wr[data.window.handle()].window, data.window);
       }
       else if constexpr (std::is_same_v<T, Message_End_Use_Fullscreen_Window>)
       {
@@ -50,13 +50,13 @@ void MessageQueue::process_messages() noexcept
         {
           wm->end_use_fullscreen_window();
         });
-        auto& window_resource = wr[data.window.handle];
+        auto& window_resource = wr[data.window.handle()];
         std::swap(window_resource.window, data.window);
         window_resource.clear_fullscreen_window_content = true;
       }
       else if constexpr (std::is_same_v<T, Message_Resize_Window>)
       {
-        wr[data.window.handle].swapchain_resource.resize(data.window.width, data.window.height);
+        wr[data.window.handle()].swapchain_resource.resize(data.window.real_width(), data.window.real_height());
       }
       else
         static_assert(false, "unexist message type of renderer");

@@ -112,14 +112,10 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 void WindowResource::init(Window const& window, bool transparent) noexcept
 {
   this->window = window;
-  swapchain_resource.init(window.handle, window.width, window.height, transparent);
+  swapchain_resource.init(window.handle(), window.real_width(), window.real_height(), transparent);
 
   // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle]
-  {
-    ShowWindow(handle, SW_SHOW);
-    UpdateWindow(handle);
-  });
+  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle()] { ShowWindow(handle, SW_SHOW); });
 }
 
 void SwapchainResource::clear_rtv() noexcept
@@ -164,7 +160,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     clear_fullscreen_window_content = {};
   }
 
-  auto& current_swapchain_resource = (window.moving || window.resizing) ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
+  auto& current_swapchain_resource = window.is_moving_or_resizing() ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
   auto  cmd                        = core->cmd();
   auto  swapchain_image            = current_swapchain_resource.current_image();
   auto  rtv_handle                 = current_swapchain_resource.rtv();
@@ -203,12 +199,8 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   // bind pipeline
   renderer->_pipeline.bind(cmd);
 
-  // set viewport and scissor rectangle
+  // set viewport
   cmd->RSSetViewports(1, &current_swapchain_resource.viewport);
-  if (window.moving || window.resizing)
-    cmd->RSSetScissorRects(1, &window.rect);
-  else
-    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
 
   // convert render target view from present type to render target type
   swapchain_image->set_state(cmd, ImageState::render_target);
@@ -219,10 +211,10 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   // set descriptors
   auto constants = Constants{};
   constants.window_extent = swapchain_image->extent();
-  if (window.moving || window.resizing)
+  if (window.is_moving_or_resizing())
   {
-    constants.window_pos   = window.pos();
-    constants.cursor_index = static_cast<uint32_t>(window.cursor_type);
+    constants.window_pos   = window.real_pos();
+    constants.cursor_index = static_cast<uint32_t>(window.cursor_type());
   }
   renderer->_pipeline.set_descriptors(cmd, "constants", constants,
   {
@@ -231,14 +223,26 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   });
 
   // draw
-  if (window.moving || window.resizing)
+  if (window.is_moving_or_resizing())
   {
+    auto rect = window.rect();
+    cmd->RSSetScissorRects(1, &rect);
+    cmd->DrawIndexedInstanced(indices.size() - 12, 1, 0, 0, 0);
+    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
+    cmd->DrawIndexedInstanced(12, 1, indices.size() - 12, 0, 0);
+  }
+  else
+  {
+    auto rect = current_swapchain_resource.scissor;
+    rect.left   += Window::External_Thickness.left;
+    rect.right  -= Window::External_Thickness.right;
+    rect.top    += Window::External_Thickness.top;
+    rect.bottom -= Window::External_Thickness.bottom;
+    cmd->RSSetScissorRects(1, &rect);
     cmd->DrawIndexedInstanced(indices.size() - 6, 1, 0, 0, 0);
     cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
     cmd->DrawIndexedInstanced(6, 1, indices.size() - 6, 0, 0);
   }
-  else
-    cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
 
   // record finish, change render target view type to present
   swapchain_image->set_state(cmd, ImageState::present);
@@ -259,15 +263,16 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, Swapc
   renderer->_window_mask_image.clear(cmd, renderer->_uav_clear_heap.cpu_handle("window mask image"), renderer->_cbv_srv_uav_heap.gpu_handle("window mask image"));
   renderer->_window_mask_pipeline.bind(cmd);
   renderer->_window_mask_pipeline.set_descriptors(cmd,
-    "constants", glm::vec4(window.rect.left, window.rect.top, window.rect.right, window.rect.bottom),
+    "constants", glm::vec4(window.rect().left, window.rect().top, window.rect().right, window.rect().bottom),
     {{ "window_mask_image", renderer->get_descriptor("window mask image") }});
   cmd->Dispatch((renderer->_window_mask_image.width() + 7) / 8, (renderer->_window_mask_image.height() + 7) / 8, 1);
   return;
 
+#if 0
   renderer->_window_shadow_pipeline.bind(cmd);
   renderer->_window_shadow_pipeline.set_descriptors(cmd, "constants", glm::vec2(window.width, window.height), {{ "image", renderer->get_descriptor("window shadow image") }});
   cmd->Dispatch((renderer->_window_shadow_image.width() + 7) / 8, (renderer->_window_shadow_image.height() + 7) / 8, 1);
-  if (window.resizing || window.moving)
+  if (window.is_moving_or_resizing())
   {
     auto x      = window.x;
     auto y      = window.y;
@@ -292,6 +297,7 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, Swapc
   }
   else
     copy(cmd, renderer->_window_shadow_image, *swapchain_image);
+#endif
 }
 
 }}

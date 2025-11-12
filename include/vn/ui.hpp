@@ -75,13 +75,13 @@ auto is_resizing() noexcept -> bool;
  * whether current window is maximize
  * @return whether maxmize
  */
-auto is_maxmize() noexcept -> bool;
+auto is_maxmized() noexcept -> bool;
 
 /**
  * whether current window is minimize
  * @return whether minimize
  */
-auto is_minimize() noexcept -> bool;
+auto is_minimized() noexcept -> bool;
 
 /// minimize window
 void minimize_window() noexcept;
@@ -111,17 +111,6 @@ void set_render_pos(int x, int y) noexcept;
 
 /// get render position
 auto get_render_pos() noexcept -> glm::vec2;
-
-/// temporary set render position macro
-/// example:
-///   Tmp_Render_Pos(0, 0)
-///   {
-///     // draw functions
-///   }
-#define Tmp_Render_Pos(__x, __y) \
-  for (auto __call_once = true; __call_once;) \
-    for (auto __old_render_pos = get_render_pos(); __call_once; set_render_pos(__old_render_pos.x, __old_render_pos.y)) \
-      for (set_render_pos(__x, __y); __call_once; __call_once = false)
 
 /// use union operator between shapes
 void begin_union() noexcept;

@@ -36,14 +36,14 @@ void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32
 
 void UIContext::close_current_window() noexcept
 {
-  PostMessageW(window.handle, WM_CLOSE, 0, 0);
+  PostMessageW(window.handle(), WM_CLOSE, 0, 0);
 }
 
 auto UIContext::content_extent() noexcept -> std::pair<uint32_t, uint32_t>
 {
-  auto width  = window.width;
-  auto height = window.height;
-  if (windows[window.handle].draw_title_bar)
+  auto width  = window.width();
+  auto height = window.height();
+  if (windows[window.handle()].draw_title_bar)
     height -= Titler_Bar_Height;
   return { width, height };
 }
@@ -57,7 +57,7 @@ void UIContext::render() noexcept
   for (auto& [handle, window] : windows)
   {
     this->window = WindowManager::instance()->get_window(handle);
-    if (this->window.is_minimized) break;
+    if (this->window.is_minimized()) break;
 
     has_rendering       = true;
     updating            = true;
@@ -73,11 +73,8 @@ void UIContext::render() noexcept
 
     if (window.draw_title_bar)
       update_title_bar();
-    //if (!this->window.is_maximized)
-    //  update_wireframe();
-    
-    // use window shadow
-    // update_window_shadow();
+
+    update_window_shadow();
 
     updating = false;
 
@@ -100,21 +97,21 @@ void UIContext::render() noexcept
 
 void UIContext::add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
 {
-  WindowManager::instance()->_windows[window.handle].move_invalid_area.emplace_back(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
+  WindowManager::instance()->_windows.at(window.handle()).add_move_invalid_area(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
 }
 
 void UIContext::update_cursor() noexcept
 {
   auto renderer = Renderer::instance();
-  if (window.moving || window.resizing)
+  if (window.is_moving_or_resizing())
   {
     auto pos = get_cursor_pos();
-    pos.x -= window.x;
-    pos.y -= window.y;
-    if (window.cursor_type != CursorType::arrow)
+    pos.x -= window.real_x();
+    pos.y -= window.real_y();
+    if (window.cursor_type() != CursorType::arrow)
     {
-      pos.x -= renderer->_cursors[window.cursor_type].pos.x;
-      pos.y -= renderer->_cursors[window.cursor_type].pos.y;
+      pos.x -= renderer->_cursors[window.cursor_type()].pos.x;
+      pos.y -= renderer->_cursors[window.cursor_type()].pos.y;
     }
     render_data.vertices.append_range(std::vector<Vertex>
     {
@@ -139,27 +136,11 @@ void UIContext::update_cursor() noexcept
   }
 }
 
-void UIContext::update_wireframe() noexcept
-{
-  Tmp_Render_Pos(0, 0)
-  {
-    auto rc = get_maximize_rect();
-    if (window.rect.left != rc.left)
-      ui::line({}, { 0, window.height }, 0xbbbbbbff);
-    if (window.rect.right != rc.right)
-      ui::line({ window.width, 0 }, { window.width, window.height }, 0xbbbbbbff);
-    if (window.rect.top != rc.top)
-      ui::line({}, { window.width, 0 }, 0xbbbbbbff);
-    if (window.rect.bottom != rc.bottom)
-      ui::line({ 0, window.height }, { window.width, window.height }, 0xbbbbbbff);
-  }
-}
-
 void UIContext::update_window_shadow() noexcept
 {
-  add_vertices_indices({{}, { window.width, window.height }});
-  auto shadow_thickness = 10.f;
-  add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { shadow_thickness, shadow_thickness, static_cast<float>(window.width - shadow_thickness), static_cast<float>(window.height - shadow_thickness) });
+  add_vertices_indices({{}, { window.real_width(), window.real_height() }});
+  auto shadow_thickness = 20.f;
+  add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { shadow_thickness, shadow_thickness, shadow_thickness + static_cast<float>(window.width()), shadow_thickness + static_cast<float>(window.height()) });
   render_data.shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
 }
 
@@ -190,7 +171,7 @@ void UIContext::update_title_bar() noexcept
     if (button(w - btn_width * 2, 0, btn_width, btn_height, background_colors[i], 0x0cececeff, 
       [&] (uint32_t width, uint32_t height)
       {
-        if (is_maxmize())
+        if (is_maxmized())
         {
           auto padding_x = width / 5;
           auto padding_y = width / 5;
@@ -202,7 +183,7 @@ void UIContext::update_title_bar() noexcept
           ui::rectangle({}, { width, height }, 0, 1);
       },
       icon_width, icon_height, 0x395063ff, 0x395063ff))
-      is_maxmize() ? restore_window() : maximize_window();
+      is_maxmized() ? restore_window() : maximize_window();
 
     // close button
     if (button(w - btn_width, 0, btn_width, btn_height, background_colors[i], 0xeb1123ff,
@@ -230,7 +211,7 @@ void UIContext::message_process() noexcept
   }
 
   auto z_orders = wm->get_window_z_orders();
-  if (auto it = std::ranges::find_if(z_orders, [wm](auto handle) { return wm->_windows[handle].point_on(get_cursor_pos()); });
+  if (auto it = std::ranges::find_if(z_orders, [wm](auto handle) { return wm->_windows.at(handle).point_on(get_cursor_pos()); });
       it != z_orders.end())
     mouse_on_window = *it;
   else
@@ -238,13 +219,13 @@ void UIContext::message_process() noexcept
 
   for (auto const& [handle, _] : windows)
   {
-    auto const& window = wm->_windows[handle];
-    if (window.mouse_state == MouseState::left_button_down)
+    auto const& window = wm->_windows.at(handle);
+    if (window.mouse_state() == MouseState::left_button_down)
     {
       _mouse_down_window = handle;
       _mouse_down_pos    = window.cursor_pos();
     }
-    else if (window.mouse_state == MouseState::left_button_up)
+    else if (window.mouse_state() == MouseState::left_button_up)
     {
       _mouse_up_window = handle;
       _mouse_up_pos    = window.cursor_pos();
@@ -258,13 +239,12 @@ auto UIContext::is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
   left_top     += render_pos;
   right_bottom += render_pos;
 
-  if (!window.is_active()          ||
-      !window.cursor_valid_area()  ||
-      window.moving                ||
-      window.resizing              ||
-      !_mouse_down_pos.has_value() ||
-      !_mouse_up_pos.has_value()   ||
-      _mouse_down_window != _mouse_up_window) return false;
+  if (!window.is_active()             ||
+      !window.cursor_valid_area()     ||
+		   window.is_moving_or_resizing() ||
+      !_mouse_down_pos.has_value()    ||
+      !_mouse_up_pos.has_value()      ||
+       _mouse_down_window != _mouse_up_window) return false;
   return point_on_rect(_mouse_down_pos.value(), left_top, right_bottom) &&
          point_on_rect(_mouse_up_pos.value(),   left_top, right_bottom);
 }

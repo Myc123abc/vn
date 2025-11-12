@@ -175,7 +175,7 @@ auto window_count() noexcept -> uint32_t
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
 {
   check_in_update_callback();
-  return { UIContext::instance()->window.width, UIContext::instance()->window.height };
+  return { UIContext::instance()->window.width(), UIContext::instance()->window.height()};
 }
 
 auto content_extent() noexcept -> std::pair<uint32_t, uint32_t>
@@ -200,46 +200,46 @@ auto is_active() noexcept -> bool
 auto is_moving() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.moving;
+  return UIContext::instance()->window.is_moving();
 }
 
 auto is_resizing() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.resizing;
+  return UIContext::instance()->window.is_resizing();
 }
 
-auto is_maxmize() noexcept -> bool
+auto is_maxmized() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_maximized;
+  return UIContext::instance()->window.is_maximized();
 }
 
-auto is_minimize() noexcept -> bool
+auto is_minimized() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_minimized;
+  return UIContext::instance()->window.is_minimized();
 }
 
 void minimize_window() noexcept
 {
   check_in_update_callback();
-  ShowWindow(UIContext::instance()->window.handle, SW_MINIMIZE);
+  ShowWindow(UIContext::instance()->window.handle(), SW_MINIMIZE);
 }
 
 void maximize_window() noexcept
 {
   check_in_update_callback();
-  PostMessageW(UIContext::instance()->window.handle, WM_SIZE, SIZE_MAXIMIZED, 0);
+  PostMessageW(UIContext::instance()->window.handle(), WM_SIZE, SIZE_MAXIMIZED, 0);
 }
 
 void restore_window() noexcept
 {
   check_in_update_callback();
   auto ctx = UIContext::instance();
-  ShowWindow(ctx->window.handle, SW_RESTORE);
-  if (is_maxmize())
-    PostMessageW(ctx->window.handle, static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
+  ShowWindow(ctx->window.handle(), SW_RESTORE);
+  if (is_maxmized())
+    PostMessageW(ctx->window.handle(), static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
 }
 
 void set_background_color(uint32_t color) noexcept
@@ -343,9 +343,9 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
   auto& shape_property = ctx->render_data.shape_properties.back();
   shape_property.set_operator(ShapeProperty::Operator::discard);
 
-  auto render_pos = ctx->window_render_pos();
-  left_top     += render_pos;
-  right_bottom += render_pos;
+  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  left_top     += offset;
+  right_bottom += offset;
 
   add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { left_top.x, left_top.y, right_bottom.x, right_bottom.y });
 }
@@ -359,10 +359,10 @@ void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float th
   check_in_update_callback();
   check_not_path_draw();
   
-  auto render_pos = UIContext::instance()->window_render_pos();
-  p0 += render_pos;
-  p1 += render_pos;
-  p2 += render_pos;
+  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  p0 += offset;
+  p1 += offset;
+  p2 += offset;
 
   add_shape(ShapeProperty::Type::triangle, color, thickness, { p0.x, p0.y, p1.x, p1.y, p2.x, p2.y }, get_bounding_rectangle({ p0, p1, p2 }));
 }
@@ -372,9 +372,9 @@ void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, uint32_t color, float
   check_in_update_callback();
   check_not_path_draw();
 
-  auto render_pos = UIContext::instance()->window_render_pos();
-  left_top     += render_pos;
-  right_bottom += render_pos;
+  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  left_top     += offset;
+  right_bottom += offset;
 
   add_shape(ShapeProperty::Type::rectangle, color, thickness, { left_top.x, left_top.y, right_bottom.x, right_bottom.y }, { left_top, right_bottom });
 }
@@ -384,8 +384,8 @@ void circle(glm::vec2 center, float radius, uint32_t color, float thickness) noe
   check_in_update_callback();
   check_not_path_draw();
 
-  auto render_pos = UIContext::instance()->window_render_pos();
-  center += render_pos;
+  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  center += offset;
 
   auto r = radius - 1;
   if (r < 0) r = 1;
@@ -398,9 +398,9 @@ void line(glm::vec2 p0, glm::vec2 p1, uint32_t color) noexcept
 
   auto ctx = UIContext::instance();
 
-  auto render_pos = ctx->window_render_pos();
-  p0 += render_pos;
-  p1 += render_pos;
+  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  p0 += offset;
+  p1 += offset;
 
   if (ctx->path_draw)
   {
@@ -422,10 +422,10 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color) noexcept
 
   auto ctx = UIContext::instance();
 
-  auto render_pos = ctx->window_render_pos();
-  p0 += render_pos;
-  p1 += render_pos;
-  p2 += render_pos;
+  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  p0 += offset;
+  p1 += offset;
+  p2 += offset;
 
   if (ctx->path_draw)
   {
@@ -455,9 +455,9 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
   left_top     += render_pos;
   right_bottom += render_pos;
 
-  if (!ctx->window.cursor_valid_area() || ctx->window.moving || ctx->window.resizing) return false;
+  if (!ctx->window.cursor_valid_area() || ctx->window.is_moving_or_resizing()) return false;
   auto p = ctx->window.cursor_pos();
-  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y && ctx->mouse_on_window == ctx->window.handle;
+  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y && ctx->mouse_on_window == ctx->window.handle();
 }
 
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
@@ -521,7 +521,7 @@ auto button(
 {
   auto ctx = UIContext::instance();
 
-  auto id = generic_hash(++ctx->windows[ctx->window.handle].widget_count, ctx->window.handle, x, y, width, height);
+  auto id = generic_hash(++ctx->windows[ctx->window.handle()].widget_count, ctx->window.handle(), x, y, width, height);
 
   auto lerp_anim  = ctx->add_lerp_anim(id, 200);
   auto lerp_value = lerp_anim->get_lerp();

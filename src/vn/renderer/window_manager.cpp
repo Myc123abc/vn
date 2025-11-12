@@ -38,34 +38,34 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
   auto finish_window_moving_or_resizing = [&]
   {
-    auto& window = wm->_windows[handle];
-    if (window.mouse_state == MouseState::left_button_down || window.mouse_state == MouseState::left_button_press)
+    auto& window = wm->_windows.at(handle);
+    if (window.mouse_state() == MouseState::left_button_down || window.mouse_state() == MouseState::left_button_press)
     {
       ReleaseCapture();
-      window.mouse_state = MouseState::left_button_up;
+      window.set(MouseState::left_button_up);
 
-      auto& window = wm->_windows[handle];
+      auto& window = wm->_windows.at(handle);
 
-      if (window.moving)
+      if (window.is_moving())
       {
-        window.moving = {};
+        window._moving = {};
         BringWindowToTop(handle);
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
-        if (window.need_resize_swapchain)
+        if (window._need_resize_swapchain)
         {
-          window.need_resize_swapchain = false;
+          window._need_resize_swapchain = false;
           msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
         }
-        SetWindowPos(window.handle, 0, window.x, window.y, window.width, window.height, 0);
+        SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), 0);
       }
       else if (lm_downresize_type != Window::ResizeType::none)
       {
-        window.resizing    = {};
+        window._resizing = {};
         BringWindowToTop(handle);
-        window.cursor_type = {};
+        window._cursor_type = {};
         msg_queue->send_message(MessageQueue::Message_End_Use_Fullscreen_Window{ window });
         msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
-        SetWindowPos(window.handle, 0, window.x, window.y, window.width, window.height, 0);
+        SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), 0);
       }
     }
   };
@@ -77,7 +77,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     if (LOWORD(w_param) == WA_INACTIVE)
     {
       // reset curosr
-      set_cursor();
+      set_cursor(handle);
       finish_window_moving_or_resizing();
     }
     break;
@@ -89,6 +89,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     msg_queue->send_message(MessageQueue::Message_Destroy_Window_Render_Resource{ handle });
     ui::UIContext::instance()->windows.erase(handle);
     wm->_windows.erase(handle);
+    wm->_using_mouse_pass_through_windows.erase(handle);
     return 0;
   }
 
@@ -96,15 +97,15 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   {
     SetCapture(handle);
     last_pos = get_cursor_pos();
-    lm_downresize_type = wm->_windows[handle].get_resize_type(last_pos);
+    lm_downresize_type = wm->_windows.at(handle).get_resize_type(last_pos);
     lm_down_pos = last_pos;
-    wm->_windows[handle].mouse_state = MouseState::left_button_down;
+    wm->_windows.at(handle).set(MouseState::left_button_down);
     break;
   }
 
   case static_cast<int>(WindowManager::Message::left_button_press):
   {
-    wm->_windows[handle].mouse_state = MouseState::left_button_press;
+    wm->_windows.at(handle).set(MouseState::left_button_press);
     return 0;
   }
 
@@ -118,26 +119,27 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   {
     // set cursor if can resize
     auto cursor_pos = get_cursor_pos();
-    if (auto type = wm->_windows[handle].get_resize_type(cursor_pos);
+    if (auto type = wm->_windows.at(handle).get_resize_type(cursor_pos);
         type != last_resize_type)
     {
       last_resize_type = type;
-      set_cursor(last_resize_type);
+      set_cursor(handle, last_resize_type);
     }
 
-    auto& window = wm->_windows[handle];
+    auto& window = wm->_windows.at(handle);
 
     // change to mouse pass through when moving on shadow area
-    if (window.is_mouse_pass_through_area())
+    if (!window.is_resizing() && !window.is_moving() && window.is_mouse_pass_through_area())
     {
       auto style = GetWindowLong(handle, GWL_EXSTYLE);
       SetWindowLongPtrA(handle, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED);
-      wm->_using_mouse_pass_through_windows.push_back(handle);
+      window._is_mouse_pass_through = true;
+      wm->_using_mouse_pass_through_windows.emplace(handle);
       return 0;
     }
 
     // move or resize window
-    if (window.mouse_state == MouseState::left_button_down || window.mouse_state == MouseState::left_button_press)
+    if (window.mouse_state() == MouseState::left_button_down || window.mouse_state() == MouseState::left_button_press)
     {
       auto offset_x = cursor_pos.x - last_pos.x;
       auto offset_y = cursor_pos.y - last_pos.y;
@@ -148,11 +150,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       if (lm_downresize_type == Window::ResizeType::none)
       {
         // first moving
-        if (!window.moving)
+        if (!window.is_moving())
         {
           if (window.is_move_area(lm_down_pos.x, lm_down_pos.y))
           {
-            window.is_maximized ? window.move_from_maximize(cursor_pos.x, cursor_pos.y) : window.move(offset_x, offset_y);
+            window.is_maximized() ? window.move_from_maximize(cursor_pos.x, cursor_pos.y) : window.move(offset_x, offset_y);
             msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
           }
         }
@@ -169,7 +171,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
         window.adjust_offset(lm_downresize_type, cursor_pos, offset_x, offset_y);
 
         // first resizing
-        if (!window.resizing)
+        if (!window.is_resizing())
         {
           window.resize(lm_downresize_type, offset_x, offset_y);
           msg_queue->send_message(MessageQueue::Message_Begin_Use_Fullscreen_Window{ window });
@@ -190,41 +192,41 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   {
     if (!wm->_windows.contains(handle)) break;
     
-    auto& window = wm->_windows[handle];
+    auto& window = wm->_windows.at(handle);
 
     if (w_param == SIZE_MINIMIZED)
     {
-      window.is_minimized = true;
+      window.set_minimize(true);
     }
     else if (w_param == SIZE_MAXIMIZED)
     {
       // TODO: it's not smooth, use animation
       window.maximize();
       msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
-      SetWindowPos(handle, 0, window.x, window.y, window.width, window.height, 0);
+      SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), 0);
       return 0;
     }
     else if (w_param == SIZE_RESTORED)
     {
       // because SetWindowPos will send WM_SIZE with SIZE_RESTORED when we use own maximize button
       // so process maximize restore in another place avoid click maximize also restore the window
-      window.is_minimized = {};
+      window.set_minimize(false);
     }
     break;
   }
 
   case static_cast<uint32_t>(WindowManager::Message::mouse_idle):
   {
-    wm->_windows[handle].mouse_state = MouseState::idle;
+    wm->_windows.at(handle).set(MouseState::idle);
     return 0;
   }
 
   case static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize):
   {
-    auto& window = wm->_windows[handle];
+    auto& window = wm->_windows.at(handle);
     window.restore();
     msg_queue->send_message(MessageQueue::Message_Resize_Window{ window });
-    SetWindowPos(handle, 0, window.x, window.y, window.width, window.height, 0);
+    SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), 0);
     return 0;
   }
 
@@ -235,11 +237,12 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 void WindowManager::init() noexcept
 {
   // register window class
-  WNDCLASSEXW wnd_class{};
+  auto wnd_class = WNDCLASSEXW{};
   wnd_class.lpszClassName = Fullscreen_Class;
   wnd_class.cbSize        = sizeof(wnd_class);
   wnd_class.hInstance     = GetModuleHandleW(nullptr);
   wnd_class.lpfnWndProc   = DefWindowProcW;
+  wnd_class.hCursor       = LoadCursorA(nullptr, IDC_ARROW);
   err_if(!RegisterClassExW(&wnd_class), "failed register class");
   wnd_class.lpszClassName = Window_Class;
   wnd_class.lpfnWndProc   = wnd_proc;
@@ -267,19 +270,19 @@ void WindowManager::message_process() noexcept
   for (auto& [handle, window] : _windows)
   {
     // clear last frame window dynamic data
-    window.move_invalid_area.clear();
+    window.clear_move_invalid_area();
 
     // send WM_LBUTTONDOWN again, to change mouse state to press
-    if (window.mouse_state == MouseState::left_button_down)
+    if (window.mouse_state() == MouseState::left_button_down)
       PostMessageW(handle, static_cast<int>(Message::left_button_press), 0, 0);
-    else if (window.mouse_state == MouseState::left_button_up)
+    else if (window.mouse_state() == MouseState::left_button_up)
       PostMessageW(handle, static_cast<int>(Message::mouse_idle), 0, 0);
   }
 
   for (auto it = _using_mouse_pass_through_windows.begin(); it != _using_mouse_pass_through_windows.end();)
   {
     auto handle = *it;
-    if (!_windows[handle].is_mouse_pass_through_area())
+    if (!_windows.at(handle).is_mouse_pass_through_area())
     {
       SetWindowLongPtrA(handle, GWL_EXSTYLE, GetWindowLong(handle, GWL_EXSTYLE) & ~(WS_EX_TRANSPARENT | WS_EX_LAYERED));
       it = _using_mouse_pass_through_windows.erase(it);
@@ -309,12 +312,20 @@ void WindowManager::process_message(MSG const& msg) noexcept
 
 auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept -> HWND
 {
+  x      -= Window::External_Thickness.left;
+  y      -= Window::External_Thickness.top;
+  width  += Window::External_Thickness.right + Window::External_Thickness.left;
+  height += Window::External_Thickness.top   + Window::External_Thickness.bottom;
+
   auto handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, Window_Class, nullptr, WS_POPUP | WS_MINIMIZEBOX,
     x, y, width, height, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!handle,  "failed to create window");
+
   auto window = Window{ handle, name, x, y, width, height};
   _windows.emplace(handle, window);
+
   MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window, true });
+
   return handle;
 }
 
@@ -341,10 +352,10 @@ void WindowManager::process_end_use_fullscreen_window() noexcept
   ClipCursor(nullptr);
 }
 
-auto WindowManager::get_window_name(HWND handle) noexcept -> std::string_view
+auto WindowManager::get_window_name(HWND handle) noexcept -> std::string
 {
   err_if(!_windows.contains(handle), "failed to get name of window");
-  return _windows[handle].name;
+  return _windows.at(handle).name();
 }
 
 auto WindowManager::get_window_z_orders() const noexcept -> std::vector<HWND>

@@ -19,6 +19,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
 namespace vn { namespace ui {
 
+#define Tmp_Render_Pos(__x, __y) \
+  for (auto __call_once = true; __call_once;) \
+    for (auto __old_render_pos = get_render_pos(); __call_once; set_render_pos(__old_render_pos.x, __old_render_pos.y)) \
+      for (set_render_pos(__x, __y); __call_once; __call_once = false)
+
 void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept;
 
 void add_shape_property(renderer::ShapeProperty::Type type, glm::vec4 color, float thickness, std::vector<float> const& values) noexcept;
@@ -76,8 +81,8 @@ public:
   void render() noexcept;
   void message_process() noexcept;
 
-  auto set_window_render_pos(int x, int y) noexcept { windows[window.handle].render_pos = { x, y }; }
-  auto window_render_pos() noexcept { return windows[window.handle].render_pos; }
+  auto set_window_render_pos(int x, int y) noexcept { windows[window.handle()].render_pos = { x, y }; }
+  auto window_render_pos() noexcept { return windows[window.handle()].render_pos; }
 
   auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 

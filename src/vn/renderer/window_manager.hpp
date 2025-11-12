@@ -3,20 +3,7 @@
 #include "window.hpp"
 
 #include <unordered_map>
-
-/*
-TODO:
-dynamic set WS_EX_TRANSPARENT to make window can mouse pass through
-and in interactive area, remove WS_EX_TRANSPARENT
-so dynamic mosue pass through, this can be try
-
-LONG style = GetWindowLong(hwnd, GWL_EXSTYLE);
-if (PtInRect(&clickable, pt))
-    SetWindowLong(hwnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT);
-else
-    SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT);
-
-*/
+#include <unordered_set>
 
 namespace vn { namespace ui {
 
@@ -86,8 +73,8 @@ public:
   void begin_use_fullscreen_window() const noexcept;
   void end_use_fullscreen_window() const noexcept;
 
-  auto get_window_name(HWND handle) noexcept -> std::string_view;
-  auto get_window(HWND handle) noexcept { return _windows[handle]; }
+  auto get_window_name(HWND handle) noexcept -> std::string;
+  auto get_window(HWND handle) const noexcept { return _windows.at(handle); }
 
   auto get_window_z_orders() const noexcept -> std::vector<HWND>;
 
@@ -99,8 +86,8 @@ private:
 
 private:
   std::unordered_map<HWND, Window> _windows;
-  HWND                             _fullscreen_window_handle;
-  std::vector<HWND>                _using_mouse_pass_through_windows;
+  HWND                             _fullscreen_window_handle{};
+  std::unordered_set<HWND>         _using_mouse_pass_through_windows;
 };
 
 }}
