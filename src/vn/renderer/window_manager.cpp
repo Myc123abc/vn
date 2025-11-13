@@ -135,7 +135,6 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       SetWindowLongPtrA(handle, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED);
       window._is_mouse_pass_through = true;
       wm->_using_mouse_pass_through_windows.emplace(handle);
-      return 0;
     }
 
     // move or resize window
