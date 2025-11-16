@@ -38,8 +38,9 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
             "failed to create swapchain for composition");
 
     // create composition
-    err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
-            "failed to create composition device");
+    if (!_comp_device)
+      err_if(DCompositionCreateDevice(nullptr, IID_PPV_ARGS(&_comp_device)),
+              "failed to create composition device");
     err_if(_comp_device->CreateTargetForHwnd(handle, true, &_comp_target),
             "failed to create composition target");
     err_if(_comp_device->CreateVisual(&_comp_visual),

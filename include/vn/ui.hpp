@@ -7,6 +7,26 @@
 
 namespace vn { namespace ui {
 
+struct Color
+{
+  Color() = default;
+
+  Color(uint32_t color) noexcept
+  {
+    r = static_cast<float>((color >> 24) & 0xFF) / 255;
+    g = static_cast<float>((color >> 16) & 0xFF) / 255;
+    b = static_cast<float>((color >> 8 ) & 0xFF) / 255;
+    a = static_cast<float>((color      ) & 0xFF) / 255;
+  }
+
+  Color(glm::vec4 const& color) noexcept
+    : r(color.r), g(color.g), b(color.b), a(color.a) {}
+
+  operator glm::vec4() noexcept { return { r, g, b, a }; }
+
+  float r{}, g{}, b{}, a{};
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                                Window
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,7 +116,7 @@ void restore_window() noexcept;
  * set background color
  * @param color
  */
-void set_background_color(uint32_t color) noexcept;
+void set_background_color(Color color) noexcept;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
@@ -120,7 +140,7 @@ void begin_union() noexcept;
  * @param color
  * @param thickness
  */
-void end_union(uint32_t color, float thickness = {}) noexcept;
+void end_union(Color color, float thickness = {}) noexcept;
 
 /// use path draw between lines and beziers
 void begin_path() noexcept;
@@ -130,7 +150,7 @@ void begin_path() noexcept;
  * @param color
  * @param thickness
  */
-void end_path(uint32_t color = {}, float thickness = {}) noexcept;
+void end_path(Color color = {}, float thickness = {}) noexcept;
 
 /**
  * discard the pixel of specific rectangle for last draw shape
@@ -151,7 +171,7 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept;
  * @param color
  * @param thickness
  */
-void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color = {}, float thickness = {}) noexcept;
+void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color = {}, float thickness = {}) noexcept;
 
 /**
  * draw a rectangle
@@ -160,7 +180,7 @@ void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color = {}, flo
  * @param color
  * @param thickness
  */
-void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, uint32_t color = {}, float thickness = {}) noexcept;
+void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, Color color = {}, float thickness = {}) noexcept;
 
 /**
  * draw a circle
@@ -169,7 +189,7 @@ void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, uint32_t color = {}, 
  * @param color
  * @param thickness
  */
-void circle(glm::vec2 center, float radius, uint32_t color = {}, float thickness = {}) noexcept;
+void circle(glm::vec2 center, float radius, Color color = {}, float thickness = {}) noexcept;
 
 /**
  * draw a line
@@ -177,7 +197,7 @@ void circle(glm::vec2 center, float radius, uint32_t color = {}, float thickness
  * @param p1
  * @param color
  */
-void line(glm::vec2 p0, glm::vec2 p1, uint32_t color = {}) noexcept;
+void line(glm::vec2 p0, glm::vec2 p1, Color color = {}) noexcept;
 
 /**
  * draw a quadratic bezier
@@ -186,11 +206,20 @@ void line(glm::vec2 p0, glm::vec2 p1, uint32_t color = {}) noexcept;
  * @param p2
  * @param color
  */
-void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color = 0) noexcept;
+void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color = 0) noexcept;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * get lerp color
+ * @param x begin of color
+ * @param y end of color
+ * @param v lerp value
+ * @return lerp color
+ */
+auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4;
 
 /**
  * whether cursor hover on specific region
@@ -227,12 +256,12 @@ auto button(
   uint32_t                                y,
   uint32_t                                width,
   uint32_t                                height,
-  uint32_t                                button_color,
-  uint32_t                                button_hover_color,
+  Color                                   button_color,
+  Color                                   button_hover_color,
   std::function<void(uint32_t, uint32_t)> icon_update_func = {},
   uint32_t                                icon_width       = {},
   uint32_t                                icon_height      = {},
-  uint32_t                                icon_color       = {},
-  uint32_t                                icon_hover_color = {}) noexcept-> bool;
+  Color                                   icon_color       = {},
+  Color                                   icon_hover_color = {}) noexcept-> bool;
 
 }}

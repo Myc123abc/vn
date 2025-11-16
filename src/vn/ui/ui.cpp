@@ -3,7 +3,6 @@
 #include "ui_context.hpp"
 #include "error_handling.hpp"
 #include "lerp_animation.hpp"
-#include "../hash.hpp"
 
 #include <ranges>
 
@@ -15,29 +14,6 @@ namespace {
 
 inline void check_in_update_callback() noexcept { err_if(!UIContext::instance()->updating, "failed to call this function because it's not called in update callback"); }
 inline void check_not_path_draw()      noexcept { err_if(UIContext::instance()->path_draw, "failed ot call this function because it cannot be used in path draw"); }
-
-auto get_color(uint32_t color) noexcept -> glm::vec4
-{
-  auto r = static_cast<float>((color >> 24) & 0xFF) / 255;
-  auto g = static_cast<float>((color >> 16) & 0xFF) / 255;
-  auto b = static_cast<float>((color >> 8 ) & 0xFF) / 255;
-  auto a = static_cast<float>((color      ) & 0xFF) / 255;
-  return { r, g, b, a };
-}
-
-auto color_lerp(uint32_t x, uint32_t y, float v) noexcept
-{
-  auto x_color = get_color(x);
-  auto y_color = get_color(y);
-  auto lerp_color = glm::vec4
-  {
-    std::lerp(x_color.r, y_color.r, v),
-    std::lerp(x_color.g, y_color.g, v),
-    std::lerp(x_color.b, y_color.b, v),
-    std::lerp(x_color.a, y_color.a, v)
-  };
-  return lerp_color;
-}
 
 auto get_bounding_rectangle(std::vector<glm::vec2> const& data) noexcept -> std::pair<glm::vec2, glm::vec2>
 {
@@ -96,14 +72,6 @@ void add_shape(
 add_shape_property:
   add_shape_property(type, color, thickness, values);
 }
-
-void add_shape(
-  ShapeProperty::Type                    type,
-  uint32_t                               color,
-  float                                  thickness,
-  std::vector<float> const&              values,
-  std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
-{ add_shape(type, get_color(color), thickness, values, bounding_rectangle); }
 
 }
 
@@ -242,7 +210,7 @@ void restore_window() noexcept
     PostMessageW(ctx->window.handle(), static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
 }
 
-void set_background_color(uint32_t color) noexcept
+void set_background_color(Color color) noexcept
 {
   auto [width, height] = content_extent();
   ui::rectangle({}, { width, height }, color, 0);
@@ -287,14 +255,14 @@ void begin_union() noexcept
   ctx->op_data.offset = ctx->shape_properties_offset;
 }
 
-void end_union(uint32_t color, float thickness) noexcept
+void end_union(Color color, float thickness) noexcept
 {
   check_in_update_callback();
   auto ctx = UIContext::instance();
   err_if(!ctx->using_union, "cannot call end union in an uncomplete unino operator");
   err_if(ctx->path_draw, "cannot call end union in an uncomplete path draw");
   ctx->using_union = false;
-  ctx->render_data.shape_properties.back().set_color(ctx->tmp_color.value_or(get_color(color)));
+  ctx->render_data.shape_properties.back().set_color(ctx->tmp_color.value_or(color));
   ctx->render_data.shape_properties.back().set_thickness(thickness);
   ctx->render_data.shape_properties.back().set_operator({});
 
@@ -316,7 +284,7 @@ void begin_path() noexcept
   ctx->path_draw_data.push_back(std::bit_cast<float>(0u)); // record count
 }
 
-void end_path(uint32_t color, float thickness) noexcept
+void end_path(Color color, float thickness) noexcept
 {
   check_in_update_callback();
   
@@ -354,7 +322,7 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
 ///                            Basic Shape
 ////////////////////////////////////////////////////////////////////////////////
 
-void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float thickness) noexcept
+void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color, float thickness) noexcept
 {
   check_in_update_callback();
   check_not_path_draw();
@@ -367,7 +335,7 @@ void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color, float th
   add_shape(ShapeProperty::Type::triangle, color, thickness, { p0.x, p0.y, p1.x, p1.y, p2.x, p2.y }, get_bounding_rectangle({ p0, p1, p2 }));
 }
 
-void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, uint32_t color, float thickness) noexcept
+void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, Color color, float thickness) noexcept
 {
   check_in_update_callback();
   check_not_path_draw();
@@ -379,7 +347,7 @@ void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, uint32_t color, float
   add_shape(ShapeProperty::Type::rectangle, color, thickness, { left_top.x, left_top.y, right_bottom.x, right_bottom.y }, { left_top, right_bottom });
 }
 
-void circle(glm::vec2 center, float radius, uint32_t color, float thickness) noexcept
+void circle(glm::vec2 center, float radius, Color color, float thickness) noexcept
 {
   check_in_update_callback();
   check_not_path_draw();
@@ -392,7 +360,7 @@ void circle(glm::vec2 center, float radius, uint32_t color, float thickness) noe
   add_shape(ShapeProperty::Type::circle, color, thickness, { center.x, center.y, r }, { center - radius, center + radius });
 }
 
-void line(glm::vec2 p0, glm::vec2 p1, uint32_t color) noexcept
+void line(glm::vec2 p0, glm::vec2 p1, Color color) noexcept
 {
   check_in_update_callback();
 
@@ -416,7 +384,7 @@ void line(glm::vec2 p0, glm::vec2 p1, uint32_t color) noexcept
     add_shape(ShapeProperty::Type::line, color, {}, { p0.x, p0.y, p1.x, p1.y }, get_bounding_rectangle({ p0, p1 }));
 }
 
-void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color) noexcept
+void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color) noexcept
 {
   check_in_update_callback();
 
@@ -445,6 +413,17 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, uint32_t color) noexcept
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////
 
+auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4
+{
+  return
+  {
+    std::lerp(x.r, y.r, v),
+    std::lerp(x.g, y.g, v),
+    std::lerp(x.b, y.b, v),
+    std::lerp(x.a, y.a, v)
+  };
+}
+
 auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 {
   check_in_update_callback();
@@ -468,42 +447,16 @@ auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 
 auto is_hover_on(uint32_t id, glm::vec2 left_top, glm::vec2 right_bottom, LerpAnimation& lerp_anim) noexcept
 {
-  auto ctx = UIContext::instance();
-
-  auto state = lerp_anim.state();
-  using enum LerpAnimation::State;
-
-  auto hovered = false;
-  if (is_hover_on(left_top, right_bottom))
+  return lerp_anim.update([&]
   {
-    ctx->hovered_widget_ids.push_back(id);
-    hovered = id == ctx->prev_hovered_widget_id;
-  }
-
-  if (hovered)
-  {
-    if (lerp_anim.is_reversed())
+    if (is_hover_on(left_top, right_bottom))
     {
-      if (state != idle)
-      {
-        lerp_anim.reverse();
-      }
+      auto ctx = UIContext::instance();
+      ctx->hovered_widget_ids.push_back(id);
+      return id == ctx->prev_hovered_widget_id;
     }
-    else
-    {
-      if (state == idle)
-        lerp_anim.start();
-    }
-  }
-  else
-  {
-    if (!lerp_anim.is_reversed() && state != idle)
-    {
-      lerp_anim.reverse();
-    }
-  }
-
-  return hovered;
+    return false;
+  });
 }
 
 auto button(
@@ -511,17 +464,17 @@ auto button(
   uint32_t                                y,
   uint32_t                                width,
   uint32_t                                height,
-  uint32_t                                button_color,
-  uint32_t                                button_hover_color,
+  Color                                   button_color,
+  Color                                   button_hover_color,
   std::function<void(uint32_t, uint32_t)> icon_update_func,
   uint32_t                                icon_width,
   uint32_t                                icon_height,
-  uint32_t                                icon_color,
-  uint32_t                                icon_hover_color) noexcept-> bool
+  Color                                   icon_color,
+  Color                                   icon_hover_color) noexcept-> bool
 {
   auto ctx = UIContext::instance();
 
-  auto id = generic_hash(++ctx->windows[ctx->window.handle()].widget_count, ctx->window.handle(), x, y, width, height);
+  auto id = generic_id(x, y, width, height);
 
   auto lerp_anim  = ctx->add_lerp_anim(id, 200);
   auto lerp_value = lerp_anim->get_lerp();

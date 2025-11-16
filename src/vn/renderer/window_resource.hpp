@@ -25,7 +25,8 @@ struct SwapchainResource
   bool                                    is_transparent{};
 
 private:
-  Microsoft::WRL::ComPtr<IDCompositionDevice> _comp_device;
+  static inline Microsoft::WRL::ComPtr<IDCompositionDevice> _comp_device{};
+  
   Microsoft::WRL::ComPtr<IDCompositionTarget> _comp_target;
   Microsoft::WRL::ComPtr<IDCompositionVisual> _comp_visual;
 

@@ -3,6 +3,7 @@
 #include "../renderer/shader_type.hpp"
 #include "../renderer/window.hpp"
 #include "lerp_animation.hpp"
+#include "../hash.hpp"
 
 #include <string_view>
 #include <functional>
@@ -135,5 +136,12 @@ private:
   Timer                                     _lerp_anim_timer;
   std::unordered_map<size_t, LerpAnimation> _lerp_anims;
 };
+
+template <typename... T>
+constexpr auto generic_id(T&&... args) noexcept
+{
+  auto ctx = UIContext::instance();
+  return generic_hash(ctx->window.handle(), ++ctx->windows[ctx->window.handle()].widget_count, std::forward<T>(args)...);
+}
 
 }}

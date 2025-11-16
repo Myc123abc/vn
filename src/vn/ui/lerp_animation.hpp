@@ -56,6 +56,31 @@ public:
 
   auto is_reversed() const noexcept { return _is_reversed; }
 
+  auto update(bool b) noexcept -> LerpAnimation&
+  {
+    auto is_running = _state != State::idle;
+    if (b)
+    {
+      if (!is_running)
+        start();
+      else if (_is_reversed)
+        reverse();
+    }
+    else
+    {
+      if (is_running && !_is_reversed)
+        reverse();
+    }
+    return *this;
+  }
+
+  auto update(std::function<bool()> func) noexcept
+  {
+    auto res = func();
+    update(res);
+    return res;
+  }
+
 private:
   Timer*   _timer{};
   uint32_t _event{};

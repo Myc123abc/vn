@@ -57,7 +57,7 @@ void UIContext::render() noexcept
   for (auto& [handle, window] : windows)
   {
     this->window = WindowManager::instance()->get_window(handle);
-    if (this->window.is_minimized()) break;
+    if (this->window.is_minimized()) continue;
 
     has_rendering       = true;
     updating            = true;
@@ -154,21 +154,23 @@ void UIContext::update_title_bar() noexcept
   uint32_t background_colors[2] = { 0xffffffff, 0xeeeeeeff };
   auto i = is_active() || is_moving() || is_resizing();
 
+  auto background_color = color_lerp(background_colors[0], background_colors[1], add_lerp_anim(generic_id("__update_title_bar"), 200)->update(i).get_lerp());
+
   auto [w, h] = window_extent();
 
   Tmp_Render_Pos(0, 0)
   {
-    ui::rectangle({}, { w, btn_height }, background_colors[i]);
+    ui::rectangle({}, { w, btn_height }, background_color);
     ui::add_move_invalid_area({ 0, btn_height }, { w, h });
 
     // minimize button
-    if (button(w - btn_width * 3, 0, btn_width, btn_height, background_colors[i], 0x0cececeff,
+    if (button(w - btn_width * 3, 0, btn_width, btn_height, background_color, 0x0cececeff,
       [] (uint32_t width, uint32_t height) { ui::line({ 0, height / 2 }, { width, height / 2 }); },
       icon_width, icon_height, 0x395063ff, 0x395063ff))
       minimize_window();
 
     // maximize / restore button
-    if (button(w - btn_width * 2, 0, btn_width, btn_height, background_colors[i], 0x0cececeff, 
+    if (button(w - btn_width * 2, 0, btn_width, btn_height, background_color, 0x0cececeff, 
       [&] (uint32_t width, uint32_t height)
       {
         if (is_maxmized())
@@ -186,7 +188,7 @@ void UIContext::update_title_bar() noexcept
       is_maxmized() ? restore_window() : maximize_window();
 
     // close button
-    if (button(w - btn_width, 0, btn_width, btn_height, background_colors[i], 0xeb1123ff,
+    if (button(w - btn_width, 0, btn_width, btn_height, background_color, 0xeb1123ff,
       [] (uint32_t width, uint32_t height)
       {
         ui::line({}, { width, height });
