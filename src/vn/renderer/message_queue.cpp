@@ -38,7 +38,8 @@ void MessageQueue::process_messages() noexcept
         });
         auto& window_resource = wr[data.window.handle()];
         std::swap(window_resource.window, data.window);
-        window_resource.clear_window_self_content = true;
+        window_resource.clear_window_self_content     = true;
+        window_resource.window._use_fullscreen_window = true;
       }
       else if constexpr (std::is_same_v<T, Message_Update_Window>)
       {
@@ -53,6 +54,7 @@ void MessageQueue::process_messages() noexcept
         auto& window_resource = wr[data.window.handle()];
         std::swap(window_resource.window, data.window);
         window_resource.clear_fullscreen_window_content = true;
+        window_resource.window._use_fullscreen_window   = false;
       }
       else if constexpr (std::is_same_v<T, Message_Resize_Window>)
       {

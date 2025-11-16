@@ -43,6 +43,7 @@ private:
 
     auto process() noexcept
     {
+      if (iter_func) iter_func(get_progress());
       if (type == Event::Type::single)
       {
         if (get_duration() >= duratoin)
@@ -72,6 +73,7 @@ private:
     std::function<void()>                              func;
     std::chrono::time_point<std::chrono::steady_clock> time_point;
     uint32_t                                           duratoin{};
+    std::function<void(float)>                         iter_func{};
   };
 
 public:
@@ -90,26 +92,29 @@ public:
 
   auto contains(uint32_t id) const noexcept { return _events.contains(id); }
 
-  auto add_repeat_event(uint32_t duration, std::function<void()> func) noexcept
+  auto add_repeat_event(uint32_t duration, std::function<void()> func, std::function<void(float)> iter_func = {}) noexcept
   {
     err_if(!func, "cannot set empty function in repeat time event");
     auto event = Event{};
-    event.id       = Event::generic_id();
-    event.type     = Event::Type::repeat;
-    event.func     = func;
-    event.duratoin = duration;
+    event.id        = Event::generic_id();
+    event.type      = Event::Type::repeat;
+    event.func      = func;
+    event.duratoin  = duration;
+    event.iter_func = iter_func;
     _events[event.id] = event;
+    _events[event.id].start();
     return event.id;
   }
 
-  auto add_single_event(uint32_t duration, std::function<void()> func) noexcept
+  auto add_single_event(uint32_t duration, std::function<void()> func, std::function<void(float)> iter_func = {}) noexcept
   {
     err_if(!func, "cannot set empty function in repeat time event");
     auto event = Event{};
-    event.id       = Event::generic_id();
-    event.type     = Event::Type::single;
-    event.func     = func;
-    event.duratoin = duration;
+    event.id        = Event::generic_id();
+    event.type      = Event::Type::single;
+    event.func      = func;
+    event.duratoin  = duration;
+    event.iter_func = iter_func;
     _events[event.id] = event;
     _events[event.id].start();
     return event.id;

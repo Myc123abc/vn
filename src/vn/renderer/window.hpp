@@ -29,6 +29,8 @@ enum class MouseState
 class Window
 {
   friend LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param) noexcept;
+  friend class MessageQueue;
+
 public:
   auto static constexpr External_Thickness = RECT{ 20, 20, 20, 20 };
   auto static External_Thickness_Offset() noexcept { return glm::vec2{ External_Thickness.left, External_Thickness.top }; }
@@ -121,6 +123,8 @@ public:
 
   void add_move_invalid_area(float l, float t, float r, float b) noexcept { _move_invalid_area.emplace_back(l, t, r, b); }
 
+  auto use_fullscreen_window() const noexcept { return is_moving_or_resizing() || _use_fullscreen_window; }
+
 private:
   void left_offset(int dx)   noexcept;
   void top_offset(int dy)    noexcept;
@@ -147,6 +151,7 @@ private:
   RECT        _backup_rect{};
   bool        _need_resize_swapchain{};
   bool        _is_mouse_pass_through{};
+  bool        _use_fullscreen_window{};
 
   std::vector<RECT> _move_invalid_area{};
 };

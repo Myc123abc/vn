@@ -161,7 +161,8 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     clear_fullscreen_window_content = {};
   }
 
-  auto& current_swapchain_resource = window.is_moving_or_resizing() ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
+  auto  use_fullscreen_window      = window.use_fullscreen_window();
+  auto& current_swapchain_resource = use_fullscreen_window ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
   auto  cmd                        = core->cmd();
   auto  swapchain_image            = current_swapchain_resource.current_image();
   auto  rtv_handle                 = current_swapchain_resource.rtv();
@@ -212,7 +213,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   // set descriptors
   auto constants = Constants{};
   constants.window_extent = swapchain_image->extent();
-  if (window.is_moving_or_resizing())
+  if (use_fullscreen_window)
   {
     constants.window_pos   = window.real_pos();
     constants.cursor_index = static_cast<uint32_t>(window.cursor_type());
@@ -224,7 +225,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   });
 
   // draw
-  if (window.is_moving_or_resizing())
+  if (use_fullscreen_window)
   {
     auto rect = window.rect();
     cmd->RSSetScissorRects(1, &rect);

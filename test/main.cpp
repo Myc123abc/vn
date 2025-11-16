@@ -60,7 +60,7 @@ int main()
 {
   vn::init();
 
-  ui::create_window("first window", 0, 0, 2560, 1440, render_window_1, false);
+  //ui::create_window("first window", 0, 0, 2560, 1440, render_window_1, false);
   ui::create_window("second window", 200, 200, 100, 100, render_window_2);
 
   auto fps_count = uint32_t{};
@@ -69,18 +69,16 @@ int main()
   {
     info("[fps] {}", fps_count);
     fps_count = {};
-  });
+  }, [&](float) { ++fps_count; });
   timer.add_single_event(3000, [&]
   {
-    ui::create_window("third window", 300, 300, 100, 100, render_window_3);
+    //ui::create_window("third window", 300, 300, 100, 100, render_window_3);
   });
 
   while (ui::window_count())
   {
     vn::message_process();
     vn::render();
-
-    ++fps_count;
     timer.process_events();
   }
 
