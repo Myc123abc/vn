@@ -45,8 +45,6 @@ public:
   }
 
   void resize(uint32_t width, uint32_t height) noexcept;
-
-  void clear_rtv() noexcept;
 };
 
 struct WindowResource
@@ -54,13 +52,11 @@ struct WindowResource
   Window            window;
   SwapchainResource swapchain_resource;
 
-  bool clear_window_self_content{};
-  bool clear_fullscreen_window_content{};
-
   void init(Window const& window, bool transparent) noexcept;
 
   void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
-  void window_shadow_render(ID3D12GraphicsCommandList1* cmd, SwapchainResource& current_swapchain_resource) const noexcept;
+  void window_content_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
+  void window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept;
 };
 
 }}

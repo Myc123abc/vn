@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "core.hpp"
 #include "error_handling.hpp"
+#include "window_manager.hpp"
 
 #include <algorithm>
 
@@ -113,27 +114,30 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 void WindowResource::init(Window const& window, bool transparent) noexcept
 {
   this->window = window;
-  swapchain_resource.init(window.handle(), window.real_width(), window.real_height(), transparent);
+  auto screen_size = get_screen_size();
+  swapchain_resource.init(window.handle, screen_size.x, screen_size.y, transparent);
 
   // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle()] { ShowWindow(handle, SW_SHOW); });
+  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle] { ShowWindow(handle, SW_SHOW); });
 }
 
-void SwapchainResource::clear_rtv() noexcept
+void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
 {
-  auto  core            = Core::instance();
-  auto  cmd             = core->cmd();
-  auto  swapchain_image = current_image();
-  auto  rtv_handle      = rtv();
+  auto core            = Core::instance();
+  auto renderer        = Renderer::instance();
+  auto cmd             = core->cmd();
+  auto swapchain_image = swapchain_resource.current_image();
 
+  // reset command
   core->reset_cmd();
+  
+  // set descriptor heaps
+  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
+  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
-  swapchain_image->set_state(cmd, ImageState::render_target);
-
-  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
-
-  float constexpr clear_color[4]{};
-  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  // render
+  window_content_render(cmd, swapchain_image, vertices, indices, shape_properties);
+  window_shadow_render(cmd);
 
   // record finish, change render target view type to present
   swapchain_image->set_state(cmd, ImageState::present);
@@ -142,42 +146,20 @@ void SwapchainResource::clear_rtv() noexcept
   core->submit(cmd);
 
   // present
-  err_if(swapchain->Present(1, 0), "failed to present swapchain");
+  err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
 }
 
-void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
+void WindowResource::window_content_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
 {
-  auto core     = Core::instance();
-  auto renderer = Renderer::instance();
-
-  if (clear_window_self_content)
-  {
-    swapchain_resource.clear_rtv();
-    clear_window_self_content = {};
-  }
-  else if (clear_fullscreen_window_content)
-  {
-    renderer->_fullscreen_swapchain_resource.clear_rtv();
-    clear_fullscreen_window_content = {};
-  }
-
-  auto  use_fullscreen_window      = window.use_fullscreen_window();
-  auto& current_swapchain_resource = use_fullscreen_window ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
-  auto  cmd                        = core->cmd();
-  auto  swapchain_image            = current_swapchain_resource.current_image();
-  auto  rtv_handle                 = current_swapchain_resource.rtv();
-  auto  dsv_handle                 = D3D12_CPU_DESCRIPTOR_HANDLE{};
+  auto core       = Core::instance();
+  auto renderer   = Renderer::instance();
+  auto rtv_handle = swapchain_resource.rtv();
+  auto dsv_handle = D3D12_CPU_DESCRIPTOR_HANDLE{};
   if (renderer->enable_depth_test)
-    dsv_handle = current_swapchain_resource.dsv_heap.cpu_handle();
-
-  core->reset_cmd();
-  
-  // set descriptor heaps
-  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
-  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
+    dsv_handle = swapchain_resource.dsv_heap.cpu_handle();
 
   // convert render target view from present type to render target type
-  swapchain_image->set_state(cmd, ImageState::render_target);
+  render_target_image->set_state(cmd, ImageState::render_target);
 
   // set render target view
   if (renderer->enable_depth_test)
@@ -195,29 +177,20 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     cmd->OMSetDepthBounds(0.f, 1.f);
   }
 
-  // window shadow render pass
-  //window_shadow_render(cmd, current_swapchain_resource);
-
   // bind pipeline
   renderer->_pipeline.bind(cmd);
 
   // set viewport
-  cmd->RSSetViewports(1, &current_swapchain_resource.viewport);
-
-  // convert render target view from present type to render target type
-  swapchain_image->set_state(cmd, ImageState::render_target);
+  cmd->RSSetViewports(1, &swapchain_resource.viewport);
 
   // upload data to buffer
   renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
 
   // set descriptors
   auto constants = Constants{};
-  constants.window_extent = swapchain_image->extent();
-  if (use_fullscreen_window)
-  {
-    constants.window_pos   = window.real_pos();
-    constants.cursor_index = static_cast<uint32_t>(window.cursor_type());
-  }
+  constants.window_extent = render_target_image->extent();
+  constants.window_pos   = window.pos();
+  constants.cursor_index = static_cast<uint32_t>(window.cursor_type);
   renderer->_pipeline.set_descriptors(cmd, "constants", constants,
   {
     { "cursor_textures", renderer->get_descriptor("cursors")                          },
@@ -225,49 +198,37 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   });
 
   // draw
-  if (use_fullscreen_window)
-  {
-    auto rect = window.rect();
-    cmd->RSSetScissorRects(1, &rect);
-    cmd->DrawIndexedInstanced(indices.size() - 12, 1, 0, 0, 0);
-    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
-    cmd->DrawIndexedInstanced(12, 1, indices.size() - 12, 0, 0);
-  }
-  else
-  {
-    auto rect = current_swapchain_resource.scissor;
-    rect.left   += Window::External_Thickness.left;
-    rect.right  -= Window::External_Thickness.right;
-    rect.top    += Window::External_Thickness.top;
-    rect.bottom -= Window::External_Thickness.bottom;
-    cmd->RSSetScissorRects(1, &rect);
-    cmd->DrawIndexedInstanced(indices.size() - 6, 1, 0, 0, 0);
-    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
-    cmd->DrawIndexedInstanced(6, 1, indices.size() - 6, 0, 0);
-  }
-
-  // record finish, change render target view type to present
-  swapchain_image->set_state(cmd, ImageState::present);
-
-  // submit command
-  core->submit(cmd);
-
-  // present
-  err_if(current_swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
+  cmd->RSSetScissorRects(1, &window.rect);
+  cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
 }
 
-void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, SwapchainResource& current_swapchain_resource) const noexcept
+void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept
 {
-  auto renderer        = Renderer::instance();
-  auto swapchain_image = current_swapchain_resource.current_image();
+  auto renderer = Renderer::instance();
 
+  //
+  // first, generate window mask image
+  //
+
+  // clear mask image
   copy(renderer->_uav_clear_heap, "window mask image", renderer->_cbv_srv_uav_heap, "window mask image");
   renderer->_window_mask_image.clear(cmd, renderer->_uav_clear_heap.cpu_handle("window mask image"), renderer->_cbv_srv_uav_heap.gpu_handle("window mask image"));
+
+  // bind window mask pipeline
   renderer->_window_mask_pipeline.bind(cmd);
+
+  // set descriptors
   renderer->_window_mask_pipeline.set_descriptors(cmd,
-    "constants", glm::vec4(window.rect().left, window.rect().top, window.rect().right, window.rect().bottom),
+    "constants", glm::vec4(window.rect.left, window.rect.top, window.rect.right, window.rect.bottom),
     {{ "window_mask_image", renderer->get_descriptor("window mask image") }});
+
+  // run pipeline
   cmd->Dispatch((renderer->_window_mask_image.width() + 7) / 8, (renderer->_window_mask_image.height() + 7) / 8, 1);
+
+  //
+  // then, use window mask image as input of gaussian blur pipeline
+  //
+
   return;
 
 #if 0

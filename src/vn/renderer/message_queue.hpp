@@ -35,24 +35,15 @@ public:
     HWND handle;
   };
 
-  struct Message_Create_Fullscreen_Window_Render_Resource
-  {
+  struct Message_Update_Window
+  { 
     Window window;
   };
-
-  struct Message_Begin_Use_Fullscreen_Window { Window window; };
-  struct Message_Update_Window               { Window window; };
-  struct Message_End_Use_Fullscreen_Window   { Window window; };
-  struct Message_Resize_Window               { Window window; };
 
   using Message = std::variant<
     Message_Create_Window_Render_Resource,
     Message_Destroy_Window_Render_Resource,
-    Message_Create_Fullscreen_Window_Render_Resource,
-    Message_Begin_Use_Fullscreen_Window,
-    Message_Update_Window,
-    Message_End_Use_Fullscreen_Window,
-    Message_Resize_Window
+    Message_Update_Window
   >;
 
   void send_message(Message const& msg) noexcept { _message_queue.push(msg); }

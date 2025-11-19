@@ -143,7 +143,7 @@ auto window_count() noexcept -> uint32_t
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
 {
   check_in_update_callback();
-  return { UIContext::instance()->window.width(), UIContext::instance()->window.height()};
+  return { UIContext::instance()->window.width, UIContext::instance()->window.height};
 }
 
 auto content_extent() noexcept -> std::pair<uint32_t, uint32_t>
@@ -168,46 +168,46 @@ auto is_active() noexcept -> bool
 auto is_moving() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_moving();
+  return UIContext::instance()->window.moving;
 }
 
 auto is_resizing() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_resizing();
+  return UIContext::instance()->window.resizing;
 }
 
 auto is_maxmized() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_maximized();
+  return UIContext::instance()->window.is_maximized;
 }
 
 auto is_minimized() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_minimized();
+  return UIContext::instance()->window.is_minimized;
 }
 
 void minimize_window() noexcept
 {
   check_in_update_callback();
-  ShowWindow(UIContext::instance()->window.handle(), SW_MINIMIZE);
+  ShowWindow(UIContext::instance()->window.handle, SW_MINIMIZE);
 }
 
 void maximize_window() noexcept
 {
   check_in_update_callback();
-  PostMessageW(UIContext::instance()->window.handle(), WM_SIZE, SIZE_MAXIMIZED, 0);
+  PostMessageW(UIContext::instance()->window.handle, WM_SIZE, SIZE_MAXIMIZED, 0);
 }
 
 void restore_window() noexcept
 {
   check_in_update_callback();
   auto ctx = UIContext::instance();
-  ShowWindow(ctx->window.handle(), SW_RESTORE);
+  ShowWindow(ctx->window.handle, SW_RESTORE);
   if (is_maxmized())
-    PostMessageW(ctx->window.handle(), static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
+    PostMessageW(ctx->window.handle, static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
 }
 
 void set_background_color(Color color) noexcept
@@ -311,7 +311,7 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
   auto& shape_property = ctx->render_data.shape_properties.back();
   shape_property.set_operator(ShapeProperty::Operator::discard);
 
-  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto offset = ctx->window_render_pos();
   left_top     += offset;
   right_bottom += offset;
 
@@ -327,7 +327,8 @@ void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color, float thick
   check_in_update_callback();
   check_not_path_draw();
   
-  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto ctx    = UIContext::instance();
+  auto offset = ctx->window_render_pos();
   p0 += offset;
   p1 += offset;
   p2 += offset;
@@ -340,7 +341,8 @@ void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, Color color, float th
   check_in_update_callback();
   check_not_path_draw();
 
-  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto ctx    = UIContext::instance();
+  auto offset = ctx->window_render_pos();
   left_top     += offset;
   right_bottom += offset;
 
@@ -352,7 +354,8 @@ void circle(glm::vec2 center, float radius, Color color, float thickness) noexce
   check_in_update_callback();
   check_not_path_draw();
 
-  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto ctx    = UIContext::instance();
+  auto offset = ctx->window_render_pos();
   center += offset;
 
   auto r = radius - 1;
@@ -366,7 +369,7 @@ void line(glm::vec2 p0, glm::vec2 p1, Color color) noexcept
 
   auto ctx = UIContext::instance();
 
-  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto offset = ctx->window_render_pos();
   p0 += offset;
   p1 += offset;
 
@@ -390,7 +393,7 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color) noexcept
 
   auto ctx = UIContext::instance();
 
-  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto offset = ctx->window_render_pos();
   p0 += offset;
   p1 += offset;
   p2 += offset;
@@ -436,7 +439,7 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 
   if (!ctx->window.cursor_valid_area() || ctx->window.is_moving_or_resizing()) return false;
   auto p = ctx->window.cursor_pos();
-  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y && ctx->mouse_on_window == ctx->window.handle();
+  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y && ctx->mouse_on_window == ctx->window.handle;
 }
 
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool

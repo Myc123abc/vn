@@ -82,8 +82,8 @@ public:
   void render() noexcept;
   void message_process() noexcept;
 
-  auto set_window_render_pos(int x, int y) noexcept { windows[window.handle()].render_pos = { x, y }; }
-  auto window_render_pos() noexcept { return windows[window.handle()].render_pos; }
+  auto set_window_render_pos(int x, int y) noexcept { windows[window.handle].render_pos = { x, y }; }
+  auto window_render_pos() noexcept { return windows[window.handle].render_pos; }
 
   auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
@@ -141,7 +141,7 @@ template <typename... T>
 constexpr auto generic_id(T&&... args) noexcept
 {
   auto ctx = UIContext::instance();
-  return generic_hash(ctx->window.handle(), ++ctx->windows[ctx->window.handle()].widget_count, std::forward<T>(args)...);
+  return generic_hash(ctx->window.handle, ++ctx->windows[ctx->window.handle].widget_count, std::forward<T>(args)...);
 }
 
 }}

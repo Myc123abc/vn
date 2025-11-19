@@ -81,7 +81,6 @@ private:
   std::array<FrameBuffer, Frame_Count> _frame_buffers;
 
   std::unordered_map<HWND, WindowResource> _window_resources;
-  SwapchainResource                        _fullscreen_swapchain_resource;
 };
 
 }}

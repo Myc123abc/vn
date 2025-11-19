@@ -20,7 +20,7 @@ struct PSParameter
 struct Constants
 {
   uint2    window_extent;
-  int2     window_pos;
+  float2   window_pos;
   uint32_t cursor_index;
 };
 

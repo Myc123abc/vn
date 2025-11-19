@@ -36,14 +36,14 @@ void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32
 
 void UIContext::close_current_window() noexcept
 {
-  PostMessageW(window.handle(), WM_CLOSE, 0, 0);
+  PostMessageW(window.handle, WM_CLOSE, 0, 0);
 }
 
 auto UIContext::content_extent() noexcept -> std::pair<uint32_t, uint32_t>
 {
-  auto width  = window.width();
-  auto height = window.height();
-  if (windows[window.handle()].draw_title_bar)
+  auto width  = window.width;
+  auto height = window.height;
+  if (windows[window.handle].draw_title_bar)
     height -= Titler_Bar_Height;
   return { width, height };
 }
@@ -57,7 +57,7 @@ void UIContext::render() noexcept
   for (auto& [handle, window] : windows)
   {
     this->window = WindowManager::instance()->get_window(handle);
-    if (this->window.is_minimized()) continue;
+    if (this->window.is_minimized) continue;
 
     has_rendering       = true;
     updating            = true;
@@ -78,7 +78,7 @@ void UIContext::render() noexcept
 
     updating = false;
 
-    update_cursor();
+    //update_cursor();
 
     Renderer::instance()->render_window(handle, render_data);
     render_data.clear();
@@ -97,21 +97,19 @@ void UIContext::render() noexcept
 
 void UIContext::add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
 {
-  WindowManager::instance()->_windows.at(window.handle()).add_move_invalid_area(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
+  WindowManager::instance()->_windows.at(window.handle).move_invalid_area.emplace_back(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
 }
 
 void UIContext::update_cursor() noexcept
 {
   auto renderer = Renderer::instance();
-  if (window.is_moving_or_resizing())
+  //if (window.is_moving_or_resizing())
   {
     auto pos = get_cursor_pos();
-    pos.x -= window.real_x();
-    pos.y -= window.real_y();
-    if (window.cursor_type() != CursorType::arrow)
+    if (window.cursor_type != CursorType::arrow)
     {
-      pos.x -= renderer->_cursors[window.cursor_type()].pos.x;
-      pos.y -= renderer->_cursors[window.cursor_type()].pos.y;
+      pos.x -= renderer->_cursors[window.cursor_type].pos.x;
+      pos.y -= renderer->_cursors[window.cursor_type].pos.y;
     }
     render_data.vertices.append_range(std::vector<Vertex>
     {
@@ -138,9 +136,11 @@ void UIContext::update_cursor() noexcept
 
 void UIContext::update_window_shadow() noexcept
 {
-  add_vertices_indices({{}, { window.real_width(), window.real_height() }});
   auto shadow_thickness = 20.f;
-  add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { shadow_thickness, shadow_thickness, shadow_thickness + static_cast<float>(window.width()), shadow_thickness + static_cast<float>(window.height()) });
+  auto rect = RECT{ static_cast<LONG>(window.rect.left - shadow_thickness), static_cast<LONG>(window.rect.top - shadow_thickness), window.rect.right, window.rect.bottom };
+	ui::rectangle({ static_cast<float>(rect.left), static_cast<float>(rect.top) }, { static_cast<float>(rect.right), static_cast<float>(rect.bottom) });
+  //add_vertices_indices({{ rect.left, rect.top }, { rect.right, rect.bottom }});
+  //add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { static_cast<float>(window.rect.left), static_cast<float>(window.rect.top), static_cast<float>(window.rect.right), static_cast<float>(window.rect.bottom) });
   render_data.shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
 }
 
@@ -222,12 +222,12 @@ void UIContext::message_process() noexcept
   for (auto const& [handle, _] : windows)
   {
     auto const& window = wm->_windows.at(handle);
-    if (window.mouse_state() == MouseState::left_button_down)
+    if (window.mouse_state == MouseState::left_button_down)
     {
       _mouse_down_window = handle;
       _mouse_down_pos    = window.cursor_pos();
     }
-    else if (window.mouse_state() == MouseState::left_button_up)
+    else if (window.mouse_state == MouseState::left_button_up)
     {
       _mouse_up_window = handle;
       _mouse_up_pos    = window.cursor_pos();
