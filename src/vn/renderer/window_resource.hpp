@@ -57,6 +57,8 @@ struct WindowResource
   void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
   void window_content_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
   void window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept;
+
+  void capture_window(uint32_t max_width, uint32_t max_height) noexcept;
 };
 
 }}

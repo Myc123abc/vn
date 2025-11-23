@@ -4,6 +4,9 @@
 #include "core.hpp"
 #include "error_handling.hpp"
 #include "window_manager.hpp"
+#include "../util.hpp"
+
+#include <dwmapi.h>
 
 #include <algorithm>
 
@@ -261,6 +264,87 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd) const
   else
     copy(cmd, renderer->_window_shadow_image, *swapchain_image);
 #endif
+}
+
+void downsampling(uint32_t* src, uint32_t* dst, uint32_t src_row_offset, uint32_t width, uint32_t height) noexcept
+{
+  for (auto y = 0; y < height; ++y)
+  {
+    for (auto x = 0; x < width; ++x)
+    {
+      auto offset = 2 * y * src_row_offset + 2 * x;
+      dst[y * width + x] = ((src[offset] >> 2) & 0x3f3f3f3f) +
+                           ((src[offset + 1] >> 2) & 0x3f3f3f3f) +
+                           ((src[offset + src_row_offset] >> 2) & 0x3f3f3f3f) +
+                           ((src[offset + src_row_offset + 1] >> 2) & 0x3f3f3f3f);
+    }
+  }
+}
+
+void WindowResource::capture_window(uint32_t max_width, uint32_t max_height) noexcept
+{
+  auto core  = Core::instance();
+  auto cmd   = core->cmd();
+  auto image = swapchain_resource.current_image();
+
+  // get the window valid region
+  auto screen_size = get_screen_size();
+  auto left        = std::clamp(window.rect.left,   0l, static_cast<LONG>(screen_size.x));
+  auto top         = std::clamp(window.rect.top,    0l, static_cast<LONG>(screen_size.y));
+  auto right       = std::clamp(window.rect.right,  0l, static_cast<LONG>(screen_size.x));
+  auto bottom      = std::clamp(window.rect.bottom, 0l, static_cast<LONG>(screen_size.y));
+  auto width       = right - left;
+  auto height      = bottom - top;
+
+  // create readback buffer
+  auto readback_buffer = ComPtr<ID3D12Resource>{};
+  auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
+  auto row_pitch       = width * image->per_pixel_size();
+  auto row_byte_size   = align(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+  auto heap_desc       = CD3DX12_RESOURCE_DESC::Buffer(align(row_byte_size * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
+  err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &heap_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback_buffer)),
+          "failed to create readback buffer");
+        
+  // copy to readback buffer
+  core->reset_cmd();
+  copy(cmd, *image, left, top, right, bottom, readback_buffer.Get());
+
+  // wait readback finish
+  core->submit(cmd);
+  core->wait_gpu_complete();
+
+  // get pointer of readback buffer
+  std::byte* p     = {};
+  auto       range = D3D12_RANGE{ 0, heap_desc.Width };
+  err_if(readback_buffer->Map(0, &range, reinterpret_cast<void**>(&p)), "failed to map readback buffer to pointer");
+
+  // create bitmap
+  auto hdc_mem = CreateCompatibleDC(nullptr);
+  err_if(!hdc_mem, "failed to create compatible DC");
+  auto info = BITMAPINFO{};
+  info.bmiHeader.biSize     = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth    = std::min(static_cast<uint32_t>(width),  max_width);
+  info.bmiHeader.biHeight   = -std::min(static_cast<uint32_t>(height), max_height);
+  info.bmiHeader.biPlanes   = 1;
+  info.bmiHeader.biBitCount = 32;
+  auto data   = PBYTE{};
+  auto bitmap = CreateDIBSection(hdc_mem, &info, DIB_RGB_COLORS, reinterpret_cast<void**>(&data), nullptr, 0);
+  err_if(!bitmap, "failed to create DIBSection");
+
+  // copy data from readback buffer to bitmap
+  for (auto j = 0; j < -info.bmiHeader.biHeight; ++j)
+  {
+    memcpy(data, p, row_pitch);
+    p    += row_byte_size;
+    data += info.bmiHeader.biWidth * 4;
+  }
+
+  DeleteDC(hdc_mem);
+
+  err_if(DwmSetIconicThumbnail(window.handle, bitmap, 0), "failed to set thumbnail");
+  DwmInvalidateIconicBitmaps(window.handle);
+  warn("refersh");
+  DeleteObject(bitmap);
 }
 
 }}

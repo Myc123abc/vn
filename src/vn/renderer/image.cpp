@@ -1,7 +1,7 @@
 #include "image.hpp"
-#include "descriptor_heap.hpp"
 #include "core.hpp"
 #include "error_handling.hpp"
+#include "../util.hpp"
 
 using namespace vn;
 using namespace vn::renderer;
@@ -51,6 +51,16 @@ auto dx12_resource_state(ImageState state) noexcept
   };
   err_if(!map.contains(state), "unsupport image state now");
   return map.at(state);
+}
+
+auto byte_size_of(DXGI_FORMAT format) noexcept
+{
+  auto static const map = std::unordered_map<DXGI_FORMAT, uint32_t>
+  {
+    { DXGI_FORMAT_R8G8B8A8_UNORM, 4 },
+  };
+  err_if(!map.contains(format), "unsupport dxgi format for byte size now");
+  return map.at(format);
 }
 
 }
@@ -208,6 +218,11 @@ void Image::clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE c
   cmd->ClearUnorderedAccessViewFloat(gpu_handle, cpu_handle, _handle.Get(), values, 1, &rect);
 }
 
+auto Image::per_pixel_size() const noexcept -> uint32_t
+{
+  return byte_size_of(_format);
+}
+
 void copy(
   ID3D12GraphicsCommandList1* cmd,
   Image&                      src,
@@ -225,6 +240,30 @@ void copy(
   auto dst_loc = CD3DX12_TEXTURE_COPY_LOCATION{ dst.handle() };
   auto region_box = CD3DX12_BOX{ left, top, right, bottom };
   cmd->CopyTextureRegion(&dst_loc, x, y, 0, &src_loc, &region_box);
+}
+
+void copy(
+  ID3D12GraphicsCommandList1* cmd,
+  Image&                      src,
+  LONG                        left,
+  LONG                        top,
+  LONG                        right,
+  LONG                        bottom,
+  ID3D12Resource*             readback_buffer) noexcept
+{
+  src.set_state(cmd, ImageState::copy_src);
+  auto src_loc = CD3DX12_TEXTURE_COPY_LOCATION{ src.handle()    };
+  auto region_box = CD3DX12_BOX{ left, top, right, bottom };
+
+  auto footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT{};
+  footprint.Footprint.Width    = right - left;
+  footprint.Footprint.Height   = bottom - top;
+  footprint.Footprint.Depth    = 1;
+  footprint.Footprint.RowPitch = align(src.per_pixel_size() * footprint.Footprint.Width, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+  footprint.Footprint.Format   = src.format();
+  auto dst_loc = CD3DX12_TEXTURE_COPY_LOCATION{ readback_buffer, footprint };
+
+  cmd->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, &region_box);
 }
 
 }}

@@ -61,10 +61,13 @@ public:
 
   void clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept;
 
-  auto handle()     const noexcept { return _handle.Get(); }
-  auto width()      const noexcept { return _width;        }
-  auto height()     const noexcept { return _height;       }
-  auto extent()     const noexcept { return glm::vec<2, uint32_t>{ _width, _height }; }
+  auto handle() const noexcept { return _handle.Get(); }
+  auto format() const noexcept { return _format;       }
+  auto width()  const noexcept { return _width;        }
+  auto height() const noexcept { return _height;       }
+  auto extent() const noexcept { return glm::vec<2, uint32_t>{ _width, _height }; }
+
+  auto per_pixel_size() const noexcept -> uint32_t;
 
   void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle, std::optional<ImageType> type = {}) noexcept;
 
@@ -108,5 +111,14 @@ inline void copy(
   image.set_state(cmd, ImageState::copy_dst);
   UpdateSubresources(cmd, image.handle(), upload_heap, offset, 0, 1, &data);
 }
+
+void copy(
+  ID3D12GraphicsCommandList1* cmd,
+  Image&                      src,
+  LONG                        left,
+  LONG                        top,
+  LONG                        right,
+  LONG                        bottom,
+  ID3D12Resource*             readback_buffer) noexcept;
 
 }}

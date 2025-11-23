@@ -5,6 +5,7 @@
 #include "../ui/ui_context.hpp"
 #include "compiler.hpp"
 #include "window_manager.hpp"
+#include "../util.hpp"
 
 #include <algorithm>
 #include <ranges>
@@ -152,11 +153,11 @@ void Renderer::load_cursor_images() noexcept
   }
 
   // create upload heap
-  auto upload_heap     = ComPtr<ID3D12Resource>{};
-  auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-  auto upload_heap_des = CD3DX12_RESOURCE_DESC::Buffer(std::ranges::fold_left(_cursors | std::views::values, 0,
+  auto upload_heap      = ComPtr<ID3D12Resource>{};
+  auto heap_properties  = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+  auto upload_heap_desc = CD3DX12_RESOURCE_DESC::Buffer(std::ranges::fold_left(_cursors | std::views::values, 0,
     [](uint32_t sum, auto const& cursor) { return sum + align(GetRequiredIntermediateSize(cursor.image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT); }));
-  err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &upload_heap_des, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_heap)),
+  err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &upload_heap_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_heap)),
           "failed to create upload heap");
 
   // upload bitmap to cursor tesxtures

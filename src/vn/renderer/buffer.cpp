@@ -2,6 +2,7 @@
 #include "error_handling.hpp"
 #include "core.hpp"
 #include "renderer.hpp"
+#include "../util.hpp"
 
 #include <directx/d3dx12.h>
 

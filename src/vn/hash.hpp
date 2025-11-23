@@ -3,8 +3,7 @@
 #include <functional>
 #include <string_view>
 
-namespace vn
-{
+namespace vn {
 
 template <typename T>
 inline void combine_hash(size_t& seed, T const& v) noexcept

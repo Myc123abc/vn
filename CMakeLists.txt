@@ -30,7 +30,7 @@ PRIVATE
 )
 target_link_libraries(vn
 PRIVATE
-  d3d12 dxgi dxcompiler dcomp dxguid
+  d3d12 dxgi dxcompiler dcomp dxguid dwmapi
   DirectX-Headers
 )
 target_include_directories(vn

@@ -4,6 +4,8 @@
 #include "message_queue.hpp"
 #include "../ui/ui_context.hpp"
 
+#include <dwmapi.h>
+
 using namespace vn::renderer;
 
 namespace {
@@ -205,6 +207,18 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     return 0;
   }
 
+  case WM_DWMSENDICONICTHUMBNAIL:
+  {
+    msg_queue->send_message(MessageQueue::Message_Capture_Window{ handle, HIWORD(l_param), LOWORD(l_param) });
+    return 0;
+  }
+
+  case WM_DWMSENDICONICLIVEPREVIEWBITMAP:
+  {
+    info("2");
+    break;
+  }
+
   }
   return DefWindowProcW(handle, msg, w_param, l_param);
 }
@@ -261,6 +275,10 @@ auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t 
   auto handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, Window_Class, nullptr, WS_POPUP | WS_MINIMIZEBOX,
     0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!handle,  "failed to create window");
+
+  auto b = BOOL(TRUE);
+  err_if(DwmSetWindowAttribute(handle, DWMWA_FORCE_ICONIC_REPRESENTATION, &b, sizeof(b)), "failed to set dwm attribute");
+  err_if(DwmSetWindowAttribute(handle, DWMWA_HAS_ICONIC_BITMAP, &b, sizeof(b)), "failed to set dwm attribute");
 
   auto window = Window{};
   window.init(handle, name.data(), x, y, width, height);
