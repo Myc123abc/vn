@@ -5,6 +5,7 @@
 
 using namespace vn;
 using namespace vn::renderer;
+using namespace Microsoft::WRL;
 
 namespace {
 
@@ -66,6 +67,29 @@ auto byte_size_of(DXGI_FORMAT format) noexcept
 }
 
 namespace vn { namespace renderer {
+
+void Win32Bitmap::init(uint32_t width, uint32_t height) noexcept
+{
+  view.width  = width;
+  view.height = height;
+
+  auto hdc_mem = CreateCompatibleDC(nullptr);
+  err_if(!hdc_mem, "failed to create compatible DC");
+  auto info = BITMAPINFO{};
+  info.bmiHeader.biSize     = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth    = width;
+  info.bmiHeader.biHeight   = -height;
+  info.bmiHeader.biPlanes   = 1;
+  info.bmiHeader.biBitCount = 32;
+  handle = CreateDIBSection(hdc_mem, &info, DIB_RGB_COLORS, reinterpret_cast<void**>(&view.data), nullptr, 0);
+  err_if(!handle, "failed to create DIBSection");
+  DeleteDC(hdc_mem);
+}
+  
+void Win32Bitmap::destroy() const noexcept
+{
+  err_if(!DeleteObject(handle), "failed to destroy win32 bitmap");
+}
 
 auto dxgi_format(ImageFormat format) noexcept -> DXGI_FORMAT
 {
@@ -218,9 +242,46 @@ void Image::clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE c
   cmd->ClearUnorderedAccessViewFloat(gpu_handle, cpu_handle, _handle.Get(), values, 1, &rect);
 }
 
+void Image::clear_render_target(ID3D12GraphicsCommandList1* cmd) noexcept
+{
+  err_if(_type != ImageType::rtv, "clear render target only use on rtv");
+  set_state(cmd, ImageState::render_target);
+  float constexpr clear_color[4]{};
+  cmd->ClearRenderTargetView(cpu_handle(), clear_color, 0, nullptr);
+}
+
 auto Image::per_pixel_size() const noexcept -> uint32_t
 {
   return byte_size_of(_format);
+}
+
+auto Image::readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept -> std::pair<Microsoft::WRL::ComPtr<ID3D12Resource>, BitmapView>
+{
+  err_if(per_pixel_size() != 4, "readback only support rgba image now");
+
+  // create bitmap view
+  auto view = BitmapView{};
+  view.width    = rect.right - rect.left;
+  view.height   = rect.bottom - rect.top;
+  view.offset_x = rect.left;
+  view.offset_y = rect.top;
+
+  // create readback buffer
+  auto readback_buffer = ComPtr<ID3D12Resource>{};
+  auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
+  view.row_byte_size   = align(view.width * per_pixel_size(), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+  auto heap_desc       = CD3DX12_RESOURCE_DESC::Buffer(align(view.row_byte_size * view.height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
+  err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &heap_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback_buffer)),
+          "failed to create readback buffer");
+
+  // get pointer of readback buffer
+  auto range = D3D12_RANGE{ 0, heap_desc.Width };
+  err_if(readback_buffer->Map(0, &range, reinterpret_cast<void**>(&view.data)), "failed to map readback buffer to pointer");
+
+  // copy data from gpu to cpu
+  copy(cmd, *this, rect.left, rect.top, rect.right, rect.bottom, readback_buffer.Get());
+
+  return { readback_buffer, view };
 }
 
 void copy(

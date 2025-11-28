@@ -68,6 +68,11 @@ private:
   Pipeline _window_shadow_pipeline;
   Image    _window_shadow_image;
 
+  Pipeline                       _window_thumbnail_pipeline;
+  // FIXME: thumbnail_images need be move in every window resource
+  DescriptorHeap                 _rtv_heap;
+  std::array<Image, Frame_Count> _thumbnail_images;
+
   DescriptorHeap _uav_clear_heap;
 
   struct Cursor

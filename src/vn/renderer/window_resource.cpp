@@ -4,7 +4,6 @@
 #include "core.hpp"
 #include "error_handling.hpp"
 #include "window_manager.hpp"
-#include "../util.hpp"
 
 #include <dwmapi.h>
 
@@ -140,6 +139,11 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
 
   // render
   window_content_render(cmd, swapchain_image, vertices, indices, shape_properties);
+  if (use_window_thumbnail_pipeline)
+  {
+    window_thumbnail_render(cmd, &renderer->_thumbnail_images[core->frame_index()]);
+    use_window_thumbnail_pipeline = false;
+  }
   window_shadow_render(cmd);
 
   // record finish, change render target view type to present
@@ -156,13 +160,10 @@ void WindowResource::window_content_render(ID3D12GraphicsCommandList1* cmd, Imag
 {
   auto core       = Core::instance();
   auto renderer   = Renderer::instance();
-  auto rtv_handle = swapchain_resource.rtv();
+  auto rtv_handle = render_target_image->cpu_handle();
   auto dsv_handle = D3D12_CPU_DESCRIPTOR_HANDLE{};
   if (renderer->enable_depth_test)
     dsv_handle = swapchain_resource.dsv_heap.cpu_handle();
-
-  // convert render target view from present type to render target type
-  render_target_image->set_state(cmd, ImageState::render_target);
 
   // set render target view
   if (renderer->enable_depth_test)
@@ -171,8 +172,7 @@ void WindowResource::window_content_render(ID3D12GraphicsCommandList1* cmd, Imag
     cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
-  float constexpr clear_color[4]{};
-  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  render_target_image->clear_render_target(cmd);
   if (renderer->enable_depth_test)
   {
     cmd->ClearDepthStencilView(dsv_handle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
@@ -203,6 +203,15 @@ void WindowResource::window_content_render(ID3D12GraphicsCommandList1* cmd, Imag
   // draw
   cmd->RSSetScissorRects(1, &window.rect);
   cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
+}
+
+void WindowResource::window_thumbnail_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image) noexcept
+{
+  auto renderer   = Renderer::instance();
+  auto rtv_handle = render_target_image->cpu_handle();
+
+  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
+  render_target_image->clear_render_target(cmd);
 }
 
 void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept
@@ -266,85 +275,67 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd) const
 #endif
 }
 
-void downsampling(uint32_t* src, uint32_t* dst, uint32_t src_row_offset, uint32_t width, uint32_t height) noexcept
-{
-  for (auto y = 0; y < height; ++y)
-  {
-    for (auto x = 0; x < width; ++x)
-    {
-      auto offset = 2 * y * src_row_offset + 2 * x;
-      dst[y * width + x] = ((src[offset] >> 2) & 0x3f3f3f3f) +
-                           ((src[offset + 1] >> 2) & 0x3f3f3f3f) +
-                           ((src[offset + src_row_offset] >> 2) & 0x3f3f3f3f) +
-                           ((src[offset + src_row_offset + 1] >> 2) & 0x3f3f3f3f);
-    }
-  }
-}
-
 void WindowResource::capture_window(uint32_t max_width, uint32_t max_height) noexcept
 {
-  auto core  = Core::instance();
-  auto cmd   = core->cmd();
-  auto image = swapchain_resource.current_image();
+  auto renderer = Renderer::instance();
 
   // get the window valid region
   auto screen_size = get_screen_size();
-  auto left        = std::clamp(window.rect.left,   0l, static_cast<LONG>(screen_size.x));
-  auto top         = std::clamp(window.rect.top,    0l, static_cast<LONG>(screen_size.y));
-  auto right       = std::clamp(window.rect.right,  0l, static_cast<LONG>(screen_size.x));
-  auto bottom      = std::clamp(window.rect.bottom, 0l, static_cast<LONG>(screen_size.y));
-  auto width       = right - left;
-  auto height      = bottom - top;
+  auto rect        = RECT{};
+  rect.left   = std::clamp(window.rect.left,   0l, static_cast<LONG>(screen_size.x));
+  rect.top    = std::clamp(window.rect.top,    0l, static_cast<LONG>(screen_size.y));
+  rect.right  = std::clamp(window.rect.right,  0l, static_cast<LONG>(screen_size.x));
+  rect.bottom = std::clamp(window.rect.bottom, 0l, static_cast<LONG>(screen_size.y));
 
-  // create readback buffer
-  auto readback_buffer = ComPtr<ID3D12Resource>{};
-  auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
-  auto row_pitch       = width * image->per_pixel_size();
-  auto row_byte_size   = align(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
-  auto heap_desc       = CD3DX12_RESOURCE_DESC::Buffer(align(row_byte_size * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
-  err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &heap_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback_buffer)),
-          "failed to create readback buffer");
-        
-  // copy to readback buffer
+  // judge wheather need scale down (by window thumbnail pipeline)
+  if (rect.right - rect.left > max_width || rect.bottom - rect.top > max_height)
+  {
+    use_window_thumbnail_pipeline = true;
+
+    // initialize thumbnail image
+    if (!thumbnail_width && !thumbnail_height)
+      std::ranges::for_each(renderer->_thumbnail_images, [=](auto& image)
+      {
+        image.init(ImageType::rtv, ImageFormat::rgba8_unorm, max_width, max_height)
+             .create_descriptor(renderer->_rtv_heap.pop_handle());
+      });
+    else
+      err_if(max_width != thumbnail_width || max_height != thumbnail_height, "currently, not conside thumbnail extent change case");
+
+    return;
+  }
+
+  // readback image
+  auto core = Core::instance();
+  auto cmd  = core->cmd();
   core->reset_cmd();
-  copy(cmd, *image, left, top, right, bottom, readback_buffer.Get());
-
-  // wait readback finish
+  auto [readback_buffer, src_bitmap_view] = swapchain_resource.current_image()->readback(cmd, rect);
   core->submit(cmd);
   core->wait_gpu_complete();
 
-  // get pointer of readback buffer
-  std::byte* p     = {};
-  auto       range = D3D12_RANGE{ 0, heap_desc.Width };
-  err_if(readback_buffer->Map(0, &range, reinterpret_cast<void**>(&p)), "failed to map readback buffer to pointer");
-
   // create bitmap
-  auto hdc_mem = CreateCompatibleDC(nullptr);
-  err_if(!hdc_mem, "failed to create compatible DC");
-  auto info = BITMAPINFO{};
-  info.bmiHeader.biSize     = sizeof(BITMAPINFOHEADER);
-  info.bmiHeader.biWidth    = std::min(static_cast<uint32_t>(width),  max_width);
-  info.bmiHeader.biHeight   = -std::min(static_cast<uint32_t>(height), max_height);
-  info.bmiHeader.biPlanes   = 1;
-  info.bmiHeader.biBitCount = 32;
-  auto data   = PBYTE{};
-  auto bitmap = CreateDIBSection(hdc_mem, &info, DIB_RGB_COLORS, reinterpret_cast<void**>(&data), nullptr, 0);
-  err_if(!bitmap, "failed to create DIBSection");
+  auto dst_bitmap = Win32Bitmap{};
+  dst_bitmap.init(max_width, max_height);
+
+  // copy small image
+  auto offset_x  = (max_width  - src_bitmap_view.width)  / 2;
+  auto offset_y  = (max_height - src_bitmap_view.height) / 2;
+  auto row_count = std::min(max_height, src_bitmap_view.height);
+
+  dst_bitmap.view.data += (offset_y * max_width + offset_x) * 4;
 
   // copy data from readback buffer to bitmap
-  for (auto j = 0; j < -info.bmiHeader.biHeight; ++j)
+  for (auto i = 0; i < row_count; ++i)
   {
-    memcpy(data, p, row_pitch);
-    p    += row_byte_size;
-    data += info.bmiHeader.biWidth * 4;
+    memcpy(dst_bitmap.view.data, src_bitmap_view.data, src_bitmap_view.width * 4);
+    src_bitmap_view.data += src_bitmap_view.row_byte_size;
+    dst_bitmap.view.data += max_width * 4;
   }
 
-  DeleteDC(hdc_mem);
+  // set thumbnail
+  err_if(DwmSetIconicThumbnail(window.handle, dst_bitmap.handle, 0), "failed to set thumbnail");
 
-  err_if(DwmSetIconicThumbnail(window.handle, bitmap, 0), "failed to set thumbnail");
-  DwmInvalidateIconicBitmaps(window.handle);
-  warn("refersh");
-  DeleteObject(bitmap);
+  dst_bitmap.destroy();
 }
 
 }}

@@ -40,9 +40,9 @@ public:
     if (_resource_indexs.contains(constants_name.data()))
     {
       if (_is_graphics_pipeline)
-        cmd->SetGraphicsRoot32BitConstants(_resource_indexs.at(constants_name.data()), sizeof(constants), &constants, 0);
+        cmd->SetGraphicsRoot32BitConstants(_resource_indexs.at(constants_name.data()), sizeof(constants) / 4, &constants, 0);
       else
-        cmd->SetComputeRoot32BitConstants(_resource_indexs.at(constants_name.data()), sizeof(constants), &constants, 0);
+        cmd->SetComputeRoot32BitConstants(_resource_indexs.at(constants_name.data()), sizeof(constants) / 4, &constants, 0);
     }
     set_descriptors(cmd, handles);
   }

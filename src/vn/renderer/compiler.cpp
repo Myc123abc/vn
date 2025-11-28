@@ -314,7 +314,7 @@ void Compiler::CompileResult::get_root_parameters(ID3D12ShaderReflection* shader
       auto buffer_desc = D3D12_SHADER_BUFFER_DESC{};
       err_if(constant_buffer->GetDesc(&buffer_desc), "faild to get constant buffer description");
 
-      root_param.InitAsConstants(buffer_desc.Size, resource_desc.BindPoint, resource_desc.Space);
+      root_param.InitAsConstants(buffer_desc.Size / 4, resource_desc.BindPoint, resource_desc.Space);
       _root_params.emplace_back(root_param);
       break;
     }

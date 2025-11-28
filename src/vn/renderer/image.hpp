@@ -38,6 +38,25 @@ enum class ImageState
 
 auto dxgi_format(ImageFormat format) noexcept -> DXGI_FORMAT;
 
+struct BitmapView
+{
+  std::byte* data{};
+  uint32_t   offset_x{};
+  uint32_t   offset_y{};
+  uint32_t   width{};
+  uint32_t   height{};
+  uint32_t   row_byte_size{};
+};
+
+struct Win32Bitmap
+{
+  HBITMAP    handle{};
+  BitmapView view{};
+
+  void init(uint32_t width, uint32_t height) noexcept;
+  void destroy() const noexcept;
+};
+
 class Image
 {
 public:
@@ -60,6 +79,7 @@ public:
   void resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept;
 
   void clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept;
+  void clear_render_target(ID3D12GraphicsCommandList1* cmd) noexcept;
 
   auto handle() const noexcept { return _handle.Get(); }
   auto format() const noexcept { return _format;       }
@@ -70,6 +90,10 @@ public:
   auto per_pixel_size() const noexcept -> uint32_t;
 
   void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle, std::optional<ImageType> type = {}) noexcept;
+
+  auto readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept -> std::pair<Microsoft::WRL::ComPtr<ID3D12Resource>, BitmapView>;
+
+  auto cpu_handle() const noexcept { return _cpu_handles.at(_type); }
 
 private:
   auto init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept -> Image&;

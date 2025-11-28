@@ -39,13 +39,12 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
   auto finish_window_moving_or_resizing = [&]
   {
+    if (!wm->_windows.contains(handle)) return;
     auto& window = wm->_windows.at(handle);
     if (window.mouse_state == MouseState::left_button_down || window.mouse_state == MouseState::left_button_press)
     {
       ReleaseCapture();
       window.mouse_state = MouseState::left_button_up;
-
-      auto& window = wm->_windows.at(handle);
 
       if (window.moving)
       {
@@ -83,6 +82,13 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     ui::UIContext::instance()->windows.erase(handle);
     wm->_windows.erase(handle);
     wm->_using_mouse_pass_through_windows.erase(handle);
+
+    auto& timer_events = wm->_timer_events[handle];
+    while (!timer_events.empty())
+    {
+      wm->_timer.remove_event(timer_events.front());
+      timer_events.pop();
+    }
     return 0;
   }
 
@@ -209,6 +215,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
   case WM_DWMSENDICONICTHUMBNAIL:
   {
+    wm->_timer_events[handle].emplace(wm->_timer.add_single_event(1000 / 60, [handle]
+    {
+      wm->_timer_events[handle].pop();
+      err_if(DwmInvalidateIconicBitmaps(handle), "failed to invalid thumbnail");
+    }));
     msg_queue->send_message(MessageQueue::Message_Capture_Window{ handle, HIWORD(l_param), LOWORD(l_param) });
     return 0;
   }
@@ -267,6 +278,8 @@ void WindowManager::message_process() noexcept
     else
       ++it;
   }
+
+  _timer.process_events();
 }
 
 auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept -> HWND
@@ -290,11 +303,7 @@ auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t 
 }
 
 // while (ShowCursor(false) >= 0);
-// auto rect = get_maximize_rect();
-// ClipCursor(&rect);
-// 
 // while (ShowCursor(true) < 0);
-// ClipCursor(nullptr);
 
 auto WindowManager::get_window_name(HWND handle) noexcept -> std::string
 {

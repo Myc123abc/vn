@@ -121,6 +121,7 @@ void Renderer::create_pipeline_resource() noexcept
   
   _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
   _window_mask_pipeline.init_compute("assets/window_mask.hlsl", "main");
+  _window_thumbnail_pipeline.init_graphics("assets/window_thumbnail.hlsl", "vs", "ps", {}, ImageFormat::rgba8_unorm);
 
   auto size = get_screen_size();
   _uav_clear_heap.init(DescriptorHeapType::cbv_srv_uav, 1, true);
@@ -130,6 +131,8 @@ void Renderer::create_pipeline_resource() noexcept
   
   _window_shadow_image.init(ImageType::uav, ImageFormat::rgba8_unorm, size.x, size.y)
                       .create_descriptor(_cbv_srv_uav_heap.pop_handle("window shadow image"));
+
+  _rtv_heap.init(DescriptorHeapType::rtv, Frame_Count);
 }
 
 void Renderer::load_cursor_images() noexcept

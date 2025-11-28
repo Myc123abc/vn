@@ -36,14 +36,6 @@ public:
 
   auto current_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
 
-  auto rtv() const noexcept
-  {
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE{
-      rtv_heap.cpu_handle(),
-      static_cast<int>(swapchain->GetCurrentBackBufferIndex()),
-      RTV_Size};
-  }
-
   void resize(uint32_t width, uint32_t height) noexcept;
 };
 
@@ -52,10 +44,15 @@ struct WindowResource
   Window            window;
   SwapchainResource swapchain_resource;
 
+  bool use_window_thumbnail_pipeline{};
+  inline static auto thumbnail_width  = 0;
+  inline static auto thumbnail_height = 0;
+
   void init(Window const& window, bool transparent) noexcept;
 
   void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
   void window_content_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
+  void window_thumbnail_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image) noexcept;
   void window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept;
 
   void capture_window(uint32_t max_width, uint32_t max_height) noexcept;

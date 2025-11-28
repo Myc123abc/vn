@@ -64,7 +64,7 @@ void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcep
     srv_desc.ViewDimension              = D3D12_SRV_DIMENSION_BUFFER;
     srv_desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_RAW;
     srv_desc.Buffer.NumElements         = _capacity * Frame_Count / 4;
-      Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, cpu_handle);
+    Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, cpu_handle);
   }
 }
 
