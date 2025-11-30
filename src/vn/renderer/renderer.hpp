@@ -44,8 +44,6 @@ public:
   void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
 
   void message_process() noexcept;
-  void render_begin()    noexcept;
-  void render_end()      noexcept;
 
   void render_window(HWND handle, ui::WindowRenderData const& data) noexcept;
 

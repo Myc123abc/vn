@@ -100,11 +100,11 @@ void Renderer::init() noexcept
 
   _cbv_srv_uav_heap.init(DescriptorHeapType::cbv_srv_uav, static_cast<uint32_t>(CursorType::Number) + Frame_Count + 2);
 
-  load_cursor_images();
+  // load_cursor_images();
 
-  // create buffers
-  _cbv_srv_uav_heap.add_tag("framebuffer");
-  for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
+  // // create buffers
+  // _cbv_srv_uav_heap.add_tag("framebuffer");
+  // for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
 
   create_pipeline_resource();
 }
@@ -113,6 +113,7 @@ void Renderer::destroy() noexcept
 {
   Core::instance()->wait_gpu_complete();
   Core::instance()->destroy();
+  std::ranges::for_each(_window_resources | std::views::values, [](auto const& wr) { wr.destroy(); });
 }
 
 void Renderer::create_pipeline_resource() noexcept
@@ -196,7 +197,7 @@ void Renderer::load_cursor_images() noexcept
 
 void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept
 {
-  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->get_last_fence_value()]()
+  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->fence_value()]()
   {
     auto fence_value = Core::instance()->fence()->GetCompletedValue();
     err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
@@ -213,18 +214,6 @@ void Renderer::message_process() noexcept
     (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
 
   MessageQueue::instance()->process_messages();
-}
-
-void Renderer::render_begin() noexcept
-{
-  auto core = Core::instance();
-  _frame_buffers[core->frame_index()].clear();
-  core->frame_begin();
-}
-
-void Renderer::render_end() noexcept
-{
-  Core::instance()->frame_end();
 }
 
 void Renderer::render_window(HWND handle, ui::WindowRenderData const& data) noexcept

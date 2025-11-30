@@ -51,7 +51,6 @@ auto UIContext::content_extent() noexcept -> std::pair<uint32_t, uint32_t>
 void UIContext::render() noexcept
 {
   auto has_rendering = false;
-  shape_properties_offset = {};
   hovered_widget_ids.clear();
 
   for (auto& [handle, window] : windows)
@@ -59,10 +58,11 @@ void UIContext::render() noexcept
     this->window = WindowManager::instance()->get_window(handle);
     if (this->window.is_minimized) continue;
 
-    has_rendering       = true;
-    updating            = true;
-    window.widget_count = {};
-    op_data.offset      = {};
+    shape_properties_offset = {};
+    has_rendering           = true;
+    updating                = true;
+    window.widget_count     = {};
+    op_data.offset          = {};
 
     // use title bar, move draw position under the title bar
     if (window.draw_title_bar)
@@ -74,7 +74,7 @@ void UIContext::render() noexcept
     if (window.draw_title_bar)
       update_title_bar();
 
-    update_window_shadow();
+    // update_window_shadow();
 
     updating = false;
 

@@ -110,7 +110,7 @@ void FrameBuffer::upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const
   auto indices_offset  = _vertices_indices_buffer.append_range(indices);
 
   // get current buffer gpu address
-  auto address = _vertices_indices_buffer.gpu_address() + _window_offset;
+  auto address = _vertices_indices_buffer.gpu_address();
 
   // set vertex buffer view
   D3D12_VERTEX_BUFFER_VIEW vertex_buffer_view{};
@@ -128,8 +128,6 @@ void FrameBuffer::upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const
   index_buffer_view.SizeInBytes    = indices_offset;
   index_buffer_view.Format         = DXGI_FORMAT_R16_UINT;
   cmd->IASetIndexBuffer(&index_buffer_view);
-
-  _window_offset = _vertices_indices_buffer.size();
 
   // shape properties
   for (auto const& shape_property : shape_properties)

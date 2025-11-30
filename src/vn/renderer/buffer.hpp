@@ -14,13 +14,6 @@ namespace vn { namespace renderer {
 class Buffer
 {
 public:
-  Buffer()                         = default;
-  ~Buffer()                        = default;
-  Buffer(Buffer const&)            = delete;
-  Buffer(Buffer&&)                 = delete;
-  Buffer& operator=(Buffer const&) = delete;
-  Buffer& operator=(Buffer&&)      = delete;
-
   void init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle = {}) noexcept;
 
   void clear() noexcept { _size = {}; }
@@ -48,28 +41,20 @@ private:
 class FrameBuffer
 {
 public:
-  FrameBuffer()                              = default;
-  ~FrameBuffer()                             = default;
-  FrameBuffer(FrameBuffer const&)            = delete;
-  FrameBuffer(FrameBuffer&&)                 = delete;
-  FrameBuffer& operator=(FrameBuffer const&) = delete;
-  FrameBuffer& operator=(FrameBuffer&&)      = delete;
-
   void init(D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept;
 
-  void clear() noexcept
+  auto clear() noexcept -> FrameBuffer&
   {
     _vertices_indices_buffer.clear();
     _shape_properties_buffer.clear();
-    _window_offset = {};
+    return *this;
   }
 
   void upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
 
 private:
-  Buffer   _vertices_indices_buffer;
-  Buffer   _shape_properties_buffer;
-  uint32_t _window_offset{};
+  Buffer _vertices_indices_buffer;
+  Buffer _shape_properties_buffer;
 };
 
 }}

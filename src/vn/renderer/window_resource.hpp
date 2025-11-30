@@ -5,6 +5,7 @@
 #include "window.hpp"
 #include "descriptor_heap.hpp"
 #include "config.hpp"
+#include "buffer.hpp"
 
 #include <dcomp.h>
 
@@ -15,6 +16,7 @@ namespace vn { namespace renderer {
 
 struct SwapchainResource
 {
+  HANDLE                                  waitable_obj{};
   Microsoft::WRL::ComPtr<IDXGISwapChain4> swapchain;
   std::array<Image, Frame_Count>          swapchain_images;
   DescriptorHeap                          rtv_heap;
@@ -31,8 +33,8 @@ private:
   Microsoft::WRL::ComPtr<IDCompositionVisual> _comp_visual;
 
 public:
-
   void init(HWND handle, uint32_t width, uint32_t height, bool is_transparent = false) noexcept;
+  void destroy() const noexcept;
 
   auto current_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
 
@@ -41,17 +43,32 @@ public:
 
 struct WindowResource
 {
-  Window            window;
-  SwapchainResource swapchain_resource;
+  struct FrameResource
+  {
+    FrameBuffer                                    buffer;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmd_alloc;
+    uint64_t                                       fence_value{};
+  };
 
-  bool use_window_thumbnail_pipeline{};
-  inline static auto thumbnail_width  = 0;
-  inline static auto thumbnail_height = 0;
+  Window                                             window;
+  SwapchainResource                                  swapchain_resource;
+  DescriptorHeap                                     cbv_srv_uav_heap;
+  uint32_t                                           frame_index{};
+  std::array<FrameResource, Frame_Count>             frame_resources;
+  Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1> cmd;
+
+  bool                                               use_window_thumbnail_pipeline{};
+  inline static auto                                 thumbnail_width  = 0;
+  inline static auto                                 thumbnail_height = 0;
 
   void init(Window const& window, bool transparent) noexcept;
+  void destroy() const noexcept;
+
+  void wait_current_frame_render_finish() const noexcept;
 
   void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
-  void window_content_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
+
+  void window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
   void window_thumbnail_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image) noexcept;
   void window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept;
 
