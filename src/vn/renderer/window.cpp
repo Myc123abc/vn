@@ -17,10 +17,10 @@ void Window::init(HWND handle, std::string_view name, int x, int y, uint32_t wid
 	this->width  = width;
 	this->height = height;
 
-  updaterect();
+  update_rect();
 }
 
-void Window::updaterect() noexcept
+void Window::update_rect() noexcept
 {
   rect.left   = x;
   rect.top    = y;
@@ -41,7 +41,7 @@ void Window::move(int32_t dx, int32_t dy) noexcept
   moving  = true;
   x      += dx;
   y      += dy;
-  updaterect();
+  update_rect();
 }
 
 void Window::move_from_maximize(int x, int y) noexcept
@@ -54,7 +54,7 @@ void Window::move_from_maximize(int x, int y) noexcept
   height       = backuprect.bottom - backuprect.top;
   this->x      = x - width * ratio_x;
   this->y      = 0;
-  updaterect();
+  update_rect();
 }
 
 auto Window::point_on(glm::vec<2, int> const& p) const noexcept -> bool

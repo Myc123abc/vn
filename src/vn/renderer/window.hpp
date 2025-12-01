@@ -102,7 +102,7 @@ private:
   void right_offset(int dx)  noexcept;
   void bottom_offset(int dy) noexcept;
 
-  void updaterect()         noexcept;
+  void update_rect()         noexcept;
   void update_by_rect()      noexcept;
 };
 

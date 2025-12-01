@@ -43,7 +43,6 @@ private:
 
     auto process() noexcept
     {
-      if (iter_func) iter_func(get_progress());
       if (type == Event::Type::single)
       {
         if (get_duration() >= duratoin)
@@ -58,8 +57,10 @@ private:
         {
           func();
           start();
+          return false;
         }
       }
+      if (iter_func) iter_func(get_progress());
       return false;
     }
 

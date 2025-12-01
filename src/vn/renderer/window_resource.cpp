@@ -57,15 +57,17 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
             "failed to commit composition device");
   }
   else
+  {
     err_if(core->factory()->CreateSwapChainForHwnd(core->command_queue(), handle, &swapchain_desc, nullptr, nullptr, &swapchain),
             "failed to create swapchain");
+
+    // disable alt-enter fullscreen
+    err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_WINDOW_CHANGES), "failed to disable alt-enter");
+  }
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
   this->swapchain->SetMaximumFrameLatency(Frame_Count);
   waitable_obj = this->swapchain->GetFrameLatencyWaitableObject();
   err_if(!waitable_obj, "failed to get waitable object from swapchain");
-
-  // disable alt-enter fullscreen
-  err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_WINDOW_CHANGES), "failed to disable alt-enter");
 
   rtv_heap.init(DescriptorHeapType::rtv, Frame_Count);
   for (auto i = 0; i < Frame_Count; ++i)
@@ -189,8 +191,6 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   err_if(cmd->Reset(frame_resource.cmd_alloc.Get(), nullptr), "failed to reset command list");
   
   // set descriptor heaps
-  // TODO: max swapchain cbv_srv_uav heap to render global heap
-  // auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
   auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ cbv_srv_uav_heap.handle() };
   cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
@@ -210,7 +210,6 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   frame_resource.fence_value = core->submit(cmd.Get());
 
   // present
-  // err_if(swapchain_resource.swapchain->Present(0, DXGI_PRESENT_ALLOW_TEARING), "failed to present swapchain");
   err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
 
   // move to next frame resource
@@ -247,7 +246,6 @@ void WindowResource::window_content_render(Image* render_target_image, std::span
   cmd->RSSetViewports(1, &swapchain_resource.viewport);
 
   // upload data to buffer
-  // renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
   frame_resources[frame_index].buffer.clear().upload(cmd.Get(), vertices, indices, shape_properties);
 
   // set descriptors
