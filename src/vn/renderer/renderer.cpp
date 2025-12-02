@@ -216,10 +216,16 @@ void Renderer::message_process() noexcept
   MessageQueue::instance()->process_messages();
 }
 
-void Renderer::render_window(HWND handle, ui::WindowRenderData const& data) noexcept
+void Renderer::render(HWND handle, ui::WindowRenderData const& data) noexcept
 {
   err_if(!_window_resources.contains(handle), "unknow window resource window when rendering");
   _window_resources[handle].render(data.vertices, data.indices, data.shape_properties);
+}
+
+void Renderer::present(HWND handle, bool vsync) const noexcept
+{
+  err_if(!_window_resources.contains(handle), "unknow window resource window when rendering");
+  _window_resources.at(handle).present(vsync);
 }
 
 }}

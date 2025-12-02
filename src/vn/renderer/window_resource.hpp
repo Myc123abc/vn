@@ -67,6 +67,7 @@ struct WindowResource
   void wait_current_frame_render_finish() const noexcept;
 
   void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
+  void present(bool vsync) const noexcept;
 
   void window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
   void window_thumbnail_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image) noexcept;

@@ -79,28 +79,29 @@ namespace vn { namespace ui {
 
 void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
 {
-  auto ctx        = UIContext::instance();
-  auto [min, max] = bounding_rectangle;
+  auto ctx         = UIContext::instance();
+  auto render_data = ctx->current_render_data();
+  auto [min, max]  = bounding_rectangle;
 
   auto offset = ctx->op_data.op == ShapeProperty::Operator::none ? ctx->shape_properties_offset : ctx->op_data.offset;
 
-  ctx->render_data.vertices.append_range(std::vector<Vertex>
+  render_data->vertices.append_range(std::vector<Vertex>
   {
     { { min.x, min.y, 0.f }, {}, offset },
     { { max.x, min.y, 0.f }, {}, offset },
     { { max.x, max.y, 0.f }, {}, offset },
     { { min.x, max.y, 0.f }, {}, offset },
   });
-  ctx->render_data.indices.append_range(std::vector<uint16_t>
+  render_data->indices.append_range(std::vector<uint16_t>
   {
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 1),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 3),
+    static_cast<uint16_t>(render_data->idx_beg + 0),
+    static_cast<uint16_t>(render_data->idx_beg + 1),
+    static_cast<uint16_t>(render_data->idx_beg + 2),
+    static_cast<uint16_t>(render_data->idx_beg + 0),
+    static_cast<uint16_t>(render_data->idx_beg + 2),
+    static_cast<uint16_t>(render_data->idx_beg + 3),
   });
-  ctx->render_data.idx_beg += 4;
+  render_data->idx_beg += 4;
 }
 
 void add_shape_property(
@@ -109,8 +110,9 @@ void add_shape_property(
   float                     thickness,
   std::vector<float> const& values) noexcept
 {
-  auto ctx = UIContext::instance();
-  ctx->render_data.shape_properties.emplace_back(ShapeProperty
+  auto ctx         = UIContext::instance();
+  auto render_data = ctx->current_render_data();
+  render_data->shape_properties.emplace_back(ShapeProperty
   {
     type,
     ctx->tmp_color.value_or(color),
@@ -118,7 +120,7 @@ void add_shape_property(
     ctx->op_data.op,
     values
   });
-  ctx->shape_properties_offset += ctx->render_data.shape_properties.back().byte_size();
+  ctx->shape_properties_offset += render_data->shape_properties.back().byte_size();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -262,9 +264,10 @@ void end_union(Color color, float thickness) noexcept
   err_if(!ctx->using_union, "cannot call end union in an uncomplete unino operator");
   err_if(ctx->path_draw, "cannot call end union in an uncomplete path draw");
   ctx->using_union = false;
-  ctx->render_data.shape_properties.back().set_color(ctx->tmp_color.value_or(color));
-  ctx->render_data.shape_properties.back().set_thickness(thickness);
-  ctx->render_data.shape_properties.back().set_operator({});
+  auto render_data = ctx->current_render_data();
+  render_data->shape_properties.back().set_color(ctx->tmp_color.value_or(color));
+  render_data->shape_properties.back().set_thickness(thickness);
+  render_data->shape_properties.back().set_operator({});
 
   add_vertices_indices(get_bounding_rectangle(ctx->op_data.points));
 
@@ -303,12 +306,13 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
 {
   check_in_update_callback();
   
-  auto ctx = UIContext::instance();
-  err_if(ctx->render_data.shape_properties.empty(), "failed must draw a shape then use discard rectangle");
+  auto ctx         = UIContext::instance();
+  auto render_data = ctx->current_render_data();
+  err_if(render_data->shape_properties.empty(), "failed must draw a shape then use discard rectangle");
   err_if(ctx->using_union, "don't use discard rectangle in union operator, I'm not test for this");
   err_if(ctx->path_draw, "don't use discard rectangle in part draw, I'm not test for this");
 
-  auto& shape_property = ctx->render_data.shape_properties.back();
+  auto& shape_property = render_data->shape_properties.back();
   shape_property.set_operator(ShapeProperty::Operator::discard);
 
   auto offset = ctx->window_render_pos();

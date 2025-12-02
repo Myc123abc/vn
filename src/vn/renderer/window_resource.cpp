@@ -34,7 +34,7 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
-  swapchain_desc.Flags            = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+  swapchain_desc.Flags            = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
   if (is_transparent)
   {
     swapchain_desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
@@ -209,11 +209,15 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   // submit command
   frame_resource.fence_value = core->submit(cmd.Get());
 
-  // present
-  err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
-
   // move to next frame resource
   frame_index = (frame_index + 1) % Frame_Count;
+}
+
+void WindowResource::present(bool vsync) const noexcept
+{
+  vsync
+    ? err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain")
+    : err_if(swapchain_resource.swapchain->Present(0, DXGI_PRESENT_ALLOW_TEARING), "failed to present swapchain");
 }
 
 void WindowResource::window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept

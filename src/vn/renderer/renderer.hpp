@@ -45,7 +45,8 @@ public:
 
   void message_process() noexcept;
 
-  void render_window(HWND handle, ui::WindowRenderData const& data) noexcept;
+  void render(HWND handle, ui::WindowRenderData const& data) noexcept;
+  void present(HWND handle, bool vsync = false) const noexcept;
 
   static constexpr auto enable_depth_test{ false };
 

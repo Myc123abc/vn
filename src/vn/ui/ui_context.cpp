@@ -4,8 +4,9 @@
 #include "../renderer/renderer.hpp"
 #include "ui.hpp"
 
-#include <algorithm>
 #include <ranges>
+
+#include <algorithm>
 
 using namespace vn::renderer;
 
@@ -50,16 +51,17 @@ auto UIContext::content_extent() noexcept -> std::pair<uint32_t, uint32_t>
 
 void UIContext::render() noexcept
 {
-  auto has_rendering = false;
   hovered_widget_ids.clear();
 
-  for (auto& [handle, window] : windows)
-  {
-    this->window = WindowManager::instance()->get_window(handle);
-    if (this->window.is_minimized) continue;
+  // get unminimized windows as render targets
+  auto render_windows = windows
+    | std::views::filter([this](auto const& pair) { return !WindowManager::instance()->get_window(pair.first).is_minimized; });
 
+  // generate render data
+  for (auto& [handle, window] : render_windows)
+  {
+    this->window            = WindowManager::instance()->get_window(handle);
     shape_properties_offset = {};
-    has_rendering           = true;
     updating                = true;
     window.widget_count     = {};
     op_data.offset          = {};
@@ -79,16 +81,30 @@ void UIContext::render() noexcept
     updating = false;
 
     //update_cursor();
-
-    Renderer::instance()->render_window(handle, render_data);
-    render_data.clear();
   }
-
-  if (has_rendering)
+  
+  if (!render_windows.empty())
   {
+    auto renderer = Renderer::instance();
+
+    // commit render commands
+    for (auto& [handle, window] : render_windows)
+    {
+      renderer->render(handle, window.render_data);
+      window.render_data.clear();
+    }
+
+    // present windows
+    std::ranges::for_each(render_windows | std::views::keys | std::views::take(std::ranges::distance(render_windows) - 1),
+      [&](auto handle) { renderer->present(handle); });
+    std::ranges::for_each(render_windows | std::views::keys | std::views::reverse | std::views::take(1),
+      [&](auto handle) { renderer->present(handle, true); });
+
+    // update mouse hovered widget id
     if (!hovered_widget_ids.empty())
       prev_hovered_widget_id = hovered_widget_ids.back();
 
+    // timer events process
     _lerp_anim_timer.process_events();
   }
   else
@@ -102,7 +118,8 @@ void UIContext::add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom
 
 void UIContext::update_cursor() noexcept
 {
-  auto renderer = Renderer::instance();
+  auto renderer    = Renderer::instance();
+  auto render_data = current_render_data();
   //if (window.is_moving_or_resizing())
   {
     auto pos = get_cursor_pos();
@@ -111,26 +128,26 @@ void UIContext::update_cursor() noexcept
       pos.x -= renderer->_cursors[window.cursor_type].pos.x;
       pos.y -= renderer->_cursors[window.cursor_type].pos.y;
     }
-    render_data.vertices.append_range(std::vector<Vertex>
+    render_data->vertices.append_range(std::vector<Vertex>
     {
       { { pos.x,      pos.y,      0.f }, { 0, 0 }, shape_properties_offset },
       { { pos.x + 32, pos.y,      0.f }, { 1, 0 }, shape_properties_offset },
       { { pos.x + 32, pos.y + 32, 0.f }, { 1, 1 }, shape_properties_offset },
       { { pos.x,      pos.y + 32, 0.f }, { 0, 1 }, shape_properties_offset },
     });
-    render_data.indices.append_range(std::vector<uint16_t>
+    render_data->indices.append_range(std::vector<uint16_t>
     {
-      static_cast<uint16_t>(render_data.idx_beg + 0),
-      static_cast<uint16_t>(render_data.idx_beg + 1),
-      static_cast<uint16_t>(render_data.idx_beg + 2),
-      static_cast<uint16_t>(render_data.idx_beg + 0),
-      static_cast<uint16_t>(render_data.idx_beg + 2),
-      static_cast<uint16_t>(render_data.idx_beg + 3),
+      static_cast<uint16_t>(render_data->idx_beg + 0),
+      static_cast<uint16_t>(render_data->idx_beg + 1),
+      static_cast<uint16_t>(render_data->idx_beg + 2),
+      static_cast<uint16_t>(render_data->idx_beg + 0),
+      static_cast<uint16_t>(render_data->idx_beg + 2),
+      static_cast<uint16_t>(render_data->idx_beg + 3),
     });
-    render_data.idx_beg += 4;
+    render_data->idx_beg += 4;
 
-    render_data.shape_properties.emplace_back(ShapeProperty{ ShapeProperty::Type::cursor });
-    shape_properties_offset += render_data.shape_properties.back().byte_size();
+    render_data->shape_properties.emplace_back(ShapeProperty{ ShapeProperty::Type::cursor });
+    shape_properties_offset += render_data->shape_properties.back().byte_size();
   }
 }
 
@@ -141,7 +158,7 @@ void UIContext::update_window_shadow() noexcept
 	ui::rectangle({ static_cast<float>(rect.left), static_cast<float>(rect.top) }, { static_cast<float>(rect.right), static_cast<float>(rect.bottom) });
   //add_vertices_indices({{ rect.left, rect.top }, { rect.right, rect.bottom }});
   //add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { static_cast<float>(window.rect.left), static_cast<float>(window.rect.top), static_cast<float>(window.rect.right), static_cast<float>(window.rect.bottom) });
-  render_data.shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
+  current_render_data()->shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
 }
 
 void UIContext::update_title_bar() noexcept

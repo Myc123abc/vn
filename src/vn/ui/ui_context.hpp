@@ -51,6 +51,7 @@ struct Window
   glm::vec2             render_pos{};
   uint32_t              widget_count{};
   bool                  draw_title_bar{};
+  WindowRenderData      render_data{};
 };
 
 class UIContext
@@ -89,6 +90,8 @@ public:
 
   auto add_lerp_anim(uint32_t id, uint32_t dur) noexcept -> LerpAnimation*;
 
+  auto current_render_data() noexcept { return &windows[window.handle].render_data; }
+
 private:
   void update_cursor()        noexcept;
   void update_wireframe()     noexcept;
@@ -102,7 +105,6 @@ private:
 
 public:
   std::unordered_map<HWND, Window> windows;
-  WindowRenderData                 render_data;
   renderer::Window                 window;
   uint32_t                         shape_properties_offset{};
 
