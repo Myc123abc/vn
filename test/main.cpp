@@ -34,7 +34,7 @@ void render_window_2() noexcept
   if (draw_circle) ui::circle({ 40, 40 }, 20, 0x00ff00ff, 1);
 
   timer.process_events();
-  
+
   ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff, 1);
 }
 
@@ -72,7 +72,7 @@ int main()
   }, [&](float) { ++fps_count; });
   timer.add_single_event(3000, [&]
   {
-    ui::create_window("third window", 300, 300, 100, 100, render_window_3);
+    // ui::create_window("third window", 300, 300, 100, 100, render_window_3);
   });
 
   while (ui::window_count())

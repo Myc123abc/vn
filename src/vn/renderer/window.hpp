@@ -48,6 +48,23 @@ struct Window
   bool              is_mouse_pass_through{};
   std::vector<RECT> move_invalid_area{};
 
+  static constexpr auto Resize_Width     = 5;
+  static constexpr auto Resize_Height    = 5;
+  static constexpr auto Shadow_Thickness = 0;
+
+  uint32_t min_width  = 50;
+  uint32_t min_height = 50;
+
+  auto real_x()      const noexcept { return x      - Shadow_Thickness;     }
+  auto real_y()      const noexcept { return y      - Shadow_Thickness;     }
+  auto real_width()  const noexcept { return width  + Shadow_Thickness * 2; }
+  auto real_height() const noexcept { return height + Shadow_Thickness * 2; }
+  auto real_rect()   const noexcept { return RECT{ rect.left   - Shadow_Thickness,
+                                                   rect.top    - Shadow_Thickness,
+                                                   rect.right  + Shadow_Thickness,
+                                                   rect.bottom + Shadow_Thickness }; }
+  auto content_pos() const noexcept { return glm::vec2{ Shadow_Thickness, Shadow_Thickness }; }
+
   void init(HWND handle, std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept;
 
 	auto is_moving_or_resizing() const noexcept { return moving || resizing; }
@@ -56,12 +73,6 @@ struct Window
 
   void move(int dx, int dy) noexcept;
   void move_from_maximize(int x, int y) noexcept;
-
-  static auto constexpr Resize_Width  = 5;
-  static auto constexpr Resize_Height = 5;
-
-  uint32_t min_width  = 50;
-  uint32_t min_height = 50;
 
   enum class ResizeType
   {

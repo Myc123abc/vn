@@ -24,6 +24,11 @@ public:
     return &instance;
   }
 
+  struct Message_Create_Fullscreen_Render_Resource
+  {
+    Window window;
+  };
+
   struct Message_Create_Window_Render_Resource
   {
     Window window;
@@ -36,22 +41,15 @@ public:
   };
 
   struct Message_Update_Window
-  { 
-    Window window;
-  };
-
-  struct Message_Capture_Window
   {
-    HWND     handle;
-    uint32_t max_width{};
-    uint32_t max_height{};
+    Window window;
   };
 
   using Message = std::variant<
     Message_Create_Window_Render_Resource,
+    Message_Create_Fullscreen_Render_Resource,
     Message_Destroy_Window_Render_Resource,
-    Message_Update_Window,
-    Message_Capture_Window
+    Message_Update_Window
   >;
 
   void send_message(Message const& msg) noexcept { _message_queue.push(msg); }

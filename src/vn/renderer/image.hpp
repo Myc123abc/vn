@@ -145,4 +145,6 @@ void copy(
   LONG                        bottom,
   ID3D12Resource*             readback_buffer) noexcept;
 
+void copy(BitmapView const& src, BitmapView const& dst) noexcept;
+
 }}

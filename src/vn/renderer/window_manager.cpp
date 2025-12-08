@@ -5,12 +5,14 @@
 #include "../ui/ui_context.hpp"
 
 #include <dwmapi.h>
+#include <winuser.h>
 
 using namespace vn::renderer;
 
 namespace {
 
-constexpr wchar_t Window_Class[] = L"vn::WindowManager::Window";
+constexpr wchar_t Fullscreen_Class[] = L"vn::WindowManager::Fullscreen";
+constexpr wchar_t Window_Class[]     = L"vn::WindowManager::Window";
 
 auto to_64_bits(uint32_t x, uint32_t y) noexcept
 {
@@ -31,10 +33,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   static auto wm        = WindowManager::instance();
   static auto renderer  = Renderer::instance();
   static auto msg_queue = MessageQueue::instance();
+  static auto ui_ctx    = ui::UIContext::instance();
 
   static auto last_pos           = glm::vec<2, int>{};
   static auto last_resize_type   = Window::ResizeType{};
-  static auto lm_downresize_type = Window::ResizeType{};
+  static auto lm_down_resize_type = Window::ResizeType{};
   static auto lm_down_pos        = glm::vec<2, int>{};
 
   auto finish_window_moving_or_resizing = [&]
@@ -48,11 +51,12 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
 
       if (window.moving)
       {
-        window.moving = {};
         BringWindowToTop(handle);
         ClipCursor(nullptr);
+        SetWindowPos(handle, 0, window.real_x(), window.real_y(), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        PostMessageW(handle, static_cast<int>(WindowManager::Message::next_frame_exchange_window_and_fullscreen), 0, 0);
       }
-      else if (lm_downresize_type != Window::ResizeType::none)
+      else if (lm_down_resize_type != Window::ResizeType::none)
       {
         window.resizing = {};
         BringWindowToTop(handle);
@@ -79,16 +83,9 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   {
     ShowWindow(handle, SW_HIDE);
     msg_queue->send_message(MessageQueue::Message_Destroy_Window_Render_Resource{ handle });
-    ui::UIContext::instance()->windows.erase(handle);
+    ui_ctx->windows.erase(handle);
     wm->_windows.erase(handle);
     wm->_using_mouse_pass_through_windows.erase(handle);
-
-    auto& timer_events = wm->_timer_events[handle];
-    while (!timer_events.empty())
-    {
-      wm->_timer.remove_event(timer_events.front());
-      timer_events.pop();
-    }
     return 0;
   }
 
@@ -96,7 +93,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   {
     SetCapture(handle);
     last_pos = get_cursor_pos();
-    lm_downresize_type = wm->_windows.at(handle).get_resize_type(last_pos);
+    lm_down_resize_type = wm->_windows.at(handle).get_resize_type(last_pos);
     lm_down_pos = last_pos;
     wm->_windows.at(handle).mouse_state = MouseState::left_button_down;
     break;
@@ -145,7 +142,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
       if (!offset_x && !offset_y) break;
 
       // window moving
-      if (lm_downresize_type == Window::ResizeType::none)
+      if (lm_down_resize_type == Window::ResizeType::none)
       {
         if (window.moving)
           window.move(offset_x, offset_y);
@@ -155,6 +152,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
             auto rect = get_maximize_rect();
             ClipCursor(&rect);
             window.is_maximized ? window.move_from_maximize(cursor_pos.x, cursor_pos.y) : window.move(offset_x, offset_y);
+            ui_ctx->windows[handle].need_clear = true;
           }
       }
       // window resizing
@@ -165,8 +163,8 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
           auto rect = get_maximize_rect();
           ClipCursor(&rect);
         }
-        window.adjust_offset(lm_downresize_type, cursor_pos, offset_x, offset_y);
-        window.resize(lm_downresize_type, offset_x, offset_y);
+        window.adjust_offset(lm_down_resize_type, cursor_pos, offset_x, offset_y);
+        window.resize(lm_down_resize_type, offset_x, offset_y);
       }
       msg_queue->send_message(MessageQueue::Message_Update_Window{ window });
       last_pos = cursor_pos;
@@ -177,7 +175,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   case WM_SIZE:
   {
     if (!wm->_windows.contains(handle)) break;
-    
+
     auto& window = wm->_windows.at(handle);
 
     if (w_param == SIZE_MINIMIZED)
@@ -213,21 +211,11 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     return 0;
   }
 
-  case WM_DWMSENDICONICTHUMBNAIL:
+  case static_cast<uint32_t>(WindowManager::Message::next_frame_exchange_window_and_fullscreen):
   {
-    wm->_timer_events[handle].emplace(wm->_timer.add_single_event(1000 / 60, [handle]
-    {
-      wm->_timer_events[handle].pop();
-      err_if(DwmInvalidateIconicBitmaps(handle), "failed to invalid thumbnail");
-    }));
-    msg_queue->send_message(MessageQueue::Message_Capture_Window{ handle, HIWORD(l_param), LOWORD(l_param) });
+    wm->_windows.at(handle).moving = false;
+    ui_ctx->moving_or_resizing_finish_window = handle;
     return 0;
-  }
-
-  case WM_DWMSENDICONICLIVEPREVIEWBITMAP:
-  {
-    info("2");
-    break;
   }
 
   }
@@ -241,9 +229,24 @@ void WindowManager::init() noexcept
   wnd_class.cbSize        = sizeof(wnd_class);
   wnd_class.hInstance     = GetModuleHandleW(nullptr);
   wnd_class.hCursor       = LoadCursorA(nullptr, IDC_ARROW);
+  wnd_class.lpszClassName = Fullscreen_Class;
+  wnd_class.lpfnWndProc   = DefWindowProcW;
+  err_if(!RegisterClassExW(&wnd_class), "failed register class");
   wnd_class.lpszClassName = Window_Class;
   wnd_class.lpfnWndProc   = wnd_proc;
   err_if(!RegisterClassExW(&wnd_class), "failed register class");
+
+  // create fullscreen window
+  auto screen_size = get_screen_size();
+  auto handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+    Fullscreen_Class, nullptr, WS_POPUP, 0, 0, screen_size.x, screen_size.y, 0, 0, wnd_class.hInstance, 0);
+  err_if(!handle, "failed to create windwo");
+  ShowWindow(handle, SW_SHOW);
+
+  // create fullscreen window render resource
+  auto window = Window{};
+  window.init(handle, "", 0, 0, screen_size.x, screen_size.y);
+  MessageQueue::instance()->send_message(MessageQueue::Message_Create_Fullscreen_Render_Resource{ window });
 }
 
 void WindowManager::message_process() noexcept
@@ -278,28 +281,22 @@ void WindowManager::message_process() noexcept
     else
       ++it;
   }
-
-  _timer.process_events();
 }
 
 auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept -> HWND
 {
-	auto screen_size = get_screen_size();
-  auto handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, Window_Class, nullptr, WS_POPUP | WS_MINIMIZEBOX,
-    0, 0, screen_size.x, screen_size.y, 0, 0, GetModuleHandleW(nullptr), 0);
-  err_if(!handle,  "failed to create window");
-
-  auto b = BOOL(TRUE);
-  err_if(DwmSetWindowAttribute(handle, DWMWA_FORCE_ICONIC_REPRESENTATION, &b, sizeof(b)), "failed to set dwm attribute");
-  err_if(DwmSetWindowAttribute(handle, DWMWA_HAS_ICONIC_BITMAP, &b, sizeof(b)), "failed to set dwm attribute");
-
   auto window = Window{};
-  window.init(handle, name.data(), x, y, width, height);
-  _windows.emplace(handle, window);
+  window.init(0, name.data(), x, y, width, height);
+
+  window.handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, Window_Class, nullptr, WS_POPUP | WS_MINIMIZEBOX,
+    window.real_x(), window.real_y(), window.real_width(), window.real_height(), 0, 0, GetModuleHandleW(nullptr), 0);
+  err_if(!window.handle,  "failed to create window");
+
+  _windows.emplace(window.handle, window);
 
   MessageQueue::instance()->send_message(MessageQueue::Message_Create_Window_Render_Resource{ window, true });
 
-  return handle;
+  return window.handle;
 }
 
 // while (ShowCursor(false) >= 0);

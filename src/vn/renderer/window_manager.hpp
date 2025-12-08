@@ -1,11 +1,9 @@
 #pragma once
 
 #include "window.hpp"
-#include "timer.hpp"
 
 #include <unordered_map>
 #include <unordered_set>
-#include <queue>
 
 namespace vn { namespace ui {
 
@@ -63,6 +61,7 @@ public:
     left_button_press = WM_APP,
     mouse_idle,
     window_restore_from_maximize,
+    next_frame_exchange_window_and_fullscreen
   };
   void message_process() noexcept;
 
@@ -78,9 +77,6 @@ public:
 private:
   std::unordered_map<HWND, Window> _windows;
   std::unordered_set<HWND>         _using_mouse_pass_through_windows;
-
-  Timer                                          _timer;
-  std::unordered_map<HWND, std::queue<uint32_t>> _timer_events;
 };
 
 }}

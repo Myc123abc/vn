@@ -28,9 +28,10 @@ public:
   void init() noexcept;
   void destroy() const noexcept;
 
+  void reset_cmd() const noexcept;
   auto submit(ID3D12GraphicsCommandList1* cmd) noexcept -> uint64_t;
-
   void wait_gpu_complete()  noexcept;
+  auto signal() noexcept -> uint64_t;
   
   auto factory()       const noexcept { return _factory.Get();       }
   auto device()        const noexcept { return _device.Get();        }
@@ -38,7 +39,6 @@ public:
   auto cmd()           const noexcept { return _cmd.Get();           }
   auto fence()         const noexcept { return _fence.Get();         }
   auto fence_event()   const noexcept { return _fence_event;         }
-  auto fence_value()   const noexcept { return _fence_value;         }
 
 private:
   Microsoft::WRL::ComPtr<IDXGIFactory6>              _factory;

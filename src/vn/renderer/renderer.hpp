@@ -46,7 +46,11 @@ public:
   void message_process() noexcept;
 
   void render(HWND handle, ui::WindowRenderData const& data) noexcept;
+  void render_fullscreen(HWND handle, ui::WindowRenderData const& data) noexcept;
   void present(HWND handle, bool vsync = false) const noexcept;
+  void present_fullscreen(bool vsync = false) const noexcept { _fullscreen_resource.present(vsync); }
+	void clear_window(HWND handle) noexcept { _window_resources.at(handle).clear_window(); }
+  void clear_fullscreen() noexcept { _fullscreen_resource.clear_window(); }
 
   static constexpr auto enable_depth_test{ false };
 
@@ -67,11 +71,6 @@ private:
   Pipeline _window_shadow_pipeline;
   Image    _window_shadow_image;
 
-  Pipeline                       _window_thumbnail_pipeline;
-  // FIXME: thumbnail_images need be move in every window resource
-  DescriptorHeap                 _rtv_heap;
-  std::array<Image, Frame_Count> _thumbnail_images;
-
   DescriptorHeap _uav_clear_heap;
 
   struct Cursor
@@ -84,6 +83,7 @@ private:
   DescriptorHeap                       _cbv_srv_uav_heap;
   std::array<FrameBuffer, Frame_Count> _frame_buffers;
 
+  WindowResource                           _fullscreen_resource;
   std::unordered_map<HWND, WindowResource> _window_resources;
 };
 

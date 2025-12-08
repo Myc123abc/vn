@@ -9,6 +9,7 @@
 #include <functional>
 #include <unordered_map>
 #include <optional>
+#include <span>
 
 #include <windows.h>
 
@@ -52,6 +53,7 @@ struct Window
   uint32_t              widget_count{};
   bool                  draw_title_bar{};
   WindowRenderData      render_data{};
+  bool                  need_clear{};
 };
 
 class UIContext
@@ -103,6 +105,8 @@ private:
   static constexpr auto Titler_Bar_Button_Icon_Height = 10;
   void update_title_bar() noexcept;
 
+  void generate_render_data(vn::renderer::Window const& render_window) noexcept;
+
 public:
   std::unordered_map<HWND, Window> windows;
   renderer::Window                 window;
@@ -128,6 +132,8 @@ public:
   std::vector<size_t> hovered_widget_ids;
 
   HWND mouse_on_window{};
+
+  HWND moving_or_resizing_finish_window{};
 
 private:
   HWND                     _mouse_down_window{};

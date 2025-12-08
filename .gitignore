@@ -1,6 +1,5 @@
 build
 out
-bin
 vendor
 __*
 .*

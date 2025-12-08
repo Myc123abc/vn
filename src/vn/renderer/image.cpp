@@ -59,6 +59,7 @@ auto byte_size_of(DXGI_FORMAT format) noexcept
   auto static const map = std::unordered_map<DXGI_FORMAT, uint32_t>
   {
     { DXGI_FORMAT_R8G8B8A8_UNORM, 4 },
+    { DXGI_FORMAT_B8G8R8A8_UNORM, 4 },
   };
   err_if(!map.contains(format), "unsupport dxgi format for byte size now");
   return map.at(format);
@@ -70,8 +71,9 @@ namespace vn { namespace renderer {
 
 void Win32Bitmap::init(uint32_t width, uint32_t height) noexcept
 {
-  view.width  = width;
-  view.height = height;
+  view.width         = width;
+  view.height        = height;
+  view.row_byte_size = width * 4;
 
   auto hdc_mem = CreateCompatibleDC(nullptr);
   err_if(!hdc_mem, "failed to create compatible DC");
@@ -259,12 +261,15 @@ auto Image::readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept
 {
   err_if(per_pixel_size() != 4, "readback only support rgba image now");
 
+  auto left = std::max(rect.left, 0l);
+  auto top  = std::max(rect.top, 0l);
+
   // create bitmap view
   auto view = BitmapView{};
-  view.width    = rect.right - rect.left;
-  view.height   = rect.bottom - rect.top;
-  view.offset_x = rect.left;
-  view.offset_y = rect.top;
+  view.offset_x = left;
+  view.offset_y = top;
+  view.width    = rect.right  - view.offset_x;
+  view.height   = rect.bottom - view.offset_y;
 
   // create readback buffer
   auto readback_buffer = ComPtr<ID3D12Resource>{};
@@ -279,7 +284,7 @@ auto Image::readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept
   err_if(readback_buffer->Map(0, &range, reinterpret_cast<void**>(&view.data)), "failed to map readback buffer to pointer");
 
   // copy data from gpu to cpu
-  copy(cmd, *this, rect.left, rect.top, rect.right, rect.bottom, readback_buffer.Get());
+  copy(cmd, *this, view.offset_x, view.offset_y, rect.right, rect.bottom, readback_buffer.Get());
 
   return { readback_buffer, view };
 }
@@ -325,6 +330,18 @@ void copy(
   auto dst_loc = CD3DX12_TEXTURE_COPY_LOCATION{ readback_buffer, footprint };
 
   cmd->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, &region_box);
+}
+
+void copy(BitmapView const& src, BitmapView const& dst) noexcept
+{
+  auto src_data = src.data;
+  auto dst_data = dst.data;
+  for (auto i = 0; i < dst.height; ++i)
+  {
+    memcpy(dst_data, src_data, src.width * 4);
+    src_data += src.row_byte_size;
+    dst_data += dst.row_byte_size;
+  }
 }
 
 }}

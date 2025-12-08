@@ -93,7 +93,7 @@ namespace vn { namespace renderer {
 void Renderer::init() noexcept
 {
   auto core = Core::instance();
-  
+
   Compiler::instance()->init();
 
   core->init();
@@ -118,22 +118,19 @@ void Renderer::destroy() noexcept
 
 void Renderer::create_pipeline_resource() noexcept
 {
-  _pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", ImageFormat::rgba8_unorm, true);
-  
+  _pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", SwapchainResource::Image_Format, true);
+
   _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
   _window_mask_pipeline.init_compute("assets/window_mask.hlsl", "main");
-  _window_thumbnail_pipeline.init_graphics("assets/window_thumbnail.hlsl", "vs", "ps", {}, ImageFormat::rgba8_unorm);
 
   auto size = get_screen_size();
   _uav_clear_heap.init(DescriptorHeapType::cbv_srv_uav, 1, true);
   _window_mask_image.init(ImageType::uav, ImageFormat::r8_unorm, size.x, size.y)
                     .create_descriptor(_uav_clear_heap.pop_handle("window mask image"));
   _cbv_srv_uav_heap.add_tag("window mask image", 1);
-  
+
   _window_shadow_image.init(ImageType::uav, ImageFormat::rgba8_unorm, size.x, size.y)
                       .create_descriptor(_cbv_srv_uav_heap.pop_handle("window shadow image"));
-
-  _rtv_heap.init(DescriptorHeapType::rtv, Frame_Count);
 }
 
 void Renderer::load_cursor_images() noexcept
@@ -197,7 +194,7 @@ void Renderer::load_cursor_images() noexcept
 
 void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept
 {
-  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->fence_value()]()
+  _current_frame_render_finish_procs.emplace_back([func, last_fence_value = Core::instance()->signal()]()
   {
     auto fence_value = Core::instance()->fence()->GetCompletedValue();
     err_if(fence_value == UINT64_MAX, "failed to get fence value because device is removed");
@@ -220,6 +217,11 @@ void Renderer::render(HWND handle, ui::WindowRenderData const& data) noexcept
 {
   err_if(!_window_resources.contains(handle), "unknow window resource window when rendering");
   _window_resources[handle].render(data.vertices, data.indices, data.shape_properties);
+}
+
+void Renderer::render_fullscreen(HWND handle, ui::WindowRenderData const& data) noexcept
+{
+  _fullscreen_resource.render(data.vertices, data.indices, data.shape_properties, _window_resources[handle].window);
 }
 
 void Renderer::present(HWND handle, bool vsync) const noexcept

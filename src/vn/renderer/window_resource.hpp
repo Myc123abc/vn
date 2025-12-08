@@ -11,11 +11,14 @@
 
 #include <array>
 #include <span>
+#include <optional>
 
 namespace vn { namespace renderer {
 
 struct SwapchainResource
 {
+  static constexpr auto Image_Format = ImageFormat::bgra8_unorm;
+
   HANDLE                                  waitable_obj{};
   Microsoft::WRL::ComPtr<IDXGISwapChain4> swapchain;
   std::array<Image, Frame_Count>          swapchain_images;
@@ -28,7 +31,7 @@ struct SwapchainResource
 
 private:
   static inline Microsoft::WRL::ComPtr<IDCompositionDevice> _comp_device{};
-  
+
   Microsoft::WRL::ComPtr<IDCompositionTarget> _comp_target;
   Microsoft::WRL::ComPtr<IDCompositionVisual> _comp_visual;
 
@@ -57,23 +60,17 @@ struct WindowResource
   std::array<FrameResource, Frame_Count>             frame_resources;
   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1> cmd;
 
-  bool                                               use_window_thumbnail_pipeline{};
-  inline static auto                                 thumbnail_width  = 0;
-  inline static auto                                 thumbnail_height = 0;
-
   void init(Window const& window, bool transparent) noexcept;
   void destroy() const noexcept;
 
   void wait_current_frame_render_finish() const noexcept;
 
-  void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
+  void clear_window() noexcept;
+  void render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties, std::optional<Window> fullscreen_target_window = {}) noexcept;
   void present(bool vsync) const noexcept;
 
-  void window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
-  void window_thumbnail_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image) noexcept;
+  void window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties, std::optional<Window> fullscreen_target_window) noexcept;
   void window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept;
-
-  void capture_window(uint32_t max_width, uint32_t max_height) noexcept;
 };
 
 }}

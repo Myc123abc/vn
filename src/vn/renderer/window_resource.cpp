@@ -3,7 +3,6 @@
 #include "config.hpp"
 #include "core.hpp"
 #include "error_handling.hpp"
-#include "window_manager.hpp"
 
 #include <dwmapi.h>
 
@@ -30,7 +29,7 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   swapchain_desc.BufferCount      = Frame_Count;
   swapchain_desc.Width            = width;
   swapchain_desc.Height           = height;
-  swapchain_desc.Format           = dxgi_format(ImageFormat::rgba8_unorm);
+  swapchain_desc.Format           = dxgi_format(Image_Format);
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
@@ -129,8 +128,7 @@ void WindowResource::init(Window const& window, bool transparent) noexcept
 
   // initialize swapchain resource
   this->window = window;
-  auto screen_size = get_screen_size();
-  swapchain_resource.init(window.handle, screen_size.x, screen_size.y, transparent);
+  swapchain_resource.init(window.handle, window.real_width(), window.real_width(), transparent);
 
   // initialize descriptor heap
   cbv_srv_uav_heap.init(DescriptorHeapType::cbv_srv_uav, Frame_Count);
@@ -177,7 +175,50 @@ void WindowResource::wait_current_frame_render_finish() const noexcept
     WaitForSingleObjectEx(swapchain_resource.waitable_obj, INFINITE, false);
 }
 
-void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
+void WindowResource::clear_window() noexcept
+{
+  auto  core            = Core::instance();
+  auto renderer         = Renderer::instance();
+  auto& frame_resource  = frame_resources[frame_index];
+  auto  swapchain_image = swapchain_resource.current_image();
+
+  wait_current_frame_render_finish();
+
+  // reset command
+  err_if(frame_resource.cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(cmd->Reset(frame_resource.cmd_alloc.Get(), nullptr), "failed to reset command list");
+
+  auto rtv_handle = swapchain_image->cpu_handle();
+  auto dsv_handle = D3D12_CPU_DESCRIPTOR_HANDLE{};
+  if (renderer->enable_depth_test)
+    dsv_handle = swapchain_resource.dsv_heap.cpu_handle();
+
+  // set render target view
+  if (renderer->enable_depth_test)
+    cmd->OMSetRenderTargets(1, &rtv_handle, false, &dsv_handle);
+  else
+    cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
+
+  // clear color
+  swapchain_image->clear_render_target(cmd.Get());
+  if (renderer->enable_depth_test)
+  {
+    cmd->ClearDepthStencilView(dsv_handle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
+    // set depth range
+    cmd->OMSetDepthBounds(0.f, 1.f);
+  }
+
+  // record finish, change render target view type to present
+  swapchain_image->set_state(cmd.Get(), ImageState::present);
+
+  // submit command
+  frame_resource.fence_value = core->submit(cmd.Get());
+
+  // move to next frame resource
+  frame_index = (frame_index + 1) % Frame_Count;
+}
+
+void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties, std::optional<Window> fullscreen_target_window) noexcept
 {
   auto  core            = Core::instance();
   auto  renderer        = Renderer::instance();
@@ -189,18 +230,13 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
   // reset command
   err_if(frame_resource.cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
   err_if(cmd->Reset(frame_resource.cmd_alloc.Get(), nullptr), "failed to reset command list");
-  
+
   // set descriptor heaps
   auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ cbv_srv_uav_heap.handle() };
   cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
 
   // render
-  window_content_render(swapchain_image, vertices, indices, shape_properties);
-  // if (use_window_thumbnail_pipeline)
-  // {
-  //   window_thumbnail_render(cmd, &renderer->_thumbnail_images[core->frame_index()]);
-  //   use_window_thumbnail_pipeline = false;
-  // }
+  window_content_render(swapchain_image, vertices, indices, shape_properties, fullscreen_target_window);
   // window_shadow_render(cmd);
 
   // record finish, change render target view type to present
@@ -220,7 +256,7 @@ void WindowResource::present(bool vsync) const noexcept
     : err_if(swapchain_resource.swapchain->Present(0, DXGI_PRESENT_ALLOW_TEARING), "failed to present swapchain");
 }
 
-void WindowResource::window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
+void WindowResource::window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties, std::optional<Window> fullscreen_target_window) noexcept
 {
   auto renderer   = Renderer::instance();
   auto rtv_handle = render_target_image->cpu_handle();
@@ -255,7 +291,9 @@ void WindowResource::window_content_render(Image* render_target_image, std::span
   // set descriptors
   auto constants = Constants{};
   constants.window_extent = render_target_image->extent();
-  constants.window_pos    = window.pos();
+  constants.window_pos    = window.content_pos();
+  if (fullscreen_target_window.has_value())
+    constants.window_pos += fullscreen_target_window->pos();
   // constants.cursor_index  = static_cast<uint32_t>(window.cursor_type);
   renderer->_pipeline.set_descriptors(cmd.Get(), "constants", constants,
   {
@@ -265,17 +303,10 @@ void WindowResource::window_content_render(Image* render_target_image, std::span
   });
 
   // draw
-  cmd->RSSetScissorRects(1, &window.rect);
+  fullscreen_target_window.has_value()
+    ? cmd->RSSetScissorRects(1, &fullscreen_target_window->rect)
+    : cmd->RSSetScissorRects(1, &swapchain_resource.scissor);
   cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
-}
-
-void WindowResource::window_thumbnail_render(ID3D12GraphicsCommandList1* cmd, Image* render_target_image) noexcept
-{
-  auto renderer   = Renderer::instance();
-  auto rtv_handle = render_target_image->cpu_handle();
-
-  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
-  render_target_image->clear_render_target(cmd);
 }
 
 void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept
@@ -337,70 +368,6 @@ void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd) const
   else
     copy(cmd, renderer->_window_shadow_image, *swapchain_image);
 #endif
-}
-
-void WindowResource::capture_window(uint32_t max_width, uint32_t max_height) noexcept
-{
-  return;
-  auto renderer = Renderer::instance();
-
-  // get the window valid region
-  auto screen_size = get_screen_size();
-  auto rect        = RECT{};
-  rect.left   = std::clamp(window.rect.left,   0l, static_cast<LONG>(screen_size.x));
-  rect.top    = std::clamp(window.rect.top,    0l, static_cast<LONG>(screen_size.y));
-  rect.right  = std::clamp(window.rect.right,  0l, static_cast<LONG>(screen_size.x));
-  rect.bottom = std::clamp(window.rect.bottom, 0l, static_cast<LONG>(screen_size.y));
-
-  // judge wheather need scale down (by window thumbnail pipeline)
-  if (rect.right - rect.left > max_width || rect.bottom - rect.top > max_height)
-  {
-    use_window_thumbnail_pipeline = true;
-
-    // initialize thumbnail image
-    if (!thumbnail_width && !thumbnail_height)
-      std::ranges::for_each(renderer->_thumbnail_images, [=](auto& image)
-      {
-        image.init(ImageType::rtv, ImageFormat::rgba8_unorm, max_width, max_height)
-             .create_descriptor(renderer->_rtv_heap.pop_handle());
-      });
-    else
-      err_if(max_width != thumbnail_width || max_height != thumbnail_height, "currently, not conside thumbnail extent change case");
-
-    return;
-  }
-
-  // readback image
-  auto core = Core::instance();
-  auto cmd  = core->cmd();
-  // core->reset_cmd();
-  auto [readback_buffer, src_bitmap_view] = swapchain_resource.current_image()->readback(cmd, rect);
-  core->submit(cmd);
-  core->wait_gpu_complete();
-
-  // create bitmap
-  auto dst_bitmap = Win32Bitmap{};
-  dst_bitmap.init(max_width, max_height);
-
-  // copy small image
-  auto offset_x  = (max_width  - src_bitmap_view.width)  / 2;
-  auto offset_y  = (max_height - src_bitmap_view.height) / 2;
-  auto row_count = std::min(max_height, src_bitmap_view.height);
-
-  dst_bitmap.view.data += (offset_y * max_width + offset_x) * 4;
-
-  // copy data from readback buffer to bitmap
-  for (auto i = 0; i < row_count; ++i)
-  {
-    memcpy(dst_bitmap.view.data, src_bitmap_view.data, src_bitmap_view.width * 4);
-    src_bitmap_view.data += src_bitmap_view.row_byte_size;
-    dst_bitmap.view.data += max_width * 4;
-  }
-
-  // set thumbnail
-  err_if(DwmSetIconicThumbnail(window.handle, dst_bitmap.handle, 0), "failed to set thumbnail");
-
-  dst_bitmap.destroy();
 }
 
 }}
