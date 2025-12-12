@@ -198,7 +198,7 @@ auto Compiler::compile(std::string_view shader, std::string_view vertex_shader_e
 
   auto signature = ComPtr<ID3DBlob>{};
   auto error     = ComPtr<ID3DBlob>{};
-  if (FAILED(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error)))
+  if (FAILED(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signature, &error)))
   {
     auto msg = std::string{};
     msg.resize(error->GetBufferSize());

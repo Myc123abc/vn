@@ -48,20 +48,26 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     {
       ReleaseCapture();
       window.mouse_state = MouseState::left_button_up;
-
+      BringWindowToTop(handle);
+      ClipCursor(nullptr);
+      while (ShowCursor(true) < 0);
       if (window.moving)
       {
-        BringWindowToTop(handle);
-        ClipCursor(nullptr);
-        SetWindowPos(handle, 0, window.real_x(), window.real_y(), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-        PostMessageW(handle, static_cast<int>(WindowManager::Message::next_frame_exchange_window_and_fullscreen), 0, 0);
+        if (window.need_resize_window)
+        {
+          window.need_resize_window = false;
+          SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), SWP_NOZORDER | SWP_NOACTIVATE);
+          renderer->resize_window(handle, window.real_width(), window.real_height());
+        }
+        else
+          SetWindowPos(handle, 0, window.real_x(), window.real_y(), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        PostMessageW(handle, static_cast<int>(WindowManager::Message::window_moving_or_resizing_finish), 0, 0);
       }
       else if (lm_down_resize_type != Window::ResizeType::none)
       {
-        window.resizing = {};
-        BringWindowToTop(handle);
-        window.cursor_type = {};
-        ClipCursor(nullptr);
+        SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), SWP_NOZORDER | SWP_NOACTIVATE);
+        renderer->resize_window(handle, window.real_width(), window.real_height());
+        PostMessageW(handle, static_cast<int>(WindowManager::Message::window_moving_or_resizing_finish), 0, 0);
       }
     }
   };
@@ -114,15 +120,16 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
   case WM_MOUSEMOVE:
   {
     // set cursor if can resize
-    auto cursor_pos = get_cursor_pos();
-    if (auto type = wm->_windows.at(handle).get_resize_type(cursor_pos);
+    auto  cursor_pos = get_cursor_pos();
+    auto& window     = wm->_windows.at(handle);
+
+    // update cursor type
+    if (auto type = window.get_resize_type(cursor_pos);
         type != last_resize_type)
     {
       last_resize_type = type;
       set_cursor(handle, last_resize_type);
     }
-
-    auto& window = wm->_windows.at(handle);
 
     // change to mouse pass through when moving on shadow area
     if (!window.resizing && !window.moving && window.is_mouse_pass_through_area())
@@ -151,6 +158,7 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
           {
             auto rect = get_maximize_rect();
             ClipCursor(&rect);
+            while (ShowCursor(false) >= 0);
             window.is_maximized ? window.move_from_maximize(cursor_pos.x, cursor_pos.y) : window.move(offset_x, offset_y);
             ui_ctx->windows[handle].need_clear = true;
           }
@@ -162,6 +170,8 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
         {
           auto rect = get_maximize_rect();
           ClipCursor(&rect);
+          while (ShowCursor(false) >= 0);
+          ui_ctx->windows[handle].need_clear = true;
         }
         window.adjust_offset(lm_down_resize_type, cursor_pos, offset_x, offset_y);
         window.resize(lm_down_resize_type, offset_x, offset_y);
@@ -186,6 +196,8 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     {
       window.maximize();
       msg_queue->send_message(MessageQueue::Message_Update_Window{ window });
+      SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), SWP_NOZORDER | SWP_NOACTIVATE);
+      renderer->resize_window(handle, window.real_width(), window.real_width());
       return 0;
     }
     else if (w_param == SIZE_RESTORED)
@@ -208,12 +220,17 @@ LRESULT CALLBACK wnd_proc(HWND handle, UINT msg, WPARAM w_param, LPARAM l_param)
     auto& window = wm->_windows.at(handle);
     window.restore();
     msg_queue->send_message(MessageQueue::Message_Update_Window{ window });
+    SetWindowPos(handle, 0, window.real_x(), window.real_y(), window.real_width(), window.real_height(), SWP_NOZORDER | SWP_NOACTIVATE);
+    renderer->resize_window(handle, window.real_width(), window.real_width());
     return 0;
   }
 
-  case static_cast<uint32_t>(WindowManager::Message::next_frame_exchange_window_and_fullscreen):
+  case static_cast<uint32_t>(WindowManager::Message::window_moving_or_resizing_finish):
   {
-    wm->_windows.at(handle).moving = false;
+    auto& window = wm->_windows.at(handle);
+    window.moving      = false;
+    window.resizing    = false;
+    window.cursor_type = {};
     ui_ctx->moving_or_resizing_finish_window = handle;
     return 0;
   }
@@ -298,9 +315,6 @@ auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t 
 
   return window.handle;
 }
-
-// while (ShowCursor(false) >= 0);
-// while (ShowCursor(true) < 0);
 
 auto WindowManager::get_window_name(HWND handle) noexcept -> std::string
 {

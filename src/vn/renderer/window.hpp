@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.hpp"
+
 #include <windows.h>
 
 #include <glm/glm.hpp>
@@ -44,26 +46,22 @@ struct Window
   MouseState        mouse_state{};
   bool              is_minimized{};
   bool              is_maximized{};
-  RECT              backuprect{};
+  RECT              backup_rect{};
   bool              is_mouse_pass_through{};
   std::vector<RECT> move_invalid_area{};
+  bool              need_resize_window{};
+  uint32_t          min_width{ 50 };
+  uint32_t          min_height{ 50 };
 
-  static constexpr auto Resize_Width     = 5;
-  static constexpr auto Resize_Height    = 5;
-  static constexpr auto Shadow_Thickness = 0;
-
-  uint32_t min_width  = 50;
-  uint32_t min_height = 50;
-
-  auto real_x()      const noexcept { return x      - Shadow_Thickness;     }
-  auto real_y()      const noexcept { return y      - Shadow_Thickness;     }
-  auto real_width()  const noexcept { return width  + Shadow_Thickness * 2; }
-  auto real_height() const noexcept { return height + Shadow_Thickness * 2; }
-  auto real_rect()   const noexcept { return RECT{ rect.left   - Shadow_Thickness,
-                                                   rect.top    - Shadow_Thickness,
-                                                   rect.right  + Shadow_Thickness,
-                                                   rect.bottom + Shadow_Thickness }; }
-  auto content_pos() const noexcept { return glm::vec2{ Shadow_Thickness, Shadow_Thickness }; }
+  auto real_x()      const noexcept { return x      - Window_Shadow_Thickness;     }
+  auto real_y()      const noexcept { return y      - Window_Shadow_Thickness;     }
+  auto real_width()  const noexcept { return width  + Window_Shadow_Thickness * 2; }
+  auto real_height() const noexcept { return height + Window_Shadow_Thickness * 2; }
+  auto real_rect()   const noexcept { return RECT{ rect.left   - static_cast<LONG>(Window_Shadow_Thickness),
+                                                   rect.top    - static_cast<LONG>(Window_Shadow_Thickness),
+                                                   rect.right  + static_cast<LONG>(Window_Shadow_Thickness),
+                                                   rect.bottom + static_cast<LONG>(Window_Shadow_Thickness) }; }
+  auto content_pos() const noexcept { return glm::vec2{ Window_Shadow_Thickness, Window_Shadow_Thickness }; }
 
   void init(HWND handle, std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept;
 

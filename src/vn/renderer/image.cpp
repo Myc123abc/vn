@@ -69,6 +69,10 @@ auto byte_size_of(DXGI_FORMAT format) noexcept
 
 namespace vn { namespace renderer {
 
+////////////////////////////////////////////////////////////////////////////////
+///                         Win32 Bitmap
+////////////////////////////////////////////////////////////////////////////////
+
 void Win32Bitmap::init(uint32_t width, uint32_t height) noexcept
 {
   view.width         = width;
@@ -92,6 +96,10 @@ void Win32Bitmap::destroy() const noexcept
 {
   err_if(!DeleteObject(handle), "failed to destroy win32 bitmap");
 }
+
+////////////////////////////////////////////////////////////////////////////////
+///                                 Image
+////////////////////////////////////////////////////////////////////////////////
 
 auto dxgi_format(ImageFormat format) noexcept -> DXGI_FORMAT
 {
@@ -143,6 +151,8 @@ auto Image::init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t h
   else
     err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, nullptr, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
             "failed to create image");
+  
+  create_descriptor();
 
   return *this;
 }  
@@ -163,6 +173,7 @@ auto Image::init(IDXGISwapChain1* swapchain, uint32_t index) noexcept -> Image&
   _format = desc.Format;
   _width  = desc.Width;
   _height = desc.Height;
+  create_descriptor();
   return *this;
 }
 
@@ -172,21 +183,8 @@ auto Image::init(ImageType type, HANDLE handle, uint32_t width, uint32_t height)
   _width  = width;
   _height = height;
   err_if(Core::instance()->device()->OpenSharedHandle(handle, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())), "failed to share d3d11 texture");
+  create_descriptor();
   return *this;
-}
-
-void Image::resize(uint32_t width, uint32_t height) noexcept
-{
-  init(_type, _format, width, height);
-  for (auto const& [k, v] : _cpu_handles)
-    create_descriptor(v);
-}
-
-void Image::resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept
-{
-  init(swapchain, index);
-  for (auto const& [k, v] : _cpu_handles)
-    create_descriptor(v);
 }
 
 void Image::set_state(ID3D12GraphicsCommandList1* cmd, ImageState state) noexcept
@@ -198,40 +196,65 @@ void Image::set_state(ID3D12GraphicsCommandList1* cmd, ImageState state) noexcep
   _state = transition_state;
 }
   
-void Image::create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle, std::optional<ImageType> type) noexcept
+void Image::create_descriptor() noexcept
 {
-  if (!_cpu_handles.contains(type.value_or(_type))) _cpu_handles.emplace(type.value_or(_type), handle);
+  static auto device = Core::instance()->device();
+  auto        mgr    = DescriptorHeapManager::instance();
 
-  auto device = Core::instance()->device();
-  if (_type == ImageType::uav)
+  auto create_unordered_access_view = [&]
   {
     auto uav_desc = D3D12_UNORDERED_ACCESS_VIEW_DESC{};
     uav_desc.Format        = _format;
     uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-    device->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, handle);
-  }
-  else if (_type == ImageType::rtv)
+    device->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, _descriptor_handle.cpu_handle());
+  };
+  auto create_render_target_view = [&]
   {
-    device->CreateRenderTargetView(_handle.Get(), nullptr, handle);
-  }
-  else if (_type == ImageType::srv)
+    device->CreateRenderTargetView(_handle.Get(), nullptr, _descriptor_handle.cpu_handle());
+  };
+  auto create_shader_resource_view = [&]
   {
     auto srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC{};
     srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srv_desc.Format                  = _format;
     srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
     srv_desc.Texture2D.MipLevels     = 1;
-    device->CreateShaderResourceView(_handle.Get(), &srv_desc, handle);
-  }
-  else if (_type == ImageType::dsv)
+    device->CreateShaderResourceView(_handle.Get(), &srv_desc, _descriptor_handle.cpu_handle());
+  };
+  auto create_depth_stencil_view = [&]
   {
     auto dsv_desc = D3D12_DEPTH_STENCIL_VIEW_DESC{};
     dsv_desc.Format        = DXGI_FORMAT_D32_FLOAT;
     dsv_desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    device->CreateDepthStencilView(_handle.Get(), &dsv_desc, handle);
+    device->CreateDepthStencilView(_handle.Get(), &dsv_desc, _descriptor_handle.cpu_handle());
+  };
+
+  // first initialize image, get descriptor handle
+  if (!_descriptor_handle.is_valid())
+  {
+    if (_type == ImageType::uav)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::cbv_srv_uav, create_unordered_access_view);
+    else if (_type == ImageType::rtv)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::rtv, create_render_target_view);
+    else if (_type == ImageType::srv)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::cbv_srv_uav, create_shader_resource_view);
+    else if (_type == ImageType::dsv)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::dsv, create_depth_stencil_view);
+    else
+      std::unreachable();
   }
+
+  // create descriptor
+  if (_type == ImageType::uav)
+    create_unordered_access_view();
+  else if (_type == ImageType::rtv)
+    create_render_target_view();
+  else if (_type == ImageType::srv)
+    create_shader_resource_view(); 
+  else if (_type == ImageType::dsv)
+    create_depth_stencil_view();
   else
-    err_if(true, "unsupport image type now");
+    std::unreachable();
 }
 
 void Image::clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept

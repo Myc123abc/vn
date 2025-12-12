@@ -3,6 +3,7 @@
 #include "core.hpp"
 #include "renderer.hpp"
 #include "../util.hpp"
+#include "config.hpp"
 
 #include <directx/d3dx12.h>
 
@@ -33,11 +34,24 @@ auto calculate_capacity(uint32_t old_capacity, uint32_t need_capacity)
 
 namespace vn { namespace renderer {
 
-void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept
+void Buffer::init(uint32_t size, bool use_descriptor) noexcept
 {
-  _size       = {};
-  _capacity   = align(size, 8);
-  _cpu_handle = cpu_handle;
+  _size     = {};
+  _capacity = align(size, 8);
+
+  auto create_descriptor = [this]
+  {
+    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
+    srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv_desc.Format                  = DXGI_FORMAT_R32_TYPELESS;
+    srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_BUFFER;
+    srv_desc.Buffer.Flags            = D3D12_BUFFER_SRV_FLAG_RAW;
+    srv_desc.Buffer.NumElements      = _capacity * Frame_Count / 4;
+    Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, _descriptor_handle.cpu_handle());
+  };
+
+  if (use_descriptor && !_handle)
+    _descriptor_handle = DescriptorHeapManager::instance()->pop_handle(DescriptorHeapType::cbv_srv_uav, create_descriptor);
   
   // create buffer
   auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
@@ -55,17 +69,8 @@ void Buffer::init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcep
   auto range = CD3DX12_RANGE{};
   err_if(_handle->Map(0, &range, reinterpret_cast<void**>(&_data)), "failed to map pointer from buffer");
 
-  if (cpu_handle.ptr)
-  {
-    // create view
-    D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc{};
-    srv_desc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srv_desc.Format                     = DXGI_FORMAT_R32_TYPELESS;
-    srv_desc.ViewDimension              = D3D12_SRV_DIMENSION_BUFFER;
-    srv_desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_RAW;
-    srv_desc.Buffer.NumElements         = _capacity * Frame_Count / 4;
-    Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, cpu_handle);
-  }
+  if (use_descriptor)
+    create_descriptor();
 }
 
 auto Buffer::append(void const* data, uint32_t size) noexcept -> uint32_t
@@ -81,14 +86,14 @@ auto Buffer::append(void const* data, uint32_t size) noexcept -> uint32_t
   else
   {
     // add old buffer for destroy
-    Renderer::instance()->add_current_frame_render_finish_proc([handle = _handle] {});
+    Renderer::instance()->add_current_frame_render_finish_proc([_ = _handle] {});
 
     // temporary copy old data
     auto old_data = std::vector<std::byte>(_size);
     memcpy(old_data.data(), _data, _size);
 
     // create new bigger one
-    init(calculate_capacity(_capacity, total_size), _cpu_handle);
+    init(calculate_capacity(_capacity, total_size), _descriptor_handle.is_valid());
 
     // copy old data to new buffer
     append(old_data.data(), old_data.size());
@@ -98,10 +103,10 @@ auto Buffer::append(void const* data, uint32_t size) noexcept -> uint32_t
   return size;
 }
 
-void FrameBuffer::init(D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept
+void FrameBuffer::init() noexcept
 {
-  _vertices_indices_buffer.init(1024);
-  _shape_properties_buffer.init(1024, cpu_handle);
+  _vertices_indices_buffer.init(Vertices_Indices_Buffer_Size, false);
+  _shape_properties_buffer.init(Shape_Properties_Buffer_Size, true);
 }
 
 void FrameBuffer::upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept

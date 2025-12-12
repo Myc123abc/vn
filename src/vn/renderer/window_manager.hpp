@@ -61,7 +61,8 @@ public:
     left_button_press = WM_APP,
     mouse_idle,
     window_restore_from_maximize,
-    next_frame_exchange_window_and_fullscreen
+    window_moving_or_resizing_finish,
+    window_resizing_finish
   };
   void message_process() noexcept;
 

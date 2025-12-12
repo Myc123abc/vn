@@ -166,12 +166,12 @@ void UIContext::generate_render_data(vn::renderer::Window const& render_window) 
   if (window.draw_title_bar)
     update_title_bar();
 
-  // update_window_shadow();
+  update_window_shadow();
+
+  update_cursor();
 
   // update render data finish
   updating = false;
-
-  //update_cursor();
 }
 
 void UIContext::add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
@@ -183,9 +183,9 @@ void UIContext::update_cursor() noexcept
 {
   auto renderer    = Renderer::instance();
   auto render_data = current_render_data();
-  //if (window.is_moving_or_resizing())
+  if (window.is_moving_or_resizing())
   {
-    auto pos = get_cursor_pos();
+    auto pos = window.cursor_pos();
     if (window.cursor_type != CursorType::arrow)
     {
       pos.x -= renderer->_cursors[window.cursor_type].pos.x;
@@ -216,12 +216,10 @@ void UIContext::update_cursor() noexcept
 
 void UIContext::update_window_shadow() noexcept
 {
-  auto shadow_thickness = 20.f;
-  auto rect = RECT{ static_cast<LONG>(window.rect.left - shadow_thickness), static_cast<LONG>(window.rect.top - shadow_thickness), window.rect.right, window.rect.bottom };
-	ui::rectangle({ static_cast<float>(rect.left), static_cast<float>(rect.top) }, { static_cast<float>(rect.right), static_cast<float>(rect.bottom) });
+	// ui::rectangle({}, { window.real_width(), window.real_height() });
   //add_vertices_indices({{ rect.left, rect.top }, { rect.right, rect.bottom }});
   //add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { static_cast<float>(window.rect.left), static_cast<float>(window.rect.top), static_cast<float>(window.rect.right), static_cast<float>(window.rect.bottom) });
-  current_render_data()->shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
+  // current_render_data()->shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
 }
 
 void UIContext::update_title_bar() noexcept

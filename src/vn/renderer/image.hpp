@@ -1,11 +1,11 @@
 #pragma once
 
+#include "descriptor_heap_manager.hpp"
+
 #include <dxgi1_6.h>
 #include <directx/d3dx12.h>
 
 #include <glm/glm.hpp>
-
-#include <optional>
 
 namespace vn { namespace renderer {
 
@@ -71,12 +71,16 @@ public:
   auto init(IDXGISwapChain1* swapchain, uint32_t index)                           noexcept -> Image&;
   auto init(ImageType type, HANDLE handle, uint32_t width, uint32_t height)       noexcept -> Image&;
 
-  void destroy() noexcept { _handle.Reset(); }
+  void destroy() noexcept
+  {
+    _handle.Reset();
+    _descriptor_handle.release();
+  }
 
   void set_state(ID3D12GraphicsCommandList1* cmd, ImageState state) noexcept;
 
-  void resize(uint32_t width, uint32_t height)            noexcept;
-  void resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept;
+  void resize(uint32_t width, uint32_t height)            noexcept { init(_type, _format, width, height); }
+  void resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept { init(swapchain, index);              }
 
   void clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept;
   void clear_render_target(ID3D12GraphicsCommandList1* cmd) noexcept;
@@ -89,14 +93,14 @@ public:
 
   auto per_pixel_size() const noexcept -> uint32_t;
 
-  void create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle, std::optional<ImageType> type = {}) noexcept;
-
   auto readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept -> std::pair<Microsoft::WRL::ComPtr<ID3D12Resource>, BitmapView>;
 
-  auto cpu_handle() const noexcept { return _cpu_handles.at(_type); }
+  auto cpu_handle() const noexcept { return _descriptor_handle.cpu_handle(); }
+  auto gpu_handle() const noexcept { return _descriptor_handle.gpu_handle(); }
 
 private:
   auto init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept -> Image&;
+  void create_descriptor() noexcept;
 
 private:
   ImageType                              _type{};
@@ -105,7 +109,7 @@ private:
   D3D12_RESOURCE_STATES                  _state{};
   uint32_t                               _width{};
   uint32_t                               _height{};
-  std::unordered_map<ImageType, D3D12_CPU_DESCRIPTOR_HANDLE> _cpu_handles;
+  DescriptorHandle                       _descriptor_handle;
 };
 
 void copy(

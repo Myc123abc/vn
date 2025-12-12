@@ -48,12 +48,13 @@ void Window::move_from_maximize(int x, int y) noexcept
 {
   auto ratio_x = static_cast<float>(x) / width;
 
-  moving       = true;
-  is_maximized = false;
-  width        = backuprect.right  - backuprect.left;
-  height       = backuprect.bottom - backuprect.top;
-  this->x      = x - width * ratio_x;
-  this->y      = 0;
+  moving             = true;
+  is_maximized       = false;
+  width              = backup_rect.right  - backup_rect.left;
+  height             = backup_rect.bottom - backup_rect.top;
+  this->x            = x - width * ratio_x;
+  this->y            = 0;
+  need_resize_window = true;
   update_rect();
 }
 
@@ -166,10 +167,10 @@ auto Window::get_resize_type(glm::vec<2, int> const& p) const noexcept -> Resize
   if (p.x < rect.left || p.x > rect.right  || p.y < rect.top  || p.y > rect.bottom || is_maximized)
     return none;
 
-  bool left_side   = p.x >= rect.left                   && p.x <= rect.left + Resize_Width;
-  bool right_side  = p.x >= rect.right  - Resize_Width  && p.x <= rect.right;
-  bool top_side    = p.y >= rect.top                    && p.y <= rect.top  + Resize_Height;
-  bool bottom_side = p.y >= rect.bottom - Resize_Height && p.y <= rect.bottom;
+  bool left_side   = p.x >= rect.left                          && p.x <= rect.left + Window_Resize_Width;
+  bool right_side  = p.x >= rect.right  - Window_Resize_Width  && p.x <= rect.right;
+  bool top_side    = p.y >= rect.top                           && p.y <= rect.top  + Window_Resize_Height;
+  bool bottom_side = p.y >= rect.bottom - Window_Resize_Height && p.y <= rect.bottom;
 
   if (top_side)
   {
@@ -292,7 +293,6 @@ void set_cursor(HWND handle, Window::ResizeType type) noexcept
     break;
   }
   SetClassLongPtrA(handle, GCLP_HCURSOR, reinterpret_cast<LONG_PTR>(LoadCursorA(nullptr, cursor)));
-  
 }
 
 auto Window::cursor_pos() const noexcept -> glm::vec<2, int>
@@ -320,14 +320,14 @@ auto Window::cursor_valid_area() const noexcept -> bool
            pos.y >= rect.top  && pos.y <= rect.bottom;
   else
     // TODO: change to multiple rectangles for external pop subwindow
-    return pos.x > Resize_Width  && pos.x < width  - Resize_Width &&
-           pos.y > Resize_Height && pos.y < height - Resize_Height;
+    return pos.x > Window_Resize_Width  && pos.x < width  - Window_Resize_Width &&
+           pos.y > Window_Resize_Height && pos.y < height - Window_Resize_Height;
 }
 
 void Window::maximize() noexcept
 {
   is_maximized = true;
-  backuprect  = rect;
+  backup_rect  = rect;
   rect = get_maximize_rect();
   update_by_rect();
   mouse_state = {};
@@ -336,7 +336,7 @@ void Window::maximize() noexcept
 void Window::restore() noexcept
 {
   is_maximized = false;
-  rect         = backuprect;
+  rect         = backup_rect;
   update_by_rect();
 }
 

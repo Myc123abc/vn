@@ -1,6 +1,7 @@
 #pragma once
 
 #include "shader_type.hpp"
+#include "descriptor_heap_manager.hpp"
 
 #include <d3d12.h>
 #include <wrl/client.h>
@@ -14,7 +15,8 @@ namespace vn { namespace renderer {
 class Buffer
 {
 public:
-  void init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle = {}) noexcept;
+  void init(uint32_t size, bool use_descriptor) noexcept;
+  void destroy() noexcept { _descriptor_handle.release(); }
 
   void clear() noexcept { _size = {}; }
 
@@ -29,10 +31,11 @@ public:
 
   auto gpu_address() const noexcept { return _handle->GetGPUVirtualAddress(); }
   auto size()        const noexcept { return _size;                           }
+  auto gpu_handle()  const noexcept { return _descriptor_handle.gpu_handle(); }
 
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;
-  D3D12_CPU_DESCRIPTOR_HANDLE            _cpu_handle{};
+  DescriptorHandle                       _descriptor_handle;
   uint8_t*                               _data{};
   uint32_t                               _capacity{};
   uint32_t                               _size{};
@@ -41,7 +44,12 @@ private:
 class FrameBuffer
 {
 public:
-  void init(D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept;
+  void init() noexcept;
+  void destroy() noexcept
+  {
+    _vertices_indices_buffer.destroy();
+    _shape_properties_buffer.destroy();
+  }
 
   auto clear() noexcept -> FrameBuffer&
   {
@@ -51,6 +59,8 @@ public:
   }
 
   void upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
+
+  auto gpu_handle() const noexcept { return _shape_properties_buffer.gpu_handle(); }
 
 private:
   Buffer _vertices_indices_buffer;

@@ -77,6 +77,11 @@ add_shape_property:
 
 namespace vn { namespace ui {
 
+auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
+{
+  return renderer::get_screen_size();
+}
+
 void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
 {
   auto ctx         = UIContext::instance();
@@ -467,8 +472,8 @@ auto is_hover_on(uint32_t id, glm::vec2 left_top, glm::vec2 right_bottom, LerpAn
 }
 
 auto button(
-  uint32_t                                x,
-  uint32_t                                y,
+  int                                     x,
+  int                                     y,
   uint32_t                                width,
   uint32_t                                height,
   Color                                   button_color,
@@ -481,13 +486,13 @@ auto button(
 {
   auto ctx = UIContext::instance();
 
-  auto id = generic_id(x, y, width, height);
+  auto id = generic_id();
 
   auto lerp_anim  = ctx->add_lerp_anim(id, 200);
   auto lerp_value = lerp_anim->get_lerp();
 
-  auto left_top     = glm::vec<2, uint32_t>{ x,         y          };
-  auto right_bottom = glm::vec<2, uint32_t>{ x + width, y + height };
+  auto left_top     = glm::vec2{ x,         y          };
+  auto right_bottom = glm::vec2{ x + width, y + height };
 
   auto hovered = is_hover_on(id, left_top, right_bottom, *lerp_anim);
 

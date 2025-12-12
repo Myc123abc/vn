@@ -4,7 +4,7 @@
 #include "message_queue.hpp"
 #include "../ui/ui_context.hpp"
 #include "compiler.hpp"
-#include "window_manager.hpp"
+#include "descriptor_heap_manager.hpp"
 #include "../util.hpp"
 
 #include <algorithm>
@@ -97,14 +97,9 @@ void Renderer::init() noexcept
   Compiler::instance()->init();
 
   core->init();
+  DescriptorHeapManager::instance()->init();
 
-  _cbv_srv_uav_heap.init(DescriptorHeapType::cbv_srv_uav, static_cast<uint32_t>(CursorType::Number) + Frame_Count + 2);
-
-  // load_cursor_images();
-
-  // // create buffers
-  // _cbv_srv_uav_heap.add_tag("framebuffer");
-  // for (auto& buf : _frame_buffers) buf.init(_cbv_srv_uav_heap.pop_handle());
+  load_cursor_images();
 
   create_pipeline_resource();
 }
@@ -113,29 +108,30 @@ void Renderer::destroy() noexcept
 {
   Core::instance()->wait_gpu_complete();
   Core::instance()->destroy();
-  std::ranges::for_each(_window_resources | std::views::values, [](auto const& wr) { wr.destroy(); });
+  std::ranges::for_each(_window_resources | std::views::values, [](auto& wr) { wr.destroy(); });
 }
 
 void Renderer::create_pipeline_resource() noexcept
 {
-  _pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", SwapchainResource::Image_Format, true);
+  _sdf_pipeline.init_graphics("assets/shader.hlsl", "vs", "ps", "assets", SwapchainResource::Image_Format, true);
 
-  _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
-  _window_mask_pipeline.init_compute("assets/window_mask.hlsl", "main");
+  // _window_shadow_pipeline.init_compute("assets/window_shadow.hlsl", "main");
+  // _window_mask_pipeline.init_compute("assets/window_mask.hlsl", "main");
 
-  auto size = get_screen_size();
-  _uav_clear_heap.init(DescriptorHeapType::cbv_srv_uav, 1, true);
-  _window_mask_image.init(ImageType::uav, ImageFormat::r8_unorm, size.x, size.y)
-                    .create_descriptor(_uav_clear_heap.pop_handle("window mask image"));
-  _cbv_srv_uav_heap.add_tag("window mask image", 1);
+  // auto size = get_screen_size();
+  // _uav_clear_heap.init(DescriptorHeapType::cbv_srv_uav, 1, true);
+  // _window_mask_image.init(ImageType::uav, ImageFormat::r8_unorm, size.x, size.y)
+  //                   .create_descriptor(_uav_clear_heap.pop_handle("window mask image"));
+  // _cbv_srv_uav_heap.add_tag("window mask image", 1);
 
-  _window_shadow_image.init(ImageType::uav, ImageFormat::rgba8_unorm, size.x, size.y)
-                      .create_descriptor(_cbv_srv_uav_heap.pop_handle("window shadow image"));
+  // _window_shadow_image.init(ImageType::uav, ImageFormat::rgba8_unorm, size.x, size.y)
+  //                     .create_descriptor(_cbv_srv_uav_heap.pop_handle("window shadow image"));
 }
 
 void Renderer::load_cursor_images() noexcept
 {
   auto core = Core::instance();
+  core->reset_cmd();
 
   // get bitmaps of all cursor types
   auto bitmaps = std::unordered_map<CursorType, Bitmap>{};
@@ -163,7 +159,6 @@ void Renderer::load_cursor_images() noexcept
 
   // upload bitmap to cursor tesxtures
   auto offset = uint32_t{};
-  _cbv_srv_uav_heap.add_tag("cursors");
   for (auto const& [index, pair] : std::views::enumerate(bitmaps))
   {
     auto& [cursor_type, bitmap] = pair;
@@ -181,9 +176,6 @@ void Renderer::load_cursor_images() noexcept
 
     // move to next upload heap position
     offset += align(GetRequiredIntermediateSize(cursor_image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
-
-    // create cursor texture descriptor
-    cursor_image.create_descriptor(_cbv_srv_uav_heap.pop_handle());
   }
 
   // TODO: move to global and upload heap should be global too

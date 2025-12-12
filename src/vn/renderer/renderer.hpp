@@ -1,8 +1,6 @@
 #pragma once
 
 #include "window_resource.hpp"
-#include "buffer.hpp"
-#include "descriptor_heap.hpp"
 #include "pipeline.hpp"
 
 #include <functional>
@@ -41,6 +39,8 @@ public:
   void init()    noexcept;
   void destroy() noexcept;
 
+  void resize_window(HWND handle, uint32_t width, uint32_t height) noexcept { return _window_resources[handle].resize(width, height); }
+
   void add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept;
 
   void message_process() noexcept;
@@ -54,7 +54,7 @@ public:
 
   static constexpr auto enable_depth_test{ false };
 
-  auto get_descriptor(std::string_view tag, uint32_t offset = {}) const noexcept { return _cbv_srv_uav_heap.gpu_handle(tag, offset); }
+  // auto get_descriptor(std::string_view tag, uint32_t offset = {}) const noexcept { return _cbv_srv_uav_heap.gpu_handle(tag, offset); }
 
 private:
   void create_pipeline_resource() noexcept;
@@ -62,16 +62,15 @@ private:
   void load_cursor_images() noexcept;
 
 private:
-  std::deque<std::function<bool()>> _current_frame_render_finish_procs;
+  WindowResource                           _fullscreen_resource;
+  std::unordered_map<HWND, WindowResource> _window_resources;
+  std::deque<std::function<bool()>>        _current_frame_render_finish_procs;
+  Pipeline                                 _sdf_pipeline;
 
-  Pipeline _pipeline;
-
-  Pipeline _window_mask_pipeline;
-  Image    _window_mask_image;
-  Pipeline _window_shadow_pipeline;
-  Image    _window_shadow_image;
-
-  DescriptorHeap _uav_clear_heap;
+  // Pipeline _window_mask_pipeline;
+  // Image    _window_mask_image;
+  // Pipeline _window_shadow_pipeline;
+  // Image    _window_shadow_image;
 
   struct Cursor
   {
@@ -79,12 +78,6 @@ private:
     glm::vec2 pos;
   };
   std::unordered_map<CursorType, Cursor> _cursors;
-
-  DescriptorHeap                       _cbv_srv_uav_heap;
-  std::array<FrameBuffer, Frame_Count> _frame_buffers;
-
-  WindowResource                           _fullscreen_resource;
-  std::unordered_map<HWND, WindowResource> _window_resources;
 };
 
 }}

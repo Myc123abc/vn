@@ -45,7 +45,6 @@ struct ShapeProperty
 
   enum class Flag : uint32_t
   {
-    window_shadow = 0b1,
   };
 
   struct Header

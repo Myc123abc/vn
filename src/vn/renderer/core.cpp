@@ -1,6 +1,6 @@
 #include "core.hpp"
 #include "error_handling.hpp"
-#include "descriptor_heap.hpp"
+#include "descriptor_heap_manager.hpp"
 
 #include <array>
 
@@ -84,6 +84,7 @@ auto Core::submit(ID3D12GraphicsCommandList1* cmd) noexcept -> uint64_t
 
 void Core::wait_gpu_complete() noexcept
 {
+  signal();
   err_if(_command_queue->Signal(_fence.Get(), _fence_value), "failed to signal fence");
   err_if(_fence->SetEventOnCompletion(_fence_value, _fence_event), "failed to set event on completion");
   WaitForSingleObjectEx(_fence_event, INFINITE, false);

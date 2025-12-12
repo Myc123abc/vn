@@ -118,6 +118,11 @@ void restore_window() noexcept;
  */
 void set_background_color(Color color) noexcept;
 
+/**
+ * get screen size (TODO: only single monitor now)
+ */
+auto get_screen_size() noexcept -> glm::vec<2, uint32_t>;
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////
@@ -252,8 +257,8 @@ auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
  * @param icon_hover_color
  */
 auto button(
-  uint32_t                                x,
-  uint32_t                                y,
+  int                                     x,
+  int                                     y,
   uint32_t                                width,
   uint32_t                                height,
   Color                                   button_color,

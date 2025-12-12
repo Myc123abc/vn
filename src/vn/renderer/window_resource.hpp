@@ -3,7 +3,6 @@
 #include "image.hpp"
 #include "shader_type.hpp"
 #include "window.hpp"
-#include "descriptor_heap.hpp"
 #include "config.hpp"
 #include "buffer.hpp"
 
@@ -22,8 +21,6 @@ struct SwapchainResource
   HANDLE                                  waitable_obj{};
   Microsoft::WRL::ComPtr<IDXGISwapChain4> swapchain;
   std::array<Image, Frame_Count>          swapchain_images;
-  DescriptorHeap                          rtv_heap;
-  DescriptorHeap                          dsv_heap;
   Image                                   dsv_image;
   CD3DX12_VIEWPORT                        viewport;
   CD3DX12_RECT                            scissor;
@@ -37,7 +34,7 @@ private:
 
 public:
   void init(HWND handle, uint32_t width, uint32_t height, bool is_transparent = false) noexcept;
-  void destroy() const noexcept;
+  void destroy() noexcept;
 
   auto current_image() noexcept { return &swapchain_images[swapchain->GetCurrentBackBufferIndex()]; }
 
@@ -55,13 +52,14 @@ struct WindowResource
 
   Window                                             window;
   SwapchainResource                                  swapchain_resource;
-  DescriptorHeap                                     cbv_srv_uav_heap;
   uint32_t                                           frame_index{};
   std::array<FrameResource, Frame_Count>             frame_resources;
   Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1> cmd;
 
   void init(Window const& window, bool transparent) noexcept;
-  void destroy() const noexcept;
+  void destroy() noexcept;
+
+  void resize(uint32_t width, uint32_t height) noexcept { swapchain_resource.resize(width, height); }
 
   void wait_current_frame_render_finish() const noexcept;
 

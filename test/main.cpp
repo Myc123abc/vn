@@ -60,20 +60,17 @@ int main()
 {
   vn::init();
 
-  ui::create_window("first window", 0, 0, 2560, 1440, render_window_1, false);
+  auto screen_size = ui::get_screen_size();
+  ui::create_window("first window", 0, 0, screen_size.x, screen_size.y, render_window_1, false);
   ui::create_window("second window", 200, 200, 200, 100, render_window_2);
+  timer.add_single_event(3000, [&] { ui::create_window("third window", 300, 300, 100, 100, render_window_3); });
 
   auto fps_count = uint32_t{};
-
   timer.add_repeat_event(1000, [&]
   {
     info("[fps] {}", fps_count);
     fps_count = {};
   }, [&](float) { ++fps_count; });
-  timer.add_single_event(3000, [&]
-  {
-    // ui::create_window("third window", 300, 300, 100, 100, render_window_3);
-  });
 
   while (ui::window_count())
   {
