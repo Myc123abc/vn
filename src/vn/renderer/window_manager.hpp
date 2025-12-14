@@ -58,11 +58,11 @@ public:
 
   enum class Message
   {
-    begin_use_fullscreen_window = WM_APP,
-    end_use_fullscreen_window,
-    left_button_press,
+    left_button_press = WM_APP,
     mouse_idle,
     window_restore_from_maximize,
+    window_moving_or_resizing_finish,
+    window_resizing_finish
   };
   void message_process() noexcept;
 
@@ -70,23 +70,13 @@ public:
 
   auto window_count() const noexcept { return _windows.size(); }
 
-  void begin_use_fullscreen_window() const noexcept;
-  void end_use_fullscreen_window() const noexcept;
-
   auto get_window_name(HWND handle) noexcept -> std::string;
   auto get_window(HWND handle) const noexcept { return _windows.at(handle); }
 
   auto get_window_z_orders() const noexcept -> std::vector<HWND>;
 
 private:
-  void process_message(MSG const& msg) noexcept;
-
-  void process_begin_use_fullscreen_window() noexcept;
-  void process_end_use_fullscreen_window() noexcept;
-
-private:
   std::unordered_map<HWND, Window> _windows;
-  HWND                             _fullscreen_window_handle{};
   std::unordered_set<HWND>         _using_mouse_pass_through_windows;
 };
 

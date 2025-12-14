@@ -16,7 +16,7 @@ struct alignas(8) Vertex
 struct Constants
 {
   glm::vec<2, uint32_t> window_extent{};
-  glm::vec<2, int32_t>  window_pos{};
+  glm::vec2             window_pos{};
   uint32_t              cursor_index{};
 };
 
@@ -45,7 +45,6 @@ struct ShapeProperty
 
   enum class Flag : uint32_t
   {
-    window_shadow = 0b1,
   };
 
   struct Header

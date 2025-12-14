@@ -9,6 +9,7 @@
 #include <functional>
 #include <unordered_map>
 #include <optional>
+#include <span>
 
 #include <windows.h>
 
@@ -51,6 +52,8 @@ struct Window
   glm::vec2             render_pos{};
   uint32_t              widget_count{};
   bool                  draw_title_bar{};
+  WindowRenderData      render_data{};
+  bool                  need_clear{};
 };
 
 class UIContext
@@ -82,12 +85,14 @@ public:
   void render() noexcept;
   void message_process() noexcept;
 
-  auto set_window_render_pos(int x, int y) noexcept { windows[window.handle()].render_pos = { x, y }; }
-  auto window_render_pos() noexcept { return windows[window.handle()].render_pos; }
+  auto set_window_render_pos(int x, int y) noexcept { windows[window.handle].render_pos = { x, y }; }
+  auto window_render_pos() noexcept { return windows[window.handle].render_pos; }
 
   auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool;
 
   auto add_lerp_anim(uint32_t id, uint32_t dur) noexcept -> LerpAnimation*;
+
+  auto current_render_data() noexcept { return &windows[window.handle].render_data; }
 
 private:
   void update_cursor()        noexcept;
@@ -100,9 +105,10 @@ private:
   static constexpr auto Titler_Bar_Button_Icon_Height = 10;
   void update_title_bar() noexcept;
 
+  void generate_render_data(vn::renderer::Window const& render_window) noexcept;
+
 public:
   std::unordered_map<HWND, Window> windows;
-  WindowRenderData                 render_data;
   renderer::Window                 window;
   uint32_t                         shape_properties_offset{};
 
@@ -127,6 +133,8 @@ public:
 
   HWND mouse_on_window{};
 
+  HWND moving_or_resizing_finish_window{};
+
 private:
   HWND                     _mouse_down_window{};
   std::optional<glm::vec2> _mouse_down_pos{};
@@ -141,7 +149,7 @@ template <typename... T>
 constexpr auto generic_id(T&&... args) noexcept
 {
   auto ctx = UIContext::instance();
-  return generic_hash(ctx->window.handle(), ++ctx->windows[ctx->window.handle()].widget_count, std::forward<T>(args)...);
+  return generic_hash(ctx->window.handle, ++ctx->windows[ctx->window.handle].widget_count, std::forward<T>(args)...);
 }
 
 }}

@@ -6,55 +6,62 @@
 
 namespace vn { namespace renderer {
 
-Window::Window(HWND handle, std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept
-  : _handle(handle), _name(name), _x(x), _y(y), _width(width), _height(height)
+void Window::init(HWND handle, std::string_view name, int x, int y, uint32_t width, uint32_t height) noexcept
 {
-  err_if(this->width() < Min_Width || this->height() < Min_Height, "too small window!");
+  err_if(width < min_width || height < min_height, "too small window!");
+
+	this->handle = handle;
+  this->name   = name;
+	this->x      = x;
+	this->y      = y;
+	this->width  = width;
+	this->height = height;
+
   update_rect();
 }
 
 void Window::update_rect() noexcept
 {
-  _rect.left   = x();
-  _rect.top    = y();
-  _rect.right  = x() + width();
-  _rect.bottom = y() + height();
+  rect.left   = x;
+  rect.top    = y;
+  rect.right  = x + width;
+  rect.bottom = y + height;
 }
 
 void Window::update_by_rect() noexcept
 {
-  _x      = _rect.left - External_Thickness.left;
-  _y      = _rect.top  - External_Thickness.top;
-  _width  = _rect.right  - _rect.left + External_Thickness.left + External_Thickness.right;
-  _height = _rect.bottom - _rect.top  + External_Thickness.top  + External_Thickness.bottom;
+  x      = rect.left;
+  y      = rect.top;
+  width  = rect.right  - rect.left;
+  height = rect.bottom - rect.top;
 }
 
 void Window::move(int32_t dx, int32_t dy) noexcept
 {
-  _moving  = true;
-  _x      += dx;
-  _y      += dy;
+  moving  = true;
+  x      += dx;
+  y      += dy;
   update_rect();
 }
 
 void Window::move_from_maximize(int x, int y) noexcept
 {
-  auto ratio_x = static_cast<float>(x) / width();
+  auto ratio_x = static_cast<float>(x) / width;
 
-  _moving       = true;
-  _is_maximized = {};
-  _width        = _backup_rect.right  - _backup_rect.left + External_Thickness.left + External_Thickness.right;
-  _height       = _backup_rect.bottom - _backup_rect.top  + External_Thickness.top  + External_Thickness.bottom;;
-  _x            = x - width() * ratio_x - External_Thickness.left;
-  _y            = -External_Thickness.top;
+  moving             = true;
+  is_maximized       = false;
+  width              = backup_rect.right  - backup_rect.left;
+  height             = backup_rect.bottom - backup_rect.top;
+  this->x            = x - width * ratio_x;
+  this->y            = 0;
+  need_resize_window = true;
   update_rect();
-  _need_resize_swapchain = true;
 }
 
 auto Window::point_on(glm::vec<2, int> const& p) const noexcept -> bool
 {
-  return p.x >= _rect.left && p.x <= _rect.right  &&
-         p.y >= _rect.top  && p.y <= _rect.bottom;
+  return p.x >= rect.left && p.x <= rect.right  &&
+         p.y >= rect.top  && p.y <= rect.bottom;
 }
 
 void Window::adjust_offset(ResizeType type, glm::vec<2, int> const& point, int& dx, int& dy) const noexcept
@@ -66,48 +73,47 @@ void Window::adjust_offset(ResizeType type, glm::vec<2, int> const& point, int& 
     break;
 
   case left_top:
-    if (width()  == Min_Width  && point.x > _rect.left) dx = 0;
-    if (height() == Min_Height && point.y > _rect.top)  dy = 0;
+    if (width  == min_width  && point.x > rect.left) dx = 0;
+    if (height == min_height && point.y > rect.top)  dy = 0;
     break;
 
   case right_top:
-    if (width()  == Min_Width  && point.x < _rect.right) dx = 0;
-    if (height() == Min_Height && point.y > _rect.top)   dy = 0;
+    if (width  == min_width  && point.x < rect.right) dx = 0;
+    if (height == min_height && point.y > rect.top)   dy = 0;
     break;
 
   case left_bottom:
-    if (width()  == Min_Width  && point.x > _rect.left)   dx = 0;
-    if (height() == Min_Height && point.y < _rect.bottom) dy = 0;
+    if (width  == min_width  && point.x > rect.left)   dx = 0;
+    if (height == min_height && point.y < rect.bottom) dy = 0;
     break;
 
   case right_bottom:
-    if (width()  == Min_Width  && point.x < _rect.right)  dx = 0;
-    if (height() == Min_Height && point.y < _rect.bottom) dy = 0;
+    if (width  == min_width  && point.x < rect.right)  dx = 0;
+    if (height == min_height && point.y < rect.bottom) dy = 0;
     break;
 
   case left:
-    if (width() == Min_Width && point.x > _rect.left) dx = 0;
+    if (width == min_width && point.x > rect.left) dx = 0;
     break;
 
   case right:
-    if (width() == Min_Width && point.x < _rect.right) dx = 0;
+    if (width == min_width && point.x < rect.right) dx = 0;
     break;
 
   case top:
-    if (height() == Min_Height && point.y > _rect.top) dy = 0;
+    if (height == min_height && point.y > rect.top) dy = 0;
     break;
 
   case bottom:
-    if (height() == Min_Height && point.y < _rect.bottom) dy = 0;
+    if (height == min_height && point.y < rect.bottom) dy = 0;
     break;
   }
 }
 
 void Window::resize(ResizeType type, int dx, int dy) noexcept
 {
-  _resizing = true;
-
-  _cursor_type = get_cursor_type(type);
+  resizing    = true;
+  cursor_type = get_cursor_type(type);
 
   using enum ResizeType;
   switch (type)
@@ -158,13 +164,13 @@ auto Window::get_resize_type(glm::vec<2, int> const& p) const noexcept -> Resize
 {
   using enum ResizeType;
 
-  if (p.x < _rect.left || p.x > _rect.right  || p.y < _rect.top  || p.y > _rect.bottom || _is_maximized)
+  if (p.x < rect.left || p.x > rect.right  || p.y < rect.top  || p.y > rect.bottom || is_maximized)
     return none;
 
-  bool left_side   = p.x >= _rect.left                   && p.x <= _rect.left + Resize_Width;
-  bool right_side  = p.x >= _rect.right  - Resize_Width  && p.x <= _rect.right;
-  bool top_side    = p.y >= _rect.top                    && p.y <= _rect.top  + Resize_Height;
-  bool bottom_side = p.y >= _rect.bottom - Resize_Height && p.y <= _rect.bottom;
+  bool left_side   = p.x >= rect.left                          && p.x <= rect.left + Window_Resize_Width;
+  bool right_side  = p.x >= rect.right  - Window_Resize_Width  && p.x <= rect.right;
+  bool top_side    = p.y >= rect.top                           && p.y <= rect.top  + Window_Resize_Height;
+  bool bottom_side = p.y >= rect.bottom - Window_Resize_Height && p.y <= rect.bottom;
 
   if (top_side)
   {
@@ -186,55 +192,55 @@ auto Window::get_resize_type(glm::vec<2, int> const& p) const noexcept -> Resize
 void Window::left_offset(int dx) noexcept
 {
   auto rc = get_maximize_rect();
-  _rect.left = std::clamp(
-    _rect.left + dx,
+  rect.left = std::clamp(
+    rect.left + dx,
     rc.left,
-    std::min(_rect.right, rc.right) - Min_Width
+    static_cast<LONG>(std::min(rect.right, rc.right) - min_width)
   );
   auto p = get_cursor_pos();
-  if (dx < 0 && _rect.left < p.x && rc.right - _rect.left > Min_Width) _rect.left = p.x;
-  if (_rect.right > rc.right && rc.right - _rect.left < Min_Width) _rect.left = rc.right - Min_Width;
+  if (dx < 0 && rect.left < p.x && rc.right - rect.left > min_width) rect.left = p.x;
+  if (rect.right > rc.right && rc.right - rect.left < min_width) rect.left = rc.right - min_width;
 }
 
 void Window::top_offset(int dy) noexcept
 {
   auto rc = get_maximize_rect();
-  _rect.top = std::clamp(
-      _rect.top + dy,
+  rect.top = std::clamp(
+    rect.top + dy,
     rc.top,
-    std::min(_rect.bottom, rc.bottom) - Min_Height
+    static_cast<LONG>(std::min(rect.bottom, rc.bottom) - min_height)
   );
   auto p = get_cursor_pos();
-  if (dy < 0 && _rect.top < p.y && rc.bottom - _rect.top > Min_Height) _rect.top = p.y;
-  if (_rect.bottom > rc.bottom && rc.bottom - _rect.top < Min_Height) _rect.top = rc.bottom - Min_Width;
+  if (dy < 0 && rect.top < p.y && rc.bottom - rect.top > min_height) rect.top = p.y;
+  if (rect.bottom > rc.bottom && rc.bottom - rect.top < min_height) rect.top = rc.bottom - min_width;
 }
 
 void Window::right_offset(int dx) noexcept
 {
   auto rc = get_maximize_rect();
-  _rect.right = std::clamp(
-      _rect.right + dx,
-    std::max(_rect.left, rc.left) + Min_Width,
+  rect.right = std::clamp(
+    rect.right + dx,
+    static_cast<LONG>(std::max(rect.left, rc.left) + min_width),
     rc.right
   );
   auto p = get_cursor_pos();
-  if (dx > 0 && _rect.right > p.x && _rect.right - rc.left > Min_Width) _rect.right = p.x;
-  if (_rect.left < rc.left && _rect.right - rc.left < Min_Width) _rect.right = rc.left + Min_Width;
-  if (_rect.right == rc.right - 1) _rect.right = rc.right; // I don't know why this case the dx is always 0
+  if (dx > 0 && rect.right > p.x && rect.right - rc.left > min_width) rect.right = p.x;
+  if (rect.left < rc.left && rect.right - rc.left < min_width) rect.right = rc.left + min_width;
+  if (rect.right == rc.right - 1) rect.right = rc.right; // I don't know why this case the dx is always 0
 }
 
 void Window::bottom_offset(int dy) noexcept
 {
   auto rc = get_maximize_rect();
-  _rect.bottom = std::clamp(
-      _rect.bottom + dy,
-    std::max(_rect.top, rc.top) + Min_Height,
+  rect.bottom = std::clamp(
+    rect.bottom + dy,
+    static_cast<LONG>(std::max(rect.top, rc.top) + min_height),
     rc.bottom
   );
   auto p = get_cursor_pos();
-  if (dy > 0 && _rect.bottom > p.y && _rect.bottom - rc.top > Min_Height) _rect.bottom = p.y;
-  if (_rect.top < rc.top && _rect.bottom - rc.top < Min_Height) _rect.bottom = rc.top + Min_Height;
-  if (_rect.bottom == rc.bottom - 1) _rect.bottom = rc.bottom; // I don't know why this case the dy is always 0
+  if (dy > 0 && rect.bottom > p.y && rect.bottom - rc.top > min_height) rect.bottom = p.y;
+  if (rect.top < rc.top && rect.bottom - rc.top < min_height) rect.bottom = rc.top + min_height;
+  if (rect.bottom == rc.bottom - 1) rect.bottom = rc.bottom; // I don't know why this case the dy is always 0
 }
 
 auto get_cursor_type(Window::ResizeType type) noexcept -> CursorType
@@ -287,21 +293,20 @@ void set_cursor(HWND handle, Window::ResizeType type) noexcept
     break;
   }
   SetClassLongPtrA(handle, GCLP_HCURSOR, reinterpret_cast<LONG_PTR>(LoadCursorA(nullptr, cursor)));
-  
 }
 
 auto Window::cursor_pos() const noexcept -> glm::vec<2, int>
 {
   auto pos = get_cursor_pos();
-  return { pos.x - x(), pos.y - y()};
+  return { pos.x - x, pos.y - y};
 }
 
 auto Window::is_move_area(int x, int y) const noexcept -> bool
 {
-  x -= this->x();
-  y -= this->y();
+  x -= this->x;
+  y -= this->y;
 
-  for (auto const& area : _move_invalid_area)
+  for (auto const& area : move_invalid_area)
     if (x >= area.left && x <= area.right && y >= area.top && y <= area.bottom)
       return false;
   return true;
@@ -310,35 +315,35 @@ auto Window::is_move_area(int x, int y) const noexcept -> bool
 auto Window::cursor_valid_area() const noexcept -> bool
 {
   auto pos = cursor_pos();
-  if (_is_maximized)
-    return pos.x >= _rect.left && pos.x <= _rect.right  &&
-           pos.y >= _rect.top  && pos.y <= _rect.bottom;
+  if (is_maximized)
+    return pos.x >= rect.left && pos.x <= rect.right  &&
+           pos.y >= rect.top  && pos.y <= rect.bottom;
   else
     // TODO: change to multiple rectangles for external pop subwindow
-    return pos.x > Resize_Width  && pos.x < width()  - Resize_Width &&
-           pos.y > Resize_Height && pos.y < height() - Resize_Height;
+    return pos.x > Window_Resize_Width  && pos.x < width  - Window_Resize_Width &&
+           pos.y > Window_Resize_Height && pos.y < height - Window_Resize_Height;
 }
 
 void Window::maximize() noexcept
 {
-  _is_maximized = true;
-  _backup_rect  = _rect;
-  _rect = get_maximize_rect();
+  is_maximized = true;
+  backup_rect  = rect;
+  rect = get_maximize_rect();
   update_by_rect();
-  _mouse_state = {};
+  mouse_state = {};
 }
 
 void Window::restore() noexcept
 {
-  _is_maximized = {};
-  _rect         = _backup_rect;
+  is_maximized = false;
+  rect         = backup_rect;
   update_by_rect();
 }
 
 auto Window::is_mouse_pass_through_area() const noexcept -> bool
 {
   auto pos = get_cursor_pos();
-  return pos.x < _rect.left || pos.x > _rect.right || pos.y < _rect.top || pos.y > _rect.bottom;
+  return pos.x < rect.left || pos.x > rect.right || pos.y < rect.top || pos.y > rect.bottom;
 }
 
 }}

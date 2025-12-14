@@ -77,30 +77,51 @@ add_shape_property:
 
 namespace vn { namespace ui {
 
+////////////////////////////////////////////////////////////////////////////////
+///                                Misc
+////////////////////////////////////////////////////////////////////////////////
+
+auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
+{
+  return renderer::get_screen_size();
+}
+
+auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4
+{
+  return
+  {
+    std::lerp(x.r, y.r, v),
+    std::lerp(x.g, y.g, v),
+    std::lerp(x.b, y.b, v),
+    std::lerp(x.a, y.a, v)
+  };
+}
+
 void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
 {
-  auto ctx        = UIContext::instance();
-  auto [min, max] = bounding_rectangle;
+  auto ctx         = UIContext::instance();
+  auto render_data = ctx->current_render_data();
+  auto [min, max]  = bounding_rectangle;
 
   auto offset = ctx->op_data.op == ShapeProperty::Operator::none ? ctx->shape_properties_offset : ctx->op_data.offset;
 
-  ctx->render_data.vertices.append_range(std::vector<Vertex>
+  render_data->vertices.append_range(std::vector<Vertex>
   {
     { { min.x, min.y, 0.f }, {}, offset },
     { { max.x, min.y, 0.f }, {}, offset },
     { { max.x, max.y, 0.f }, {}, offset },
     { { min.x, max.y, 0.f }, {}, offset },
   });
-  ctx->render_data.indices.append_range(std::vector<uint16_t>
+  render_data->indices.append_range(std::vector<uint16_t>
   {
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 1),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 0),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 2),
-    static_cast<uint16_t>(ctx->render_data.idx_beg + 3),
+    static_cast<uint16_t>(render_data->idx_beg + 0),
+    static_cast<uint16_t>(render_data->idx_beg + 1),
+    static_cast<uint16_t>(render_data->idx_beg + 2),
+    static_cast<uint16_t>(render_data->idx_beg + 0),
+    static_cast<uint16_t>(render_data->idx_beg + 2),
+    static_cast<uint16_t>(render_data->idx_beg + 3),
   });
-  ctx->render_data.idx_beg += 4;
+  render_data->idx_beg += 4;
 }
 
 void add_shape_property(
@@ -109,8 +130,9 @@ void add_shape_property(
   float                     thickness,
   std::vector<float> const& values) noexcept
 {
-  auto ctx = UIContext::instance();
-  ctx->render_data.shape_properties.emplace_back(ShapeProperty
+  auto ctx         = UIContext::instance();
+  auto render_data = ctx->current_render_data();
+  render_data->shape_properties.emplace_back(ShapeProperty
   {
     type,
     ctx->tmp_color.value_or(color),
@@ -118,7 +140,7 @@ void add_shape_property(
     ctx->op_data.op,
     values
   });
-  ctx->shape_properties_offset += ctx->render_data.shape_properties.back().byte_size();
+  ctx->shape_properties_offset += render_data->shape_properties.back().byte_size();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -143,7 +165,7 @@ auto window_count() noexcept -> uint32_t
 auto window_extent() noexcept -> std::pair<uint32_t, uint32_t>
 {
   check_in_update_callback();
-  return { UIContext::instance()->window.width(), UIContext::instance()->window.height()};
+  return { UIContext::instance()->window.width, UIContext::instance()->window.height};
 }
 
 auto content_extent() noexcept -> std::pair<uint32_t, uint32_t>
@@ -168,46 +190,46 @@ auto is_active() noexcept -> bool
 auto is_moving() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_moving();
+  return UIContext::instance()->window.moving;
 }
 
 auto is_resizing() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_resizing();
+  return UIContext::instance()->window.resizing;
 }
 
 auto is_maxmized() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_maximized();
+  return UIContext::instance()->window.is_maximized;
 }
 
 auto is_minimized() noexcept -> bool
 {
   check_in_update_callback();
-  return UIContext::instance()->window.is_minimized();
+  return UIContext::instance()->window.is_minimized;
 }
 
 void minimize_window() noexcept
 {
   check_in_update_callback();
-  ShowWindow(UIContext::instance()->window.handle(), SW_MINIMIZE);
+  ShowWindow(UIContext::instance()->window.handle, SW_MINIMIZE);
 }
 
 void maximize_window() noexcept
 {
   check_in_update_callback();
-  PostMessageW(UIContext::instance()->window.handle(), WM_SIZE, SIZE_MAXIMIZED, 0);
+  PostMessageW(UIContext::instance()->window.handle, WM_SIZE, SIZE_MAXIMIZED, 0);
 }
 
 void restore_window() noexcept
 {
   check_in_update_callback();
   auto ctx = UIContext::instance();
-  ShowWindow(ctx->window.handle(), SW_RESTORE);
+  ShowWindow(ctx->window.handle, SW_RESTORE);
   if (is_maxmized())
-    PostMessageW(ctx->window.handle(), static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
+    PostMessageW(ctx->window.handle, static_cast<uint32_t>(WindowManager::Message::window_restore_from_maximize), 0, 0);
 }
 
 void set_background_color(Color color) noexcept
@@ -262,9 +284,10 @@ void end_union(Color color, float thickness) noexcept
   err_if(!ctx->using_union, "cannot call end union in an uncomplete unino operator");
   err_if(ctx->path_draw, "cannot call end union in an uncomplete path draw");
   ctx->using_union = false;
-  ctx->render_data.shape_properties.back().set_color(ctx->tmp_color.value_or(color));
-  ctx->render_data.shape_properties.back().set_thickness(thickness);
-  ctx->render_data.shape_properties.back().set_operator({});
+  auto render_data = ctx->current_render_data();
+  render_data->shape_properties.back().set_color(ctx->tmp_color.value_or(color));
+  render_data->shape_properties.back().set_thickness(thickness);
+  render_data->shape_properties.back().set_operator({});
 
   add_vertices_indices(get_bounding_rectangle(ctx->op_data.points));
 
@@ -303,15 +326,16 @@ void discard_rectangle(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
 {
   check_in_update_callback();
   
-  auto ctx = UIContext::instance();
-  err_if(ctx->render_data.shape_properties.empty(), "failed must draw a shape then use discard rectangle");
+  auto ctx         = UIContext::instance();
+  auto render_data = ctx->current_render_data();
+  err_if(render_data->shape_properties.empty(), "failed must draw a shape then use discard rectangle");
   err_if(ctx->using_union, "don't use discard rectangle in union operator, I'm not test for this");
   err_if(ctx->path_draw, "don't use discard rectangle in part draw, I'm not test for this");
 
-  auto& shape_property = ctx->render_data.shape_properties.back();
+  auto& shape_property = render_data->shape_properties.back();
   shape_property.set_operator(ShapeProperty::Operator::discard);
 
-  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto offset = ctx->window_render_pos();
   left_top     += offset;
   right_bottom += offset;
 
@@ -327,7 +351,8 @@ void triangle(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color, float thick
   check_in_update_callback();
   check_not_path_draw();
   
-  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto ctx    = UIContext::instance();
+  auto offset = ctx->window_render_pos();
   p0 += offset;
   p1 += offset;
   p2 += offset;
@@ -340,7 +365,8 @@ void rectangle(glm::vec2 left_top, glm::vec2 right_bottom, Color color, float th
   check_in_update_callback();
   check_not_path_draw();
 
-  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto ctx    = UIContext::instance();
+  auto offset = ctx->window_render_pos();
   left_top     += offset;
   right_bottom += offset;
 
@@ -352,7 +378,8 @@ void circle(glm::vec2 center, float radius, Color color, float thickness) noexce
   check_in_update_callback();
   check_not_path_draw();
 
-  auto offset = UIContext::instance()->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto ctx    = UIContext::instance();
+  auto offset = ctx->window_render_pos();
   center += offset;
 
   auto r = radius - 1;
@@ -366,7 +393,7 @@ void line(glm::vec2 p0, glm::vec2 p1, Color color) noexcept
 
   auto ctx = UIContext::instance();
 
-  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto offset = ctx->window_render_pos();
   p0 += offset;
   p1 += offset;
 
@@ -390,7 +417,7 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color) noexcept
 
   auto ctx = UIContext::instance();
 
-  auto offset = ctx->window_render_pos() + renderer::Window::External_Thickness_Offset();
+  auto offset = ctx->window_render_pos();
   p0 += offset;
   p1 += offset;
   p2 += offset;
@@ -413,17 +440,6 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color) noexcept
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////
 
-auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4
-{
-  return
-  {
-    std::lerp(x.r, y.r, v),
-    std::lerp(x.g, y.g, v),
-    std::lerp(x.b, y.b, v),
-    std::lerp(x.a, y.a, v)
-  };
-}
-
 auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 {
   check_in_update_callback();
@@ -436,7 +452,7 @@ auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 
   if (!ctx->window.cursor_valid_area() || ctx->window.is_moving_or_resizing()) return false;
   auto p = ctx->window.cursor_pos();
-  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y && ctx->mouse_on_window == ctx->window.handle();
+  return p.x >= left_top.x && p.x <= right_bottom.x && p.y >= left_top.y && p.y <= right_bottom.y && ctx->mouse_on_window == ctx->window.handle;
 }
 
 auto is_click_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
@@ -460,8 +476,8 @@ auto is_hover_on(uint32_t id, glm::vec2 left_top, glm::vec2 right_bottom, LerpAn
 }
 
 auto button(
-  uint32_t                                x,
-  uint32_t                                y,
+  int                                     x,
+  int                                     y,
   uint32_t                                width,
   uint32_t                                height,
   Color                                   button_color,
@@ -474,13 +490,13 @@ auto button(
 {
   auto ctx = UIContext::instance();
 
-  auto id = generic_id(x, y, width, height);
+  auto id = generic_id();
 
   auto lerp_anim  = ctx->add_lerp_anim(id, 200);
   auto lerp_value = lerp_anim->get_lerp();
 
-  auto left_top     = glm::vec<2, uint32_t>{ x,         y          };
-  auto right_bottom = glm::vec<2, uint32_t>{ x + width, y + height };
+  auto left_top     = glm::vec2{ x,         y          };
+  auto right_bottom = glm::vec2{ x + width, y + height };
 
   auto hovered = is_hover_on(id, left_top, right_bottom, *lerp_anim);
 

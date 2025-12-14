@@ -4,7 +4,10 @@
 #include "core.hpp"
 #include "error_handling.hpp"
 
+#include <dwmapi.h>
+
 #include <algorithm>
+#include <ranges>
 
 using namespace Microsoft::WRL;
 
@@ -27,10 +30,11 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
   swapchain_desc.BufferCount      = Frame_Count;
   swapchain_desc.Width            = width;
   swapchain_desc.Height           = height;
-  swapchain_desc.Format           = dxgi_format(ImageFormat::rgba8_unorm);
+  swapchain_desc.Format           = dxgi_format(Image_Format);
   swapchain_desc.BufferUsage      = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swapchain_desc.SwapEffect       = DXGI_SWAP_EFFECT_FLIP_DISCARD;
   swapchain_desc.SampleDesc.Count = 1;
+  swapchain_desc.Flags            = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
   if (is_transparent)
   {
     swapchain_desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
@@ -58,19 +62,26 @@ void SwapchainResource::init(HWND handle, uint32_t width, uint32_t height, bool 
             "failed to create swapchain");
 
     // disable alt-enter fullscreen
-    err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER), "failed to disable alt-enter");
+    err_if(core->factory()->MakeWindowAssociation(handle, DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_WINDOW_CHANGES), "failed to disable alt-enter");
   }
   err_if(swapchain.As(&this->swapchain), "failed to get swapchain4");
+  this->swapchain->SetMaximumFrameLatency(Frame_Count);
+  waitable_obj = this->swapchain->GetFrameLatencyWaitableObject();
+  err_if(!waitable_obj, "failed to get waitable object from swapchain");
 
-  rtv_heap.init(DescriptorHeapType::rtv, Frame_Count);
-  for (auto i = 0; i < Frame_Count; ++i)
-    swapchain_images[i].init(swapchain.Get(), i).create_descriptor(rtv_heap.pop_handle());
+  for (auto [i, img] : swapchain_images | std::views::enumerate)
+    img.init(swapchain.Get(), i);
 
   if (renderer->enable_depth_test)
-  {
-    dsv_heap.init(DescriptorHeapType::dsv);
-    dsv_image.init(ImageType::dsv, ImageFormat::d32, width, height).create_descriptor(dsv_heap.pop_handle());
-  }
+    dsv_image.init(ImageType::dsv, ImageFormat::d32, width, height);
+}
+
+void SwapchainResource::destroy() noexcept
+{
+  CloseHandle(waitable_obj);
+  std::ranges::for_each(swapchain_images, [](auto& img) { img.destroy(); });
+  if (Renderer::instance()->enable_depth_test)
+    dsv_image.destroy();
 }
 
 void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
@@ -91,7 +102,7 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
     _comp_visual->SetContent(nullptr);
 
   // resize swapchain
-  err_if(swapchain->ResizeBuffers(Frame_Count, width, height, DXGI_FORMAT_UNKNOWN, 0),
+  err_if(swapchain->ResizeBuffers(Frame_Count, width, height, DXGI_FORMAT_UNKNOWN, DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING),
           "failed to resize swapchain");
 
   if (is_transparent)
@@ -103,8 +114,8 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
             "failed to commit composition device");
   }
 
-  for (auto i = 0; i < Frame_Count; ++i)
-    swapchain_images[i].resize(swapchain.Get(), i);
+  for (auto [i, img] : swapchain_images | std::views::enumerate)
+    img.resize(swapchain.Get(), i);
 
   if (renderer->enable_depth_test)
     dsv_image.resize(width, height);
@@ -112,72 +123,70 @@ void SwapchainResource::resize(uint32_t width, uint32_t height) noexcept
 
 void WindowResource::init(Window const& window, bool transparent) noexcept
 {
+  auto core   = Core::instance();
+  auto device = core->device();
+
+  // initialize swapchain resource
   this->window = window;
-  swapchain_resource.init(window.handle(), window.real_width(), window.real_height(), transparent);
+  swapchain_resource.init(window.handle, window.real_width(), window.real_width(), transparent);
+
+  // create frame resources
+  for (auto& frame_resource : frame_resources)
+  {
+    // create command allocator
+    err_if(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&frame_resource.cmd_alloc)),
+            "failed to create command allocator");
+
+    // initialize frame buffer
+    frame_resource.buffer.init();
+  }
+
+  // create command list
+  err_if(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, frame_resources[0].cmd_alloc.Get(), nullptr, IID_PPV_ARGS(&cmd)),
+          "failed to create command list");
+  err_if(cmd->Close(), "failed to close command list");
 
   // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle()] { ShowWindow(handle, SW_SHOW); });
+  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle] { ShowWindow(handle, SW_SHOW); });
 }
 
-void SwapchainResource::clear_rtv() noexcept
+void WindowResource::destroy() noexcept
+{
+  swapchain_resource.destroy();
+  std::ranges::for_each(frame_resources, [](auto& frame) { frame.buffer.destroy(); });
+}
+
+void WindowResource::wait_current_frame_render_finish() const noexcept
+{
+  auto        core           = Core::instance();
+  auto const& frame_resource = frame_resources[frame_index];
+  if (core->fence()->GetCompletedValue() < frame_resource.fence_value)
+  {
+    err_if(core->fence()->SetEventOnCompletion(frame_resource.fence_value, core->fence_event()), "failed to set event on completion");
+    auto objs = std::array<HANDLE, 2>{ swapchain_resource.waitable_obj, core->fence_event() };
+    WaitForMultipleObjects(objs.size(), objs.data(), true, INFINITE);
+  }
+  else
+    WaitForSingleObjectEx(swapchain_resource.waitable_obj, INFINITE, false);
+}
+
+void WindowResource::clear_window() noexcept
 {
   auto  core            = Core::instance();
-  auto  cmd             = core->cmd();
-  auto  swapchain_image = current_image();
-  auto  rtv_handle      = rtv();
+  auto renderer         = Renderer::instance();
+  auto& frame_resource  = frame_resources[frame_index];
+  auto  swapchain_image = swapchain_resource.current_image();
 
-  core->reset_cmd();
+  wait_current_frame_render_finish();
 
-  swapchain_image->set_state(cmd, ImageState::render_target);
+  // reset command
+  err_if(frame_resource.cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(cmd->Reset(frame_resource.cmd_alloc.Get(), nullptr), "failed to reset command list");
 
-  cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
-
-  float constexpr clear_color[4]{};
-  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
-
-  // record finish, change render target view type to present
-  swapchain_image->set_state(cmd, ImageState::present);
-
-  // submit command
-  core->submit(cmd);
-
-  // present
-  err_if(swapchain->Present(1, 0), "failed to present swapchain");
-}
-
-void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept
-{
-  auto core     = Core::instance();
-  auto renderer = Renderer::instance();
-
-  if (clear_window_self_content)
-  {
-    swapchain_resource.clear_rtv();
-    clear_window_self_content = {};
-  }
-  else if (clear_fullscreen_window_content)
-  {
-    renderer->_fullscreen_swapchain_resource.clear_rtv();
-    clear_fullscreen_window_content = {};
-  }
-
-  auto  use_fullscreen_window      = window.use_fullscreen_window();
-  auto& current_swapchain_resource = use_fullscreen_window ? renderer->_fullscreen_swapchain_resource : swapchain_resource;
-  auto  cmd                        = core->cmd();
-  auto  swapchain_image            = current_swapchain_resource.current_image();
-  auto  rtv_handle                 = current_swapchain_resource.rtv();
-  auto  dsv_handle                 = D3D12_CPU_DESCRIPTOR_HANDLE{};
+  auto rtv_handle = swapchain_image->cpu_handle();
+  auto dsv_handle = D3D12_CPU_DESCRIPTOR_HANDLE{};
   if (renderer->enable_depth_test)
-    dsv_handle = current_swapchain_resource.dsv_heap.cpu_handle();
-
-  core->reset_cmd();
-  
-  // set descriptor heaps
-  auto descriptor_heaps = std::array<ID3D12DescriptorHeap*, 1>{ renderer->_cbv_srv_uav_heap.handle() };
-  cmd->SetDescriptorHeaps(descriptor_heaps.size(), descriptor_heaps.data());
-
-  // convert render target view from present type to render target type
-  swapchain_image->set_state(cmd, ImageState::render_target);
+    dsv_handle = swapchain_resource.dsv_image.cpu_handle();
 
   // set render target view
   if (renderer->enable_depth_test)
@@ -186,8 +195,7 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
 
   // clear color
-  float constexpr clear_color[4]{};
-  cmd->ClearRenderTargetView(rtv_handle, clear_color, 0, nullptr);
+  swapchain_image->clear_render_target(cmd.Get());
   if (renderer->enable_depth_test)
   {
     cmd->ClearDepthStencilView(dsv_handle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
@@ -195,82 +203,152 @@ void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t
     cmd->OMSetDepthBounds(0.f, 1.f);
   }
 
-  // window shadow render pass
-  //window_shadow_render(cmd, current_swapchain_resource);
+  // record finish, change render target view type to present
+  swapchain_image->set_state(cmd.Get(), ImageState::present);
+
+  // submit command
+  frame_resource.fence_value = core->submit(cmd.Get());
+
+  // move to next frame resource
+  frame_index = (frame_index + 1) % Frame_Count;
+}
+
+void WindowResource::render(std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties, std::optional<Window> fullscreen_target_window) noexcept
+{
+  auto  core            = Core::instance();
+  auto  renderer        = Renderer::instance();
+  auto& frame_resource  = frame_resources[frame_index];
+  auto  swapchain_image = swapchain_resource.current_image();
+
+  wait_current_frame_render_finish();
+
+  // reset command
+  err_if(frame_resource.cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(cmd->Reset(frame_resource.cmd_alloc.Get(), nullptr), "failed to reset command list");
+
+  // set descriptor heaps
+  DescriptorHeapManager::instance()->bind_heaps(cmd.Get());
+
+  // render
+  window_content_render(swapchain_image, vertices, indices, shape_properties, fullscreen_target_window);
+  // window_shadow_render(cmd);
+
+  // record finish, change render target view type to present
+  swapchain_image->set_state(cmd.Get(), ImageState::present);
+
+  // submit command
+  frame_resource.fence_value = core->submit(cmd.Get());
+
+  // move to next frame resource
+  frame_index = (frame_index + 1) % Frame_Count;
+}
+
+void WindowResource::present(bool vsync) const noexcept
+{
+  vsync
+    ? err_if(swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain")
+    : err_if(swapchain_resource.swapchain->Present(0, DXGI_PRESENT_ALLOW_TEARING), "failed to present swapchain");
+}
+
+void WindowResource::window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties, std::optional<Window> fullscreen_target_window) noexcept
+{
+  auto mem_pool   = MemoryPool::instance();
+  auto renderer   = Renderer::instance();
+  auto rtv_handle = render_target_image->cpu_handle();
+  auto dsv_handle = D3D12_CPU_DESCRIPTOR_HANDLE{};
+  if (renderer->enable_depth_test)
+    dsv_handle = swapchain_resource.dsv_image.cpu_handle();
+
+  // set render target view
+  if (renderer->enable_depth_test)
+    cmd->OMSetRenderTargets(1, &rtv_handle, false, &dsv_handle);
+  else
+    cmd->OMSetRenderTargets(1, &rtv_handle, false, nullptr);
+
+  // clear color
+  render_target_image->clear_render_target(cmd.Get());
+  if (renderer->enable_depth_test)
+  {
+    cmd->ClearDepthStencilView(dsv_handle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
+    // set depth range
+    cmd->OMSetDepthBounds(0.f, 1.f);
+  }
 
   // bind pipeline
-  renderer->_pipeline.bind(cmd);
+  renderer->_sdf_pipeline.bind(cmd.Get());
 
   // set viewport
-  cmd->RSSetViewports(1, &current_swapchain_resource.viewport);
-
-  // convert render target view from present type to render target type
-  swapchain_image->set_state(cmd, ImageState::render_target);
+  cmd->RSSetViewports(1, &swapchain_resource.viewport);
 
   // upload data to buffer
-  renderer->_frame_buffers[core->frame_index()].upload(cmd, vertices, indices, shape_properties);
+  frame_resources[frame_index].buffer.clear().upload(cmd.Get(), vertices, indices, shape_properties);
 
   // set descriptors
   auto constants = Constants{};
-  constants.window_extent = swapchain_image->extent();
-  if (use_fullscreen_window)
+  constants.window_extent = render_target_image->extent();
+  constants.window_pos    = window.content_pos();
+  if (fullscreen_target_window.has_value())
   {
-    constants.window_pos   = window.real_pos();
-    constants.cursor_index = static_cast<uint32_t>(window.cursor_type());
+    constants.window_pos   = fullscreen_target_window->pos();
+    constants.cursor_index = static_cast<uint32_t>(fullscreen_target_window->cursor_type);
   }
-  renderer->_pipeline.set_descriptors(cmd, "constants", constants,
+  renderer->_sdf_pipeline.set_descriptors(cmd.Get(), "constants", constants,
   {
-    { "cursor_textures", renderer->get_descriptor("cursors")                          },
-    { "buffer",          renderer->get_descriptor("framebuffer", core->frame_index()) },
+    { "cursor_textures", mem_pool->get(renderer->_cursors[CursorType::arrow].handle)->gpu_handle() },
+    { "buffer",          frame_resources[frame_index].buffer.gpu_handle()                          },
   });
 
   // draw
-  if (use_fullscreen_window)
+  if (fullscreen_target_window.has_value())
   {
-    auto rect = window.rect();
+    cmd->RSSetScissorRects(1, &fullscreen_target_window->rect);
+    cmd->DrawIndexedInstanced(indices.size() - 6, 1, 0, 0, 0);
+    auto rect = window.real_rect();
     cmd->RSSetScissorRects(1, &rect);
-    cmd->DrawIndexedInstanced(indices.size() - 12, 1, 0, 0, 0);
-    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
-    cmd->DrawIndexedInstanced(12, 1, indices.size() - 12, 0, 0);
+    cmd->DrawIndexedInstanced(6, 1, indices.size() - 6, 0, 0);
   }
   else
   {
-    auto rect = current_swapchain_resource.scissor;
-    rect.left   += Window::External_Thickness.left;
-    rect.right  -= Window::External_Thickness.right;
-    rect.top    += Window::External_Thickness.top;
-    rect.bottom -= Window::External_Thickness.bottom;
+    auto rect = RECT{};
+    rect.left   = Window_Shadow_Thickness;
+    rect.top    = Window_Shadow_Thickness;
+    rect.right  = rect.left + window.width;
+    rect.bottom = rect.top  + window.height;
     cmd->RSSetScissorRects(1, &rect);
-    cmd->DrawIndexedInstanced(indices.size() - 6, 1, 0, 0, 0);
-    cmd->RSSetScissorRects(1, &current_swapchain_resource.scissor);
-    cmd->DrawIndexedInstanced(6, 1, indices.size() - 6, 0, 0);
+    cmd->DrawIndexedInstanced(indices.size(), 1, 0, 0, 0);
   }
-
-  // record finish, change render target view type to present
-  swapchain_image->set_state(cmd, ImageState::present);
-
-  // submit command
-  core->submit(cmd);
-
-  // present
-  err_if(current_swapchain_resource.swapchain->Present(1, 0), "failed to present swapchain");
 }
 
-void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd, SwapchainResource& current_swapchain_resource) const noexcept
+void WindowResource::window_shadow_render(ID3D12GraphicsCommandList1* cmd) const noexcept
 {
-  auto renderer        = Renderer::instance();
-  auto swapchain_image = current_swapchain_resource.current_image();
+#if 0
+  auto renderer = Renderer::instance();
 
+  //
+  // first, generate window mask image
+  //
+
+  // clear mask image
   copy(renderer->_uav_clear_heap, "window mask image", renderer->_cbv_srv_uav_heap, "window mask image");
   renderer->_window_mask_image.clear(cmd, renderer->_uav_clear_heap.cpu_handle("window mask image"), renderer->_cbv_srv_uav_heap.gpu_handle("window mask image"));
+
+  // bind window mask pipeline
   renderer->_window_mask_pipeline.bind(cmd);
+
+  // set descriptors
   renderer->_window_mask_pipeline.set_descriptors(cmd,
-    "constants", glm::vec4(window.rect().left, window.rect().top, window.rect().right, window.rect().bottom),
+    "constants", glm::vec4(window.rect.left, window.rect.top, window.rect.right, window.rect.bottom),
     {{ "window_mask_image", renderer->get_descriptor("window mask image") }});
+
+  // run pipeline
   cmd->Dispatch((renderer->_window_mask_image.width() + 7) / 8, (renderer->_window_mask_image.height() + 7) / 8, 1);
+
+  //
+  // then, use window mask image as input of gaussian blur pipeline
+  //
+
   return;
 
-#if 0
   renderer->_window_shadow_pipeline.bind(cmd);
   renderer->_window_shadow_pipeline.set_descriptors(cmd, "constants", glm::vec2(window.width, window.height), {{ "image", renderer->get_descriptor("window shadow image") }});
   cmd->Dispatch((renderer->_window_shadow_image.width() + 7) / 8, (renderer->_window_shadow_image.height() + 7) / 8, 1);

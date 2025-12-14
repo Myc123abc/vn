@@ -1,6 +1,8 @@
 #include "core.hpp"
 #include "error_handling.hpp"
-#include "descriptor_heap.hpp"
+#include "descriptor_heap_manager.hpp"
+
+#include <array>
 
 using namespace Microsoft::WRL;
 
@@ -47,15 +49,13 @@ void Core::init() noexcept
           "failed to create fence");
   _fence_event = CreateEvent(nullptr, false, false, nullptr);
   err_if(!_fence_event, "failed to create fence event");
-  for (auto& fence_value : _fence_values)
-    fence_value = 1;
 
   // create command allocator and list
-  for (auto& alloc : _cmd_allocators)
-    err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&alloc)),
-            "failed to create command allocator");
-  err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _cmd_allocators[0].Get(), nullptr, IID_PPV_ARGS(&_cmd)),
+  err_if(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_cmd_alloc)),
+          "failed to create command allocator");
+  err_if(_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _cmd_alloc.Get(), nullptr, IID_PPV_ARGS(&_cmd)),
           "failed to create command list");
+  err_if(_cmd->Close(), "failed to close command list");
 }
 
 void Core::destroy() const noexcept
@@ -63,64 +63,37 @@ void Core::destroy() const noexcept
   CloseHandle(_fence_event);
 }
 
-void Core::submit(ID3D12GraphicsCommandList1* cmd) const noexcept
+void Core::reset_cmd() const noexcept
 {
+  err_if(_cmd_alloc->Reset() == E_FAIL, "failed to reset command allocator");
+  err_if(_cmd->Reset(_cmd_alloc.Get(), nullptr), "failed to reset command list");
+}
+
+auto Core::submit(ID3D12GraphicsCommandList1* cmd) noexcept -> uint64_t
+{
+  // close and execute command list
   err_if(cmd->Close(), "failed to close command list");
   auto cmds = std::array<ID3D12CommandList*, 1>{ cmd };
   _command_queue->ExecuteCommandLists(cmds.size(), cmds.data());
+
+  // signal to command queue
+  err_if(_command_queue->Signal(_fence.Get(), ++_fence_value), "failed to signal fence");
+
+  return _fence_value;
 }
 
 void Core::wait_gpu_complete() noexcept
 {
-  auto const fence_value = _fence_values[_frame_index];
-
-  // signal fence
-  err_if(_command_queue->Signal(_fence.Get(), fence_value), "failed to signal fence");
-
-  // move to next frame
-  _frame_index = ++_frame_index % Frame_Count;
-
-  if (_fence->GetCompletedValue() < fence_value)
-  {
-    // wait until frame is finished
-    err_if(_fence->SetEventOnCompletion(fence_value, _fence_event), "failed to set event on completion");
-    WaitForSingleObjectEx(_fence_event, INFINITE, false);
-  }
-
-  // advance fence
-  _fence_values[_frame_index] = fence_value + 1;
+  signal();
+  err_if(_command_queue->Signal(_fence.Get(), _fence_value), "failed to signal fence");
+  err_if(_fence->SetEventOnCompletion(_fence_value, _fence_event), "failed to set event on completion");
+  WaitForSingleObjectEx(_fence_event, INFINITE, false);
 }
 
-void Core::reset_cmd() const noexcept
+auto Core::signal() noexcept -> uint64_t
 {
-  err_if(_cmd->Reset(_cmd_allocators[_frame_index].Get(), nullptr), "failed to reset command list");
-}
-
-void Core::frame_begin() const noexcept
-{
-  err_if(_cmd_allocators[_frame_index]->Reset() == E_FAIL, "failed to reset command allocator");
-}
-
-void Core::frame_end() noexcept
-{
-  // get current fence value
-  auto const fence_value = _fence_values[_frame_index];
-
-  // signal fence
-  err_if(_command_queue->Signal(_fence.Get(), fence_value), "failed to signal fence");
-
-  // move to next frame
-  _frame_index = ++_frame_index % Frame_Count;
-
-  // wait if next fence not ready
-  if (_fence->GetCompletedValue() < _fence_values[_frame_index])
-  {
-    err_if(_fence->SetEventOnCompletion(_fence_values[_frame_index], _fence_event), "failed to set event on completion");
-    WaitForSingleObjectEx(_fence_event, INFINITE, false);
-  }
-
-  // update the next frame fence value
-  _fence_values[_frame_index] = fence_value + 1;
+  err_if(_command_queue->Signal(_fence.Get(), ++_fence_value), "failed to signal fence");
+  return _fence_value;
 }
 
 }}

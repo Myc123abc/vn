@@ -1,10 +1,14 @@
 #include "image.hpp"
-#include "descriptor_heap.hpp"
 #include "core.hpp"
 #include "error_handling.hpp"
+#include "../util.hpp"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 using namespace vn;
 using namespace vn::renderer;
+using namespace Microsoft::WRL;
 
 namespace {
 
@@ -53,9 +57,66 @@ auto dx12_resource_state(ImageState state) noexcept
   return map.at(state);
 }
 
+auto byte_size_of(DXGI_FORMAT format) noexcept
+{
+  auto static const map = std::unordered_map<DXGI_FORMAT, uint32_t>
+  {
+    { DXGI_FORMAT_R8G8B8A8_UNORM, 4 },
+    { DXGI_FORMAT_B8G8R8A8_UNORM, 4 },
+  };
+  err_if(!map.contains(format), "unsupport dxgi format for byte size now");
+  return map.at(format);
+}
+
 }
 
 namespace vn { namespace renderer {
+
+////////////////////////////////////////////////////////////////////////////////
+///                               Bitmap
+////////////////////////////////////////////////////////////////////////////////
+
+void Win32Bitmap::init(uint32_t width, uint32_t height) noexcept
+{
+  view.init(width, height, 4);
+
+  auto hdc_mem = CreateCompatibleDC(nullptr);
+  err_if(!hdc_mem, "failed to create compatible DC");
+  auto info = BITMAPINFO{};
+  info.bmiHeader.biSize     = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth    = width;
+  info.bmiHeader.biHeight   = -height;
+  info.bmiHeader.biPlanes   = 1;
+  info.bmiHeader.biBitCount = 32;
+  handle = CreateDIBSection(hdc_mem, &info, DIB_RGB_COLORS, reinterpret_cast<void**>(&view.data), nullptr, 0);
+  err_if(!handle, "failed to create DIBSection");
+  DeleteDC(hdc_mem);
+}
+  
+void Win32Bitmap::destroy() const noexcept
+{
+  err_if(!DeleteObject(handle), "failed to destroy win32 bitmap");
+}
+
+void Bitmap::init(std::string_view path) noexcept
+{
+  _use_stb = true;
+  _view.data = stbi_load(path.data(), reinterpret_cast<int*>(&_view.width), reinterpret_cast<int*>(&_view.height), reinterpret_cast<int*>(&_view.channel), 0);
+  err_if(!_view.data, "failed to load image {}", path);
+  _view.init(_view.width, _view.height, _view.channel);
+}
+
+void Bitmap::destroy() noexcept
+{
+  _use_stb
+    ? stbi_image_free(_view.data)
+    : free(_view.data);
+  _use_stb = false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+///                                 Image
+////////////////////////////////////////////////////////////////////////////////
 
 auto dxgi_format(ImageFormat format) noexcept -> DXGI_FORMAT
 {
@@ -71,7 +132,7 @@ auto dxgi_format(ImageFormat format) noexcept -> DXGI_FORMAT
   return map.at(format);
 }
 
-auto Image::init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept -> Image&
+void Image::init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept
 {
   _type   = type;
   _format = format;
@@ -107,16 +168,16 @@ auto Image::init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t h
   else
     err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &texture_desc, _state, nullptr, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
             "failed to create image");
-
-  return *this;
+  
+  create_descriptor();
 }  
 
-auto Image::init(ImageType type, ImageFormat format, uint32_t width , uint32_t height) noexcept -> Image&
+void Image::init(ImageType type, ImageFormat format, uint32_t width , uint32_t height) noexcept
 {
-  return init(type, dxgi_format(format), width, height);
+  init(type, dxgi_format(format), width, height);
 }
 
-auto Image::init(IDXGISwapChain1* swapchain, uint32_t index) noexcept -> Image&
+void Image::init(IDXGISwapChain1* swapchain, uint32_t index) noexcept
 {
   _state = dx12_resource_state(ImageType::rtv);
   err_if(swapchain->GetBuffer(index, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
@@ -127,30 +188,16 @@ auto Image::init(IDXGISwapChain1* swapchain, uint32_t index) noexcept -> Image&
   _format = desc.Format;
   _width  = desc.Width;
   _height = desc.Height;
-  return *this;
+  create_descriptor();
 }
 
-auto Image::init(ImageType type, HANDLE handle, uint32_t width, uint32_t height) noexcept -> Image&
+void Image::init(ImageType type, HANDLE handle, uint32_t width, uint32_t height) noexcept
 {
   _state  = dx12_resource_state(type);
   _width  = width;
   _height = height;
   err_if(Core::instance()->device()->OpenSharedHandle(handle, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())), "failed to share d3d11 texture");
-  return *this;
-}
-
-void Image::resize(uint32_t width, uint32_t height) noexcept
-{
-  init(_type, _format, width, height);
-  for (auto const& [k, v] : _cpu_handles)
-    create_descriptor(v);
-}
-
-void Image::resize(IDXGISwapChain1* swapchain, uint32_t index) noexcept
-{
-  init(swapchain, index);
-  for (auto const& [k, v] : _cpu_handles)
-    create_descriptor(v);
+  create_descriptor();
 }
 
 void Image::set_state(ID3D12GraphicsCommandList1* cmd, ImageState state) noexcept
@@ -162,40 +209,65 @@ void Image::set_state(ID3D12GraphicsCommandList1* cmd, ImageState state) noexcep
   _state = transition_state;
 }
   
-void Image::create_descriptor(D3D12_CPU_DESCRIPTOR_HANDLE handle, std::optional<ImageType> type) noexcept
+void Image::create_descriptor() noexcept
 {
-  if (!_cpu_handles.contains(type.value_or(_type))) _cpu_handles.emplace(type.value_or(_type), handle);
+  static auto device = Core::instance()->device();
+  auto        mgr    = DescriptorHeapManager::instance();
 
-  auto device = Core::instance()->device();
-  if (_type == ImageType::uav)
+  auto create_unordered_access_view = [&]
   {
     auto uav_desc = D3D12_UNORDERED_ACCESS_VIEW_DESC{};
     uav_desc.Format        = _format;
     uav_desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-    device->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, handle);
-  }
-  else if (_type == ImageType::rtv)
+    device->CreateUnorderedAccessView(_handle.Get(), nullptr, &uav_desc, _descriptor_handle.cpu_handle());
+  };
+  auto create_render_target_view = [&]
   {
-    device->CreateRenderTargetView(_handle.Get(), nullptr, handle);
-  }
-  else if (_type == ImageType::srv)
+    device->CreateRenderTargetView(_handle.Get(), nullptr, _descriptor_handle.cpu_handle());
+  };
+  auto create_shader_resource_view = [&]
   {
     auto srv_desc = D3D12_SHADER_RESOURCE_VIEW_DESC{};
     srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srv_desc.Format                  = _format;
     srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2D;
     srv_desc.Texture2D.MipLevels     = 1;
-    device->CreateShaderResourceView(_handle.Get(), &srv_desc, handle);
-  }
-  else if (_type == ImageType::dsv)
+    device->CreateShaderResourceView(_handle.Get(), &srv_desc, _descriptor_handle.cpu_handle());
+  };
+  auto create_depth_stencil_view = [&]
   {
     auto dsv_desc = D3D12_DEPTH_STENCIL_VIEW_DESC{};
     dsv_desc.Format        = DXGI_FORMAT_D32_FLOAT;
     dsv_desc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    device->CreateDepthStencilView(_handle.Get(), &dsv_desc, handle);
+    device->CreateDepthStencilView(_handle.Get(), &dsv_desc, _descriptor_handle.cpu_handle());
+  };
+
+  // first initialize image, get descriptor handle
+  if (!_descriptor_handle.is_valid())
+  {
+    if (_type == ImageType::uav)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::cbv_srv_uav, create_unordered_access_view);
+    else if (_type == ImageType::rtv)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::rtv, create_render_target_view);
+    else if (_type == ImageType::srv)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::cbv_srv_uav, create_shader_resource_view);
+    else if (_type == ImageType::dsv)
+      _descriptor_handle = mgr->pop_handle(DescriptorHeapType::dsv, create_depth_stencil_view);
+    else
+      std::unreachable();
   }
+
+  // create descriptor
+  if (_type == ImageType::uav)
+    create_unordered_access_view();
+  else if (_type == ImageType::rtv)
+    create_render_target_view();
+  else if (_type == ImageType::srv)
+    create_shader_resource_view(); 
+  else if (_type == ImageType::dsv)
+    create_depth_stencil_view();
   else
-    err_if(true, "unsupport image type now");
+    std::unreachable();
 }
 
 void Image::clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept
@@ -206,6 +278,51 @@ void Image::clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE c
   rect.right  = _width;
   rect.bottom = _height;
   cmd->ClearUnorderedAccessViewFloat(gpu_handle, cpu_handle, _handle.Get(), values, 1, &rect);
+}
+
+void Image::clear_render_target(ID3D12GraphicsCommandList1* cmd) noexcept
+{
+  err_if(_type != ImageType::rtv, "clear render target only use on rtv");
+  set_state(cmd, ImageState::render_target);
+  float constexpr clear_color[4]{};
+  cmd->ClearRenderTargetView(cpu_handle(), clear_color, 0, nullptr);
+}
+
+auto Image::per_pixel_size() const noexcept -> uint32_t
+{
+  return byte_size_of(_format);
+}
+
+auto Image::readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept -> std::pair<Microsoft::WRL::ComPtr<ID3D12Resource>, BitmapView>
+{
+  err_if(per_pixel_size() != 4, "readback only support rgba image now");
+
+  auto left = std::max(rect.left, 0l);
+  auto top  = std::max(rect.top, 0l);
+
+  // create bitmap view
+  auto view = BitmapView{};
+  view.x      = left;
+  view.y      = top;
+  view.width  = rect.right  - view.x;
+  view.height = rect.bottom - view.y;
+
+  // create readback buffer
+  auto readback_buffer = ComPtr<ID3D12Resource>{};
+  auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
+  view.row_pitch       = align(view.width * per_pixel_size(), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+  auto heap_desc       = CD3DX12_RESOURCE_DESC::Buffer(align(view.row_pitch * view.height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
+  err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &heap_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback_buffer)),
+          "failed to create readback buffer");
+
+  // get pointer of readback buffer
+  auto range = D3D12_RANGE{ 0, heap_desc.Width };
+  err_if(readback_buffer->Map(0, &range, reinterpret_cast<void**>(&view.data)), "failed to map readback buffer to pointer");
+
+  // copy data from gpu to cpu
+  copy(cmd, *this, view.x, view.y, rect.right, rect.bottom, readback_buffer.Get());
+
+  return { readback_buffer, view };
 }
 
 void copy(
@@ -225,6 +342,42 @@ void copy(
   auto dst_loc = CD3DX12_TEXTURE_COPY_LOCATION{ dst.handle() };
   auto region_box = CD3DX12_BOX{ left, top, right, bottom };
   cmd->CopyTextureRegion(&dst_loc, x, y, 0, &src_loc, &region_box);
+}
+
+void copy(
+  ID3D12GraphicsCommandList1* cmd,
+  Image&                      src,
+  LONG                        left,
+  LONG                        top,
+  LONG                        right,
+  LONG                        bottom,
+  ID3D12Resource*             readback_buffer) noexcept
+{
+  src.set_state(cmd, ImageState::copy_src);
+  auto src_loc = CD3DX12_TEXTURE_COPY_LOCATION{ src.handle()    };
+  auto region_box = CD3DX12_BOX{ left, top, right, bottom };
+
+  auto footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT{};
+  footprint.Footprint.Width    = right - left;
+  footprint.Footprint.Height   = bottom - top;
+  footprint.Footprint.Depth    = 1;
+  footprint.Footprint.RowPitch = align(src.per_pixel_size() * footprint.Footprint.Width, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+  footprint.Footprint.Format   = src.format();
+  auto dst_loc = CD3DX12_TEXTURE_COPY_LOCATION{ readback_buffer, footprint };
+
+  cmd->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, &region_box);
+}
+
+void copy(BitmapView const& src, BitmapView const& dst) noexcept
+{
+  auto src_data = reinterpret_cast<std::byte*>(src.data);
+  auto dst_data = reinterpret_cast<std::byte*>(dst.data);
+  for (auto i = 0; i < dst.height; ++i)
+  {
+    memcpy(dst_data, src_data, src.width * 4);
+    src_data += src.row_pitch;
+    dst_data += dst.row_pitch;
+  }
 }
 
 }}

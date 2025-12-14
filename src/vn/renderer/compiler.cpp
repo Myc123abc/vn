@@ -198,7 +198,7 @@ auto Compiler::compile(std::string_view shader, std::string_view vertex_shader_e
 
   auto signature = ComPtr<ID3DBlob>{};
   auto error     = ComPtr<ID3DBlob>{};
-  if (FAILED(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error)))
+  if (FAILED(D3DX12SerializeVersionedRootSignature(&signature_desc, D3D_ROOT_SIGNATURE_VERSION_1_1, &signature, &error)))
   {
     auto msg = std::string{};
     msg.resize(error->GetBufferSize());
@@ -314,7 +314,7 @@ void Compiler::CompileResult::get_root_parameters(ID3D12ShaderReflection* shader
       auto buffer_desc = D3D12_SHADER_BUFFER_DESC{};
       err_if(constant_buffer->GetDesc(&buffer_desc), "faild to get constant buffer description");
 
-      root_param.InitAsConstants(buffer_desc.Size, resource_desc.BindPoint, resource_desc.Space);
+      root_param.InitAsConstants(buffer_desc.Size / 4, resource_desc.BindPoint, resource_desc.Space);
       _root_params.emplace_back(root_param);
       break;
     }

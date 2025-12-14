@@ -20,7 +20,7 @@ struct PSParameter
 struct Constants
 {
   uint2    window_extent;
-  int2     window_pos;
+  float2   window_pos;
   uint32_t cursor_index;
 };
 
@@ -47,7 +47,7 @@ enum : uint32_t
 
 enum : uint32_t
 {
-  flag_window_shadow = 0b1
+  // flag_window_shadow = 0b1
 };
 
 struct ShapeProperty
@@ -58,10 +58,10 @@ struct ShapeProperty
   uint32_t op;
   uint32_t flags;
 
-  bool use_window_shadow()
-  {
-    return bool(flags & flag_window_shadow);
-  }
+  // bool use_window_shadow()
+  // {
+  //   return bool(flags & flag_window_shadow);
+  // }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -254,14 +254,6 @@ float4 ps(PSParameter args) : SV_TARGET
   uint32_t offset = args.buffer_offset;
 
   ShapeProperty shape_property = get_shape_property(offset);
-
-  // process window shadow effect
-  if (shape_property.use_window_shadow())
-  {
-    float d = get_sd(args.pos.xy, shape_property.type, offset);
-    if (d < 0) discard;
-    return float4(177.0 / 255, 177.0 / 255, 177.0 / 255, 1.0 / d);
-  }
 
   float4 color = args.color;
 

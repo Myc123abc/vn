@@ -17,8 +17,6 @@ add_subdirectory(vendor/glm)
 ###                                  Library
 ################################################################################
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
-
 file(GLOB_RECURSE SRC src/*.cpp)
 
 add_library(vn ${SRC})
@@ -30,12 +28,13 @@ PRIVATE
 )
 target_link_libraries(vn
 PRIVATE
-  d3d12 dxgi dxcompiler dcomp dxguid
+  d3d12 dxgi dxcompiler dcomp dxguid dwmapi
   DirectX-Headers
 )
 target_include_directories(vn
 PRIVATE
   vendor/utfcpp/source
+  vendor/stb
   include/vn
 PUBLIC
   vendor/glm
@@ -49,7 +48,7 @@ PUBLIC
 add_custom_target(copy_assets ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_SOURCE_DIR}/assets
-          ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
+          ${CMAKE_BINARY_DIR}/assets
 )
 
 ################################################################################

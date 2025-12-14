@@ -28,9 +28,7 @@ void message_process() noexcept
 
 void render() noexcept
 {
-  Renderer::instance()->render_begin();
   UIContext::instance()->render();
-  Renderer::instance()->render_end();
 }
 
 }

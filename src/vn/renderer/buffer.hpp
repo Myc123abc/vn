@@ -1,6 +1,8 @@
 #pragma once
 
 #include "shader_type.hpp"
+#include "image.hpp"
+#include "memory_pool.hpp"
 
 #include <d3d12.h>
 #include <wrl/client.h>
@@ -11,22 +13,11 @@
 
 namespace vn { namespace renderer {
 
-inline auto align(uint32_t value, uint32_t alignment) noexcept
-{
-  return (value + alignment - 1) / alignment * alignment;
-}
-
 class Buffer
 {
 public:
-  Buffer()                         = default;
-  ~Buffer()                        = default;
-  Buffer(Buffer const&)            = delete;
-  Buffer(Buffer&&)                 = delete;
-  Buffer& operator=(Buffer const&) = delete;
-  Buffer& operator=(Buffer&&)      = delete;
-
-  void init(uint32_t size, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle = {}) noexcept;
+  void init(uint32_t size, bool use_descriptor) noexcept;
+  void destroy() noexcept { _descriptor_handle.release(); }
 
   void clear() noexcept { _size = {}; }
 
@@ -41,10 +32,12 @@ public:
 
   auto gpu_address() const noexcept { return _handle->GetGPUVirtualAddress(); }
   auto size()        const noexcept { return _size;                           }
+  auto gpu_handle()  const noexcept { return _descriptor_handle.gpu_handle(); }
+  auto handle()      const noexcept { return _handle.Get();                   }
 
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;
-  D3D12_CPU_DESCRIPTOR_HANDLE            _cpu_handle{};
+  DescriptorHandle                       _descriptor_handle;
   uint8_t*                               _data{};
   uint32_t                               _capacity{};
   uint32_t                               _size{};
@@ -53,28 +46,44 @@ private:
 class FrameBuffer
 {
 public:
-  FrameBuffer()                              = default;
-  ~FrameBuffer()                             = default;
-  FrameBuffer(FrameBuffer const&)            = delete;
-  FrameBuffer(FrameBuffer&&)                 = delete;
-  FrameBuffer& operator=(FrameBuffer const&) = delete;
-  FrameBuffer& operator=(FrameBuffer&&)      = delete;
+  void init() noexcept;
+  void destroy() noexcept
+  {
+    _vertices_indices_buffer.destroy();
+    _shape_properties_buffer.destroy();
+  }
 
-  void init(D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle) noexcept;
-
-  void clear() noexcept
+  auto clear() noexcept -> FrameBuffer&
   {
     _vertices_indices_buffer.clear();
     _shape_properties_buffer.clear();
-    _window_offset = {};
+    return *this;
   }
 
   void upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties) noexcept;
 
+  auto gpu_handle() const noexcept { return _shape_properties_buffer.gpu_handle(); }
+
 private:
-  Buffer   _vertices_indices_buffer;
-  Buffer   _shape_properties_buffer;
-  uint32_t _window_offset{};
+  Buffer _vertices_indices_buffer;
+  Buffer _shape_properties_buffer;
+};
+
+class UploadBuffer
+{
+public:
+  void add_images(std::vector<ImageHandle> const& image_handles, std::vector<BitmapView> const& bitmaps) noexcept;
+  void upload(ID3D12GraphicsCommandList1* cmd) noexcept;
+
+private:
+  struct Info
+  {
+    D3D12_SUBRESOURCE_DATA data{};
+    ImageHandle            handle;
+  };
+
+  Buffer            _buffer;
+  std::vector<Info> _infos;
 };
 
 }}

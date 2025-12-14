@@ -4,7 +4,6 @@
 #include "../renderer/renderer.hpp"
 #include "ui.hpp"
 
-#include <algorithm>
 #include <ranges>
 
 using namespace vn::renderer;
@@ -28,7 +27,7 @@ void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32
   err_if(name.empty() || !update_func, "window name or update function cannot be empty");
   err_if(std::ranges::any_of(windows | std::views::keys,
     [&] (auto handle) { return wm->get_window_name(handle) == name; }), "duplicate window of {}", name);
-  
+
   auto handle = wm->create_window(name, x, y, width, height);
   windows[handle].update         = update_func;
   windows[handle].draw_title_bar = use_title_bar;
@@ -36,112 +35,191 @@ void UIContext::add_window(std::string_view name, uint32_t x, uint32_t y, uint32
 
 void UIContext::close_current_window() noexcept
 {
-  PostMessageW(window.handle(), WM_CLOSE, 0, 0);
+  PostMessageW(window.handle, WM_CLOSE, 0, 0);
 }
 
 auto UIContext::content_extent() noexcept -> std::pair<uint32_t, uint32_t>
 {
-  auto width  = window.width();
-  auto height = window.height();
-  if (windows[window.handle()].draw_title_bar)
+  auto width  = window.width;
+  auto height = window.height;
+  if (windows[window.handle].draw_title_bar)
     height -= Titler_Bar_Height;
   return { width, height };
 }
 
 void UIContext::render() noexcept
 {
-  auto has_rendering = false;
-  shape_properties_offset = {};
+  // clear last frame hovered widget ids
   hovered_widget_ids.clear();
 
-  for (auto& [handle, window] : windows)
+  // get unminimized windows as render targets
+  auto render_windows = WindowManager::instance()->_windows
+    | std::views::values
+    | std::views::filter([](auto const& window) { return !window.is_minimized; });
+
+  // generate render data
+  std::ranges::for_each(render_windows, [this](auto const& render_window) { generate_render_data(render_window); });
+
+  // if have any rendering window
+  if (!render_windows.empty())
   {
-    this->window = WindowManager::instance()->get_window(handle);
-    if (this->window.is_minimized()) continue;
+    auto renderer = Renderer::instance();
 
-    has_rendering       = true;
-    updating            = true;
-    window.widget_count = {};
-    op_data.offset      = {};
+    // commit render commands
+    auto need_clear_window     = HWND{};
+    auto use_fullscreen_window = HWND{};
+    for (auto const& render_window : render_windows)
+    {
+			auto& window = windows[render_window.handle];
 
-    // use title bar, move draw position under the title bar
-    if (window.draw_title_bar)
-      set_render_pos(0, Titler_Bar_Height);
-    window.update();
+      // for moving or resizing window, use fullscreen promise smooth winodw size change and move sync with cursor
+      if (render_window.is_moving_or_resizing())
+      {
+        use_fullscreen_window = render_window.handle;
 
-    err_if(op_data.op != ShapeProperty::Operator::none, "must clear operator after using finish");
+        // use fullscreen render first frame need to clear window content
+        if (window.need_clear)
+        {
+          need_clear_window = render_window.handle;
+					renderer->clear_window(render_window.handle);
+        }
 
-    if (window.draw_title_bar)
-      update_title_bar();
+        // use window render data to render on fullscreen
+        renderer->render_fullscreen(render_window.handle, window.render_data);
+      }
+      else
+        renderer->render(render_window.handle, window.render_data);
 
-    update_window_shadow();
+      // clear render data
+      window.render_data.clear();
+    }
 
-    updating = false;
+    if (moving_or_resizing_finish_window) renderer->clear_fullscreen();
 
-    update_cursor();
+    // present windows
+    // at least one vsync present promise all window vsync support present barrier
+    if (use_fullscreen_window)
+    {
+      if (need_clear_window)
+        renderer->present(need_clear_window);
+      std::ranges::for_each(render_windows | std::views::filter([&](auto const& window) { return window.handle != use_fullscreen_window; }),
+        [&](auto const& window) { renderer->present(window.handle); });
+      renderer->present_fullscreen(true);
+    }
+    else
+    {
+      // HACK:
+      // I can't implement two window present at same monitor frame beside nvidia which NvApi 
+      // intel and amd driver I'm not see any api support present barrier
+      // so this process which present two windows, mostly it's ok
+      // but some pc's performance problem can be cause two windows present in differet monitor frame
+      // so the filcker will happen
+      if (moving_or_resizing_finish_window)
+      {
+        std::ranges::for_each(render_windows | std::views::filter([&](auto const& window) { return window.handle != moving_or_resizing_finish_window; }),
+          [&](auto const& window) { renderer->present(window.handle); });
+        renderer->present_fullscreen();
+        renderer->present(moving_or_resizing_finish_window, true);
+        moving_or_resizing_finish_window = {};
+      }
+      else
+      {
+        std::ranges::for_each(render_windows | std::views::take(std::ranges::distance(render_windows) - 1),
+          [&](auto const& window) { renderer->present(window.handle); });
+        std::ranges::for_each(render_windows | std::views::reverse | std::views::take(1),
+          [&](auto const& window) { renderer->present(window.handle, true); });
+      }
+    }
 
-    Renderer::instance()->render_window(handle, render_data);
-    render_data.clear();
-  }
-
-  if (has_rendering)
-  {
+    // update mouse hovered widget id
     if (!hovered_widget_ids.empty())
       prev_hovered_widget_id = hovered_widget_ids.back();
 
+    // timer events process
     _lerp_anim_timer.process_events();
   }
   else
     Sleep(1); // FIXME: any better way?
 }
 
+void UIContext::generate_render_data(vn::renderer::Window const& render_window) noexcept
+{
+  // initialize data per window
+  auto& window = windows[render_window.handle];
+  this->window            = render_window;
+  shape_properties_offset = {};
+  updating                = true;
+  window.widget_count     = {};
+  op_data.offset          = {};
+
+  // use title bar, move draw position under the title bar
+  if (window.draw_title_bar)
+    set_render_pos(0, Titler_Bar_Height);
+
+  // update render data from user render callback
+  window.update();
+
+  // promise last shape is normal operator
+  err_if(op_data.op != ShapeProperty::Operator::none, "must clear operator after using finish");
+
+  // draw title bar
+  if (window.draw_title_bar)
+    update_title_bar();
+
+  update_window_shadow();
+
+  update_cursor();
+
+  // update render data finish
+  updating = false;
+}
+
 void UIContext::add_move_invalid_area(glm::vec2 left_top, glm::vec2 right_bottom) noexcept
 {
-  WindowManager::instance()->_windows.at(window.handle()).add_move_invalid_area(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
+  WindowManager::instance()->_windows.at(window.handle).move_invalid_area.emplace_back(left_top.x, left_top.y, right_bottom.x, right_bottom.y);
 }
 
 void UIContext::update_cursor() noexcept
 {
-  auto renderer = Renderer::instance();
+  auto renderer    = Renderer::instance();
+  auto render_data = current_render_data();
   if (window.is_moving_or_resizing())
   {
-    auto pos = get_cursor_pos();
-    pos.x -= window.real_x();
-    pos.y -= window.real_y();
-    if (window.cursor_type() != CursorType::arrow)
+    auto pos = window.cursor_pos();
+    if (window.cursor_type != CursorType::arrow)
     {
-      pos.x -= renderer->_cursors[window.cursor_type()].pos.x;
-      pos.y -= renderer->_cursors[window.cursor_type()].pos.y;
+      pos.x -= renderer->_cursors[window.cursor_type].pos.x;
+      pos.y -= renderer->_cursors[window.cursor_type].pos.y;
     }
-    render_data.vertices.append_range(std::vector<Vertex>
+    render_data->vertices.append_range(std::vector<Vertex>
     {
       { { pos.x,      pos.y,      0.f }, { 0, 0 }, shape_properties_offset },
       { { pos.x + 32, pos.y,      0.f }, { 1, 0 }, shape_properties_offset },
       { { pos.x + 32, pos.y + 32, 0.f }, { 1, 1 }, shape_properties_offset },
       { { pos.x,      pos.y + 32, 0.f }, { 0, 1 }, shape_properties_offset },
     });
-    render_data.indices.append_range(std::vector<uint16_t>
+    render_data->indices.append_range(std::vector<uint16_t>
     {
-      static_cast<uint16_t>(render_data.idx_beg + 0),
-      static_cast<uint16_t>(render_data.idx_beg + 1),
-      static_cast<uint16_t>(render_data.idx_beg + 2),
-      static_cast<uint16_t>(render_data.idx_beg + 0),
-      static_cast<uint16_t>(render_data.idx_beg + 2),
-      static_cast<uint16_t>(render_data.idx_beg + 3),
+      static_cast<uint16_t>(render_data->idx_beg + 0),
+      static_cast<uint16_t>(render_data->idx_beg + 1),
+      static_cast<uint16_t>(render_data->idx_beg + 2),
+      static_cast<uint16_t>(render_data->idx_beg + 0),
+      static_cast<uint16_t>(render_data->idx_beg + 2),
+      static_cast<uint16_t>(render_data->idx_beg + 3),
     });
-    render_data.idx_beg += 4;
+    render_data->idx_beg += 4;
 
-    render_data.shape_properties.emplace_back(ShapeProperty{ ShapeProperty::Type::cursor });
-    shape_properties_offset += render_data.shape_properties.back().byte_size();
+    render_data->shape_properties.emplace_back(ShapeProperty{ ShapeProperty::Type::cursor });
+    shape_properties_offset += render_data->shape_properties.back().byte_size();
   }
 }
 
 void UIContext::update_window_shadow() noexcept
 {
-  add_vertices_indices({{}, { window.real_width(), window.real_height() }});
-  auto shadow_thickness = 20.f;
-  add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { shadow_thickness, shadow_thickness, shadow_thickness + static_cast<float>(window.width()), shadow_thickness + static_cast<float>(window.height()) });
-  render_data.shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
+	// ui::rectangle({}, { window.real_width(), window.real_height() });
+  //add_vertices_indices({{ rect.left, rect.top }, { rect.right, rect.bottom }});
+  //add_shape_property(ShapeProperty::Type::rectangle, {}, {}, { static_cast<float>(window.rect.left), static_cast<float>(window.rect.top), static_cast<float>(window.rect.right), static_cast<float>(window.rect.bottom) });
+  // current_render_data()->shape_properties.back().set_flags(ShapeProperty::Flag::window_shadow);
 }
 
 void UIContext::update_title_bar() noexcept
@@ -170,7 +248,7 @@ void UIContext::update_title_bar() noexcept
       minimize_window();
 
     // maximize / restore button
-    if (button(w - btn_width * 2, 0, btn_width, btn_height, background_color, 0x0cececeff, 
+    if (button(w - btn_width * 2, 0, btn_width, btn_height, background_color, 0x0cececeff,
       [&] (uint32_t width, uint32_t height)
       {
         if (is_maxmized())
@@ -222,12 +300,12 @@ void UIContext::message_process() noexcept
   for (auto const& [handle, _] : windows)
   {
     auto const& window = wm->_windows.at(handle);
-    if (window.mouse_state() == MouseState::left_button_down)
+    if (window.mouse_state == MouseState::left_button_down)
     {
       _mouse_down_window = handle;
       _mouse_down_pos    = window.cursor_pos();
     }
-    else if (window.mouse_state() == MouseState::left_button_up)
+    else if (window.mouse_state == MouseState::left_button_up)
     {
       _mouse_up_window = handle;
       _mouse_up_pos    = window.cursor_pos();
