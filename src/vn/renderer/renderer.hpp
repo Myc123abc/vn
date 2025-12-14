@@ -2,6 +2,7 @@
 
 #include "window_resource.hpp"
 #include "pipeline.hpp"
+#include "memory_pool.hpp"
 
 #include <functional>
 #include <deque>
@@ -72,8 +73,8 @@ private:
 
   struct Cursor
   {
-    Image     image;
-    glm::vec2 pos;
+    ImageHandle handle;
+    glm::vec2   pos;
   };
   std::unordered_map<CursorType, Cursor> _cursors;
 };

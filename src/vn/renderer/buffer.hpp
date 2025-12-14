@@ -2,6 +2,7 @@
 
 #include "shader_type.hpp"
 #include "image.hpp"
+#include "memory_pool.hpp"
 
 #include <d3d12.h>
 #include <wrl/client.h>
@@ -71,14 +72,14 @@ private:
 class UploadBuffer
 {
 public:
-  void add_images(std::vector<Image*> const& images, std::vector<BitmapView> const& bitmaps) noexcept;
+  void add_images(std::vector<ImageHandle> const& image_handles, std::vector<BitmapView> const& bitmaps) noexcept;
   void upload(ID3D12GraphicsCommandList1* cmd) noexcept;
 
 private:
   struct Info
   {
     D3D12_SUBRESOURCE_DATA data{};
-    Image*                 image{};
+    ImageHandle            handle;
   };
 
   Buffer            _buffer;
