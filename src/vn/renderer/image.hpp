@@ -40,12 +40,56 @@ auto dxgi_format(ImageFormat format) noexcept -> DXGI_FORMAT;
 
 struct BitmapView
 {
-  std::byte* data{};
-  uint32_t   offset_x{};
-  uint32_t   offset_y{};
-  uint32_t   width{};
-  uint32_t   height{};
-  uint32_t   row_byte_size{};
+  void*    data{};
+  uint32_t width{};
+  uint32_t height{};
+  uint32_t channel{};
+  uint32_t row_pitch{};
+  uint32_t size{};
+  uint32_t x{};
+  uint32_t y{};
+
+  void init(uint32_t width, uint32_t height, uint32_t channel) noexcept
+  {
+    this->width   = width;
+    this->height  = height;
+    this->channel = channel;
+    row_pitch     = width * channel;
+    size          = row_pitch * height;
+  }
+};
+
+class Bitmap
+{
+public:
+  auto data()            noexcept { return _view.data;      }
+  auto size()      const noexcept { return _view.size;      }
+  auto row_pitch() const noexcept { return _view.row_pitch; }
+  auto width()     const noexcept { return _view.width;     }
+  auto height()    const noexcept { return _view.height;    }
+  auto x()         const noexcept { return _view.x;         }
+  auto y()         const noexcept { return _view.y;         }
+  auto view()      const noexcept { return _view;           }
+
+  void set_pos(uint32_t x, uint32_t y) noexcept
+  {
+    _view.x = x;
+    _view.y = y;
+  }
+
+  void init(uint32_t width, uint32_t height, uint32_t channel) noexcept
+  {
+    _view.init(width, height, channel);
+    _view.data = malloc(width * height * channel);
+  }
+
+  void destroy() noexcept;
+
+  void init(std::string_view path) noexcept;
+
+private:
+  BitmapView _view;
+  bool       _use_stb{};
 };
 
 struct Win32Bitmap
@@ -67,9 +111,9 @@ public:
   Image& operator=(Image const&) = default;
   Image& operator=(Image&&)      = delete;
 
-  auto init(ImageType type, ImageFormat format, uint32_t width , uint32_t height) noexcept -> Image&;
-  auto init(IDXGISwapChain1* swapchain, uint32_t index)                           noexcept -> Image&;
-  auto init(ImageType type, HANDLE handle, uint32_t width, uint32_t height)       noexcept -> Image&;
+  void init(ImageType type, ImageFormat format, uint32_t width , uint32_t height) noexcept;
+  void init(IDXGISwapChain1* swapchain, uint32_t index)                           noexcept;
+  void init(ImageType type, HANDLE handle, uint32_t width, uint32_t height)       noexcept;
 
   void destroy() noexcept
   {
@@ -85,10 +129,10 @@ public:
   void clear(ID3D12GraphicsCommandList1* cmd, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle) const noexcept;
   void clear_render_target(ID3D12GraphicsCommandList1* cmd) noexcept;
 
-  auto handle() const noexcept { return _handle.Get(); }
-  auto format() const noexcept { return _format;       }
-  auto width()  const noexcept { return _width;        }
-  auto height() const noexcept { return _height;       }
+  auto handle() const noexcept { return _handle.Get();                            }
+  auto format() const noexcept { return _format;                                  }
+  auto width()  const noexcept { return _width;                                   }
+  auto height() const noexcept { return _height;                                  }
   auto extent() const noexcept { return glm::vec<2, uint32_t>{ _width, _height }; }
 
   auto per_pixel_size() const noexcept -> uint32_t;
@@ -99,7 +143,7 @@ public:
   auto gpu_handle() const noexcept { return _descriptor_handle.gpu_handle(); }
 
 private:
-  auto init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept -> Image&;
+  void init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept;
   void create_descriptor() noexcept;
 
 private:
@@ -134,7 +178,7 @@ inline void copy(
   ID3D12Resource*             upload_heap,
   uint32_t                    offset,
   D3D12_SUBRESOURCE_DATA&     data
-)
+) noexcept
 {
   image.set_state(cmd, ImageState::copy_dst);
   UpdateSubresources(cmd, image.handle(), upload_heap, offset, 0, 1, &data);

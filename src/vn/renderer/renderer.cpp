@@ -5,36 +5,16 @@
 #include "../ui/ui_context.hpp"
 #include "compiler.hpp"
 #include "descriptor_heap_manager.hpp"
-#include "../util.hpp"
+#include "image.hpp"
 
 #include <algorithm>
 #include <ranges>
 
 using namespace vn;
+using namespace vn::renderer;
 using namespace Microsoft::WRL;
 
 namespace {
-
-struct Bitmap
-{
-  std::vector<std::byte> pixels;
-  uint32_t               width{};
-  uint32_t               height{};
-  uint32_t               pixel_size{};
-  glm::vec2              pos{};
-
-  auto data()            noexcept { return pixels.data();               }
-  auto byte_size() const noexcept { return width * height * pixel_size; }
-  auto row_pitch() const noexcept { return width * pixel_size;          }
-
-  void init(uint32_t width, uint32_t height, uint32_t pixel_size) noexcept
-  {
-    this->width      = width;
-    this->height     = height;
-    this->pixel_size = pixel_size;
-    pixels.resize(byte_size());
-  }
-};
 
 auto load_cursor_bitmap(LPCSTR idc_cursor) noexcept
 {
@@ -49,7 +29,7 @@ auto load_cursor_bitmap(LPCSTR idc_cursor) noexcept
 
   auto cursor_bitmap = Bitmap{};
   cursor_bitmap.init(bitmap.bmWidth, bitmap.bmHeight, bitmap.bmWidthBytes / bitmap.bmWidth);
-  GetBitmapBits(info.hbmColor, cursor_bitmap.byte_size(), cursor_bitmap.data());
+  GetBitmapBits(info.hbmColor, cursor_bitmap.size(), cursor_bitmap.data());
 
   err_if(!DeleteObject(info.hbmColor), "failed to delete cursor information object");
   err_if(!DeleteObject(info.hbmMask), "failed to delete cursor information object");
@@ -61,9 +41,9 @@ auto load_cursor_bitmap(LPCSTR idc_cursor) noexcept
   auto max_y = uint32_t{};
   auto p     = reinterpret_cast<uint8_t*>(cursor_bitmap.data());
   assert(bitmap.bmWidthBytes / bitmap.bmWidth == 4);
-  for (int y = 0; y < cursor_bitmap.height; ++y)
+  for (int y = 0; y < cursor_bitmap.height(); ++y)
   {
-    for (int x = 0; x < cursor_bitmap.width; ++x)
+    for (int x = 0; x < cursor_bitmap.width(); ++x)
     {
       auto idx = y * cursor_bitmap.row_pitch() + x * 4;
       if (p[idx] != 0 || p[idx + 1] != 0 || p[idx + 2] != 0)
@@ -76,8 +56,7 @@ auto load_cursor_bitmap(LPCSTR idc_cursor) noexcept
     }
   }
 
-  cursor_bitmap.pos.x = static_cast<float>(max_x - min_x) / 2 + min_x;
-  cursor_bitmap.pos.y = static_cast<float>(max_y - min_y) / 2 + min_y;
+  cursor_bitmap.set_pos((max_x - min_x) / 2 + min_x, (max_y - min_y) / 2 + min_y);
 
   return cursor_bitmap;
 }
@@ -107,8 +86,9 @@ void Renderer::init() noexcept
 void Renderer::destroy() noexcept
 {
   Core::instance()->wait_gpu_complete();
-  Core::instance()->destroy();
   std::ranges::for_each(_window_resources | std::views::values, [](auto& wr) { wr.destroy(); });
+  std::ranges::for_each(_cursors | std::views::values, [](auto& cursor) { cursor.image.destroy(); });
+  Core::instance()->destroy();
 }
 
 void Renderer::create_pipeline_resource() noexcept
@@ -145,43 +125,31 @@ void Renderer::load_cursor_images() noexcept
   // create cursors
   for (auto& [cursor_type, bitmap] : bitmaps)
   {
-    _cursors[cursor_type].image.init(ImageType::srv, ImageFormat::rgba8_unorm, bitmap.width, bitmap.height);
-    _cursors[cursor_type].pos = bitmap.pos;
+    _cursors[cursor_type].image.init(ImageType::srv, ImageFormat::rgba8_unorm, bitmap.width(), bitmap.height());
+    _cursors[cursor_type].pos = { bitmap.x(), bitmap.y() };
   }
 
-  // create upload heap
-  auto upload_heap      = ComPtr<ID3D12Resource>{};
-  auto heap_properties  = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-  auto upload_heap_desc = CD3DX12_RESOURCE_DESC::Buffer(std::ranges::fold_left(_cursors | std::views::values, 0,
-    [](uint32_t sum, auto const& cursor) { return sum + align(GetRequiredIntermediateSize(cursor.image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT); }));
-  err_if(core->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &upload_heap_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&upload_heap)),
-          "failed to create upload heap");
+  // create upload buffer
+  auto upload_buffer = UploadBuffer{};
+  upload_buffer.add_images(
+    _cursors
+      | std::views::values
+      | std::views::transform([](auto& image) { return &image.image; })
+      | std::ranges::to<std::vector<Image*>>(),
+    bitmaps
+      | std::views::values
+      | std::views::transform([](auto& bitmap) { return bitmap.view(); })
+      | std::ranges::to<std::vector<BitmapView>>());
 
-  // upload bitmap to cursor tesxtures
-  auto offset = uint32_t{};
-  for (auto const& [index, pair] : std::views::enumerate(bitmaps))
-  {
-    auto& [cursor_type, bitmap] = pair;
-    auto& cursor_image          = _cursors[cursor_type].image;
-
-    // upload bitmap
-    auto texture_data = D3D12_SUBRESOURCE_DATA{};
-    texture_data.pData      = bitmap.data();
-    texture_data.RowPitch   = bitmap.width * bitmap.pixel_size;
-    texture_data.SlicePitch = texture_data.RowPitch * bitmap.height;
-    copy(core->cmd(), cursor_image, upload_heap.Get(), offset, texture_data);
-
-    // convert state to pixel shader resource
-    cursor_image.set_state(core->cmd(), ImageState::pixel_shader_resource);
-
-    // move to next upload heap position
-    offset += align(GetRequiredIntermediateSize(cursor_image.handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
-  }
+  upload_buffer.upload(core->cmd());
+  std::ranges::for_each(_cursors | std::views::values, [&](auto& cursor) { cursor.image.set_state(core->cmd(), ImageState::pixel_shader_resource); });
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete
   core->submit(core->cmd());
   core->wait_gpu_complete();
+
+  std::ranges::for_each(bitmaps | std::views::values, [](auto& image) { image.destroy(); });
 }
 
 void Renderer::add_current_frame_render_finish_proc(std::function<void()>&& func) noexcept

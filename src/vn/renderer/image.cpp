@@ -3,6 +3,9 @@
 #include "error_handling.hpp"
 #include "../util.hpp"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 using namespace vn;
 using namespace vn::renderer;
 using namespace Microsoft::WRL;
@@ -70,14 +73,12 @@ auto byte_size_of(DXGI_FORMAT format) noexcept
 namespace vn { namespace renderer {
 
 ////////////////////////////////////////////////////////////////////////////////
-///                         Win32 Bitmap
+///                               Bitmap
 ////////////////////////////////////////////////////////////////////////////////
 
 void Win32Bitmap::init(uint32_t width, uint32_t height) noexcept
 {
-  view.width         = width;
-  view.height        = height;
-  view.row_byte_size = width * 4;
+  view.init(width, height, 4);
 
   auto hdc_mem = CreateCompatibleDC(nullptr);
   err_if(!hdc_mem, "failed to create compatible DC");
@@ -95,6 +96,22 @@ void Win32Bitmap::init(uint32_t width, uint32_t height) noexcept
 void Win32Bitmap::destroy() const noexcept
 {
   err_if(!DeleteObject(handle), "failed to destroy win32 bitmap");
+}
+
+void Bitmap::init(std::string_view path) noexcept
+{
+  _use_stb = true;
+  _view.data = stbi_load(path.data(), reinterpret_cast<int*>(&_view.width), reinterpret_cast<int*>(&_view.height), reinterpret_cast<int*>(&_view.channel), 0);
+  err_if(!_view.data, "failed to load image {}", path);
+  _view.init(_view.width, _view.height, _view.channel);
+}
+
+void Bitmap::destroy() noexcept
+{
+  _use_stb
+    ? stbi_image_free(_view.data)
+    : free(_view.data);
+  _use_stb = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -115,7 +132,7 @@ auto dxgi_format(ImageFormat format) noexcept -> DXGI_FORMAT
   return map.at(format);
 }
 
-auto Image::init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept -> Image&
+void Image::init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t height) noexcept
 {
   _type   = type;
   _format = format;
@@ -153,16 +170,14 @@ auto Image::init(ImageType type, DXGI_FORMAT format, uint32_t width , uint32_t h
             "failed to create image");
   
   create_descriptor();
-
-  return *this;
 }  
 
-auto Image::init(ImageType type, ImageFormat format, uint32_t width , uint32_t height) noexcept -> Image&
+void Image::init(ImageType type, ImageFormat format, uint32_t width , uint32_t height) noexcept
 {
-  return init(type, dxgi_format(format), width, height);
+  init(type, dxgi_format(format), width, height);
 }
 
-auto Image::init(IDXGISwapChain1* swapchain, uint32_t index) noexcept -> Image&
+void Image::init(IDXGISwapChain1* swapchain, uint32_t index) noexcept
 {
   _state = dx12_resource_state(ImageType::rtv);
   err_if(swapchain->GetBuffer(index, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
@@ -174,17 +189,15 @@ auto Image::init(IDXGISwapChain1* swapchain, uint32_t index) noexcept -> Image&
   _width  = desc.Width;
   _height = desc.Height;
   create_descriptor();
-  return *this;
 }
 
-auto Image::init(ImageType type, HANDLE handle, uint32_t width, uint32_t height) noexcept -> Image&
+void Image::init(ImageType type, HANDLE handle, uint32_t width, uint32_t height) noexcept
 {
   _state  = dx12_resource_state(type);
   _width  = width;
   _height = height;
   err_if(Core::instance()->device()->OpenSharedHandle(handle, IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())), "failed to share d3d11 texture");
   create_descriptor();
-  return *this;
 }
 
 void Image::set_state(ID3D12GraphicsCommandList1* cmd, ImageState state) noexcept
@@ -289,16 +302,16 @@ auto Image::readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept
 
   // create bitmap view
   auto view = BitmapView{};
-  view.offset_x = left;
-  view.offset_y = top;
-  view.width    = rect.right  - view.offset_x;
-  view.height   = rect.bottom - view.offset_y;
+  view.x      = left;
+  view.y      = top;
+  view.width  = rect.right  - view.x;
+  view.height = rect.bottom - view.y;
 
   // create readback buffer
   auto readback_buffer = ComPtr<ID3D12Resource>{};
   auto heap_properties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
-  view.row_byte_size   = align(view.width * per_pixel_size(), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
-  auto heap_desc       = CD3DX12_RESOURCE_DESC::Buffer(align(view.row_byte_size * view.height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
+  view.row_pitch       = align(view.width * per_pixel_size(), D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+  auto heap_desc       = CD3DX12_RESOURCE_DESC::Buffer(align(view.row_pitch * view.height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
   err_if(Core::instance()->device()->CreateCommittedResource(&heap_properties, D3D12_HEAP_FLAG_NONE, &heap_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback_buffer)),
           "failed to create readback buffer");
 
@@ -307,7 +320,7 @@ auto Image::readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept
   err_if(readback_buffer->Map(0, &range, reinterpret_cast<void**>(&view.data)), "failed to map readback buffer to pointer");
 
   // copy data from gpu to cpu
-  copy(cmd, *this, view.offset_x, view.offset_y, rect.right, rect.bottom, readback_buffer.Get());
+  copy(cmd, *this, view.x, view.y, rect.right, rect.bottom, readback_buffer.Get());
 
   return { readback_buffer, view };
 }
@@ -357,13 +370,13 @@ void copy(
 
 void copy(BitmapView const& src, BitmapView const& dst) noexcept
 {
-  auto src_data = src.data;
-  auto dst_data = dst.data;
+  auto src_data = reinterpret_cast<std::byte*>(src.data);
+  auto dst_data = reinterpret_cast<std::byte*>(dst.data);
   for (auto i = 0; i < dst.height; ++i)
   {
     memcpy(dst_data, src_data, src.width * 4);
-    src_data += src.row_byte_size;
-    dst_data += dst.row_byte_size;
+    src_data += src.row_pitch;
+    dst_data += dst.row_pitch;
   }
 }
 

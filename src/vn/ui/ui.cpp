@@ -77,9 +77,24 @@ add_shape_property:
 
 namespace vn { namespace ui {
 
+////////////////////////////////////////////////////////////////////////////////
+///                                Misc
+////////////////////////////////////////////////////////////////////////////////
+
 auto get_screen_size() noexcept -> glm::vec<2, uint32_t>
 {
   return renderer::get_screen_size();
+}
+
+auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4
+{
+  return
+  {
+    std::lerp(x.r, y.r, v),
+    std::lerp(x.g, y.g, v),
+    std::lerp(x.b, y.b, v),
+    std::lerp(x.a, y.a, v)
+  };
 }
 
 void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectangle) noexcept
@@ -424,17 +439,6 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color) noexcept
 ////////////////////////////////////////////////////////////////////////////////
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////
-
-auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4
-{
-  return
-  {
-    std::lerp(x.r, y.r, v),
-    std::lerp(x.g, y.g, v),
-    std::lerp(x.b, y.b, v),
-    std::lerp(x.a, y.a, v)
-  };
-}
 
 auto is_hover_on(glm::vec2 left_top, glm::vec2 right_bottom) noexcept -> bool
 {

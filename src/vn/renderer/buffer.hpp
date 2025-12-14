@@ -1,7 +1,7 @@
 #pragma once
 
 #include "shader_type.hpp"
-#include "descriptor_heap_manager.hpp"
+#include "image.hpp"
 
 #include <d3d12.h>
 #include <wrl/client.h>
@@ -32,6 +32,7 @@ public:
   auto gpu_address() const noexcept { return _handle->GetGPUVirtualAddress(); }
   auto size()        const noexcept { return _size;                           }
   auto gpu_handle()  const noexcept { return _descriptor_handle.gpu_handle(); }
+  auto handle()      const noexcept { return _handle.Get();                   }
 
 private:
   Microsoft::WRL::ComPtr<ID3D12Resource> _handle;
@@ -65,6 +66,23 @@ public:
 private:
   Buffer _vertices_indices_buffer;
   Buffer _shape_properties_buffer;
+};
+
+class UploadBuffer
+{
+public:
+  void add_images(std::vector<Image*> const& images, std::vector<BitmapView> const& bitmaps) noexcept;
+  void upload(ID3D12GraphicsCommandList1* cmd) noexcept;
+
+private:
+  struct Info
+  {
+    D3D12_SUBRESOURCE_DATA data{};
+    Image*                 image{};
+  };
+
+  Buffer            _buffer;
+  std::vector<Info> _infos;
 };
 
 }}

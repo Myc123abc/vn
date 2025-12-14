@@ -54,8 +54,6 @@ public:
 
   static constexpr auto enable_depth_test{ false };
 
-  // auto get_descriptor(std::string_view tag, uint32_t offset = {}) const noexcept { return _cbv_srv_uav_heap.gpu_handle(tag, offset); }
-
 private:
   void create_pipeline_resource() noexcept;
 

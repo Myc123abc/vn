@@ -7,6 +7,10 @@
 
 namespace vn { namespace ui {
 
+////////////////////////////////////////////////////////////////////////////////
+///                                Misc
+////////////////////////////////////////////////////////////////////////////////
+
 struct Color
 {
   Color() = default;
@@ -26,6 +30,20 @@ struct Color
 
   float r{}, g{}, b{}, a{};
 };
+
+/**
+ * get lerp color
+ * @param x begin of color
+ * @param y end of color
+ * @param v lerp value
+ * @return lerp color
+ */
+auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4;
+
+/**
+ * get screen size (TODO: only single monitor now)
+ */
+auto get_screen_size() noexcept -> glm::vec<2, uint32_t>;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                                Window
@@ -118,17 +136,12 @@ void restore_window() noexcept;
  */
 void set_background_color(Color color) noexcept;
 
-/**
- * get screen size (TODO: only single monitor now)
- */
-auto get_screen_size() noexcept -> glm::vec<2, uint32_t>;
-
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * set render position. TODO: default position relevant with window style (title bar | wireframe | maximize)
+ * set render position
  * @param x
  * @param y
  */
@@ -216,15 +229,6 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color = 0) noexcept;
 ////////////////////////////////////////////////////////////////////////////////
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////
-
-/**
- * get lerp color
- * @param x begin of color
- * @param y end of color
- * @param v lerp value
- * @return lerp color
- */
-auto color_lerp(Color x, Color y, float v) noexcept -> glm::vec4;
 
 /**
  * whether cursor hover on specific region

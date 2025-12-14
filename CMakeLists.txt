@@ -34,6 +34,7 @@ PRIVATE
 target_include_directories(vn
 PRIVATE
   vendor/utfcpp/source
+  vendor/stb
   include/vn
 PUBLIC
   vendor/glm

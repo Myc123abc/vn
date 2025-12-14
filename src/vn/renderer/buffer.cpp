@@ -3,9 +3,10 @@
 #include "core.hpp"
 #include "renderer.hpp"
 #include "../util.hpp"
-#include "config.hpp"
 
 #include <directx/d3dx12.h>
+
+#include <algorithm>
 
 using namespace vn;
 using namespace vn::renderer;
@@ -46,7 +47,7 @@ void Buffer::init(uint32_t size, bool use_descriptor) noexcept
     srv_desc.Format                  = DXGI_FORMAT_R32_TYPELESS;
     srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_BUFFER;
     srv_desc.Buffer.Flags            = D3D12_BUFFER_SRV_FLAG_RAW;
-    srv_desc.Buffer.NumElements      = _capacity * Frame_Count / 4;
+    srv_desc.Buffer.NumElements      = _capacity / 4;
     Core::instance()->device()->CreateShaderResourceView(_handle.Get(), &srv_desc, _descriptor_handle.cpu_handle());
   };
 
@@ -55,14 +56,14 @@ void Buffer::init(uint32_t size, bool use_descriptor) noexcept
   
   // create buffer
   auto heap_properties = CD3DX12_HEAP_PROPERTIES{ D3D12_HEAP_TYPE_UPLOAD };
-  auto resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(_capacity * Frame_Count);
+  auto resource_desc   = CD3DX12_RESOURCE_DESC::Buffer(_capacity);
   err_if(Core::instance()->device()->CreateCommittedResource(
     &heap_properties,
     D3D12_HEAP_FLAG_NONE,
     &resource_desc,
     D3D12_RESOURCE_STATE_GENERIC_READ,
     nullptr,
-    IID_PPV_ARGS(&_handle)),
+    IID_PPV_ARGS(_handle.ReleaseAndGetAddressOf())),
     "failed to create vertex buffer");
 
   // get pointer of buffer
@@ -137,6 +138,44 @@ void FrameBuffer::upload(ID3D12GraphicsCommandList1* cmd, std::span<Vertex const
   // shape properties
   for (auto const& shape_property : shape_properties)
     _shape_properties_buffer.append(shape_property.data(), shape_property.byte_size());
+}
+
+void UploadBuffer::add_images(std::vector<Image*> const& images, std::vector<BitmapView> const& bitmaps) noexcept
+{
+  assert(images.size() == bitmaps.size());
+
+  _infos.reserve(_infos.size() + images.size());
+  for (auto i = 0; i < images.size(); ++i)
+  {
+    auto info = Info{};
+    info.image           = images[i];
+    info.data.pData      = bitmaps[i].data;
+    info.data.RowPitch   = bitmaps[i].row_pitch;
+    info.data.SlicePitch = bitmaps[i].row_pitch * bitmaps[i].height;
+    _infos.emplace_back(std::move(info));
+  }
+}
+
+void UploadBuffer::upload(ID3D12GraphicsCommandList1* cmd) noexcept
+{
+  // calculate required intermediate sizes
+  auto intermediate_sizes = std::vector<uint32_t>{};
+  intermediate_sizes.reserve(_infos.size());
+  for (auto const& info : _infos)
+    intermediate_sizes.emplace_back(align(GetRequiredIntermediateSize(info.image->handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
+
+  // initialize buffer
+  _buffer.init(std::ranges::fold_left(intermediate_sizes, 0, std::plus<>{}), false);
+
+  // copy bitmap data to image by upload buffer
+  auto offset = uint32_t{};
+  for (auto i = 0; i < _infos.size(); ++i)
+  {
+    copy(cmd, *_infos[i].image, _buffer.handle(), offset, _infos[i].data);
+    offset += intermediate_sizes[i];
+  }
+
+  _infos.clear();
 }
 
 }}
