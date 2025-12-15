@@ -2,7 +2,6 @@
 
 #include "window_resource.hpp"
 #include "pipeline.hpp"
-#include "memory_pool.hpp"
 
 #include <functional>
 #include <deque>
@@ -78,5 +77,7 @@ private:
   };
   std::unordered_map<CursorType, Cursor> _cursors;
 };
+
+inline static auto& g_renderer{ *Renderer::instance() };
 
 }}

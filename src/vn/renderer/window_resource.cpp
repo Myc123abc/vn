@@ -252,7 +252,6 @@ void WindowResource::present(bool vsync) const noexcept
 
 void WindowResource::window_content_render(Image* render_target_image, std::span<Vertex const> vertices, std::span<uint16_t const> indices, std::span<ShapeProperty const> shape_properties, std::optional<Window> fullscreen_target_window) noexcept
 {
-  auto mem_pool   = MemoryPool::instance();
   auto renderer   = Renderer::instance();
   auto rtv_handle = render_target_image->cpu_handle();
   auto dsv_handle = D3D12_CPU_DESCRIPTOR_HANDLE{};
@@ -290,12 +289,12 @@ void WindowResource::window_content_render(Image* render_target_image, std::span
   if (fullscreen_target_window.has_value())
   {
     constants.window_pos   = fullscreen_target_window->pos();
-    constants.cursor_index = static_cast<uint32_t>(fullscreen_target_window->cursor_type);
+    constants.cursor_index = g_image_pool[renderer->_cursors[fullscreen_target_window->cursor_type].handle].index();
   }
   renderer->_sdf_pipeline.set_descriptors(cmd.Get(), "constants", constants,
   {
-    { "cursor_textures", mem_pool->get(renderer->_cursors[CursorType::arrow].handle)->gpu_handle() },
-    { "buffer",          frame_resources[frame_index].buffer.gpu_handle()                          },
+    { "images", g_descriptor_heap_mgr.first_gpu_handle(DescriptorHeapType::cbv_srv_uav) },
+    { "buffer", frame_resources[frame_index].buffer.gpu_handle()                        },
   });
 
   // draw

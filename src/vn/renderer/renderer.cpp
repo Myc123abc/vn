@@ -85,11 +85,10 @@ void Renderer::init() noexcept
 
 void Renderer::destroy() noexcept
 {
-  auto mem_pool = MemoryPool::instance();
-
   Core::instance()->wait_gpu_complete();
   std::ranges::for_each(_window_resources | std::views::values, [](auto& wr) { wr.destroy(); });
-  std::ranges::for_each(_cursors | std::views::values, [&](auto& cursor) { mem_pool->destroy(cursor.handle); });
+  std::ranges::for_each(_cursors | std::views::values, [&](auto& cursor) { g_image_pool.free(cursor.handle); });
+  g_external_image_loader.destroy();
   Core::instance()->destroy();
 }
 
@@ -112,8 +111,7 @@ void Renderer::create_pipeline_resource() noexcept
 
 void Renderer::load_cursor_images() noexcept
 {
-  auto mem_pool = MemoryPool::instance();
-  auto core     = Core::instance();
+  auto core = Core::instance();
   core->reset_cmd();
 
   // get bitmaps of all cursor types
@@ -128,8 +126,8 @@ void Renderer::load_cursor_images() noexcept
   // create cursors
   for (auto& [cursor_type, bitmap] : bitmaps)
   {
-    _cursors[cursor_type].handle = mem_pool->alloc_image();
-    mem_pool->get(_cursors[cursor_type].handle)->init(ImageType::srv, ImageFormat::rgba8_unorm, bitmap.width(), bitmap.height());
+    _cursors[cursor_type].handle = g_image_pool.alloc();
+    g_image_pool[_cursors[cursor_type].handle].init(ImageType::srv, ImageFormat::rgba8_unorm, bitmap.width(), bitmap.height());
     _cursors[cursor_type].pos = { bitmap.x(), bitmap.y() };
   }
 
@@ -147,7 +145,10 @@ void Renderer::load_cursor_images() noexcept
 
   upload_buffer.upload(core->cmd());
   std::ranges::for_each(_cursors | std::views::values, [&](auto& cursor)
-    { mem_pool->get(cursor.handle)->set_state(core->cmd(), ImageState::pixel_shader_resource); });
+    { g_image_pool[cursor.handle].set_state(core->cmd(), ImageState::pixel_shader_resource); });
+  
+  g_external_image_loader.load("assets/test.jpg");
+  g_external_image_loader.upload(core->cmd());
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete

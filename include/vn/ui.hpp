@@ -226,6 +226,14 @@ void line(glm::vec2 p0, glm::vec2 p1, Color color = {}) noexcept;
  */
 void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color = 0) noexcept;
 
+/**
+ * display an image specified by position (x, y)
+ * @param filename
+ * @param x
+ * @param y
+ */
+void image(std::string_view filename, int x, int y) noexcept;
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                              UI Widget
 ////////////////////////////////////////////////////////////////////////////////

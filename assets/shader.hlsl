@@ -35,7 +35,9 @@ enum : uint32_t
 
   type_path,
   type_path_line,
-  type_path_bezier
+  type_path_bezier,
+
+  type_image
 };
 
 enum : uint32_t
@@ -68,10 +70,10 @@ struct ShapeProperty
 ///                              Binding
 ////////////////////////////////////////////////////////////////////////////////
 
-ConstantBuffer<Constants> constants         : register(b0);
-SamplerState              g_sampler         : register(s0);
-Texture2D                 cursor_textures[] : register(t0);
-ByteAddressBuffer         buffer            : register(t0, space1);
+ConstantBuffer<Constants> constants : register(b0);
+SamplerState              g_sampler : register(s0);
+Texture2D                 images[]  : register(t0);
+ByteAddressBuffer         buffer    : register(t0, space1);
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                              Functions
@@ -258,7 +260,10 @@ float4 ps(PSParameter args) : SV_TARGET
   float4 color = args.color;
 
   if (shape_property.type == type_cursor)
-    return cursor_textures[constants.cursor_index].Sample(g_sampler, args.uv);
+    return images[constants.cursor_index].Sample(g_sampler, args.uv);
+
+  if (shape_property.type == type_image)
+    return images[get_uint(offset)].Sample(g_sampler, args.uv);
 
   float w = length(float2(ddx_fine(args.pos.x), ddy_fine(args.pos.y)));
   float d = get_sd(args.pos.xy, shape_property.type, offset);

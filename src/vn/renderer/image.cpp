@@ -2,6 +2,7 @@
 #include "core.hpp"
 #include "error_handling.hpp"
 #include "../util.hpp"
+#include "renderer.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -98,11 +99,11 @@ void Win32Bitmap::destroy() const noexcept
   err_if(!DeleteObject(handle), "failed to destroy win32 bitmap");
 }
 
-void Bitmap::init(std::string_view path) noexcept
+void Bitmap::init(std::string_view filename) noexcept
 {
   _use_stb = true;
-  _view.data = stbi_load(path.data(), reinterpret_cast<int*>(&_view.width), reinterpret_cast<int*>(&_view.height), reinterpret_cast<int*>(&_view.channel), 0);
-  err_if(!_view.data, "failed to load image {}", path);
+  _view.data = stbi_load(filename.data(), reinterpret_cast<int*>(&_view.width), reinterpret_cast<int*>(&_view.height), reinterpret_cast<int*>(&_view.channel), 0);
+  err_if(!_view.data, "failed to load image {}", filename);
   _view.init(_view.width, _view.height, _view.channel);
 }
 
@@ -325,6 +326,10 @@ auto Image::readback(ID3D12GraphicsCommandList1* cmd, RECT const& rect) noexcept
   return { readback_buffer, view };
 }
 
+////////////////////////////////////////////////////////////////////////////////
+///                             Copy Operations
+////////////////////////////////////////////////////////////////////////////////
+
 void copy(
   ID3D12GraphicsCommandList1* cmd,
   Image&                      src,
@@ -379,5 +384,143 @@ void copy(BitmapView const& src, BitmapView const& dst) noexcept
     dst_data += dst.row_pitch;
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+///                             Upload Buffer
+////////////////////////////////////////////////////////////////////////////////
+
+void UploadBuffer::add_images(std::vector<ImageHandle> const& image_handles, std::vector<BitmapView> const& bitmaps) noexcept
+{
+  assert(image_handles.size() == bitmaps.size());
+
+  _infos.reserve(_infos.size() + image_handles.size());
+  for (auto i = 0; i < image_handles.size(); ++i)
+  {
+    auto info = Info{};
+    info.handle          = image_handles[i];
+    info.data.pData      = bitmaps[i].data;
+    info.data.RowPitch   = bitmaps[i].row_pitch;
+    info.data.SlicePitch = bitmaps[i].row_pitch * bitmaps[i].height;
+    _infos.emplace_back(std::move(info));
+  }
+}
+
+void UploadBuffer::upload(ID3D12GraphicsCommandList1* cmd) noexcept
+{
+  // calculate required intermediate sizes
+  auto intermediate_sizes = std::vector<uint32_t>{};
+  intermediate_sizes.reserve(_infos.size());
+  for (auto const& info : _infos)
+    intermediate_sizes.emplace_back(
+      align(GetRequiredIntermediateSize(g_image_pool[info.handle].handle(), 0, 1), D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT));
+
+  // initialize buffer
+  auto size = std::ranges::fold_left(intermediate_sizes, 0, std::plus<>{});
+  if (_buffer.capacity() < size)
+    _buffer.init(size, false);
+
+  // copy bitmap data to image by upload buffer
+  auto offset = uint32_t{};
+  for (auto i = 0; i < _infos.size(); ++i)
+  {
+    copy(cmd, g_image_pool[_infos[i].handle], _buffer.handle(), offset, _infos[i].data);
+    offset += intermediate_sizes[i];
+  }
+
+  _infos.clear();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+///                        External Image Loaderer
+////////////////////////////////////////////////////////////////////////////////
+
+void ExternalImageLoader::load(std::string_view filename) noexcept
+{
+  err_if(_datas.contains(filename.data()), "Failed to load {}. It's already loaded");
+  _datas[filename.data()].init(filename);
+}
+
+void ExternalImageLoader::remove(std::string_view filename) noexcept
+{
+  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist");
+  auto& data = _datas[filename.data()];
+  if (!data.is_uploaded) data.bitmap.destroy();
+  g_renderer.add_current_frame_render_finish_proc([handle = data.handle] mutable { g_image_pool.free(handle); });
+  _datas.erase(filename.data());
+}
+
+void ExternalImageLoader::Data::init(std::string_view filename) noexcept
+{
+  bitmap.init(filename);
+  handle = g_image_pool.alloc();
+  g_image_pool[handle].init(ImageType::srv, ImageFormat::rgba8_unorm, bitmap.width(), bitmap.height());
+}
+
+void ExternalImageLoader::upload(ID3D12GraphicsCommandList1* cmd) noexcept
+{
+  auto unuploaded_datas = _datas
+    | std::views::values
+    | std::views::filter([](auto const& data) { return !data.is_uploaded; });
+  auto handles = unuploaded_datas
+    | std::views::transform([](auto const& data) { return data.handle; })
+    | std::ranges::to<std::vector<ImageHandle>>();
+  auto views = unuploaded_datas
+    | std::views::transform([](auto const& data) { return data.bitmap.view(); })
+    | std::ranges::to<std::vector<BitmapView>>();
+
+  _upload_buffer.add_images(handles, views);
+  _upload_buffer.upload(cmd);
+  
+  std::ranges::for_each(unuploaded_datas, [](auto& data)
+  {
+    data.bitmap.destroy();
+  });
+  auto unuploaded_data_filenames = _datas
+    | std::views::filter([](auto const& pair) { return !pair.second.is_uploaded; })
+    | std::views::keys
+    | std::ranges::to<std::vector<std::string>>();
+  g_renderer.add_current_frame_render_finish_proc([unuploaded_data_filenames]
+  {
+    std::ranges::for_each(unuploaded_data_filenames, [](auto& filename)
+    {
+      g_external_image_loader.upload_finish(filename);
+    });
+  });
+}
+
+void ExternalImageLoader::destroy() noexcept
+{
+  std::ranges::for_each(_datas | std::views::values, [](auto& data)
+  {
+    if (!data.is_uploaded) data.bitmap.destroy();
+    g_image_pool.free(data.handle);
+  });
+  _datas.clear();
+}
+
+auto ExternalImageLoader::operator[](std::string_view filename) noexcept -> Image&
+{
+  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist");
+  return g_image_pool[_datas[filename.data()].handle];
+}
+
+void ExternalImageLoader::upload_finish(std::string_view filename) noexcept
+{
+  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist");
+  _datas[filename.data()].is_uploaded = true;
+}
+
+/*
+
+TODO:
+image has three states
+  unuploaded
+  uploading
+  uploaded
+
+maybe i can use another queue to transform the image to  gpu
+and in remove or destroy or using, i can only process only when the queue finish
+
+*/
 
 }}

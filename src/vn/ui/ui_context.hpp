@@ -96,7 +96,6 @@ public:
 
 private:
   void update_cursor()        noexcept;
-  void update_wireframe()     noexcept;
   void update_window_shadow() noexcept;
 
   static constexpr auto Titler_Bar_Height             = 35;

@@ -31,6 +31,8 @@ public:
 
   auto is_valid() const noexcept { return _index >= 0; }
 
+  auto index() const noexcept { return _index; }
+
 private:
   int                   _index{ -1 };
   DescriptorHeapType    _type;
@@ -85,8 +87,12 @@ public:
   void reserve(DescriptorHeapType type, uint32_t capacity) noexcept { _heaps[type].reserve(capacity); }
   auto usable_handle_count(DescriptorHeapType type) const noexcept { return _heaps.at(type).usable_handle_count(); }
 
+  auto first_gpu_handle(DescriptorHeapType type) const noexcept { return _heaps.at(type)._handles[0].second.gpu_handle(); }
+
 private:
   std::unordered_map<DescriptorHeapType, DescriptorHeap> _heaps;
 };
+
+inline static auto& g_descriptor_heap_mgr{ *DescriptorHeapManager::instance() };
 
 }}

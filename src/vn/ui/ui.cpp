@@ -3,6 +3,7 @@
 #include "ui_context.hpp"
 #include "error_handling.hpp"
 #include "lerp_animation.hpp"
+#include "../renderer/image.hpp"
 
 #include <ranges>
 
@@ -107,10 +108,10 @@ void add_vertices_indices(std::pair<glm::vec2, glm::vec2> const& bounding_rectan
 
   render_data->vertices.append_range(std::vector<Vertex>
   {
-    { { min.x, min.y, 0.f }, {}, offset },
-    { { max.x, min.y, 0.f }, {}, offset },
-    { { max.x, max.y, 0.f }, {}, offset },
-    { { min.x, max.y, 0.f }, {}, offset },
+    { { min.x, min.y, 0.f }, { 0.f, 0.f }, offset },
+    { { max.x, min.y, 0.f }, { 1.f, 0.f }, offset },
+    { { max.x, max.y, 0.f }, { 1.f, 1.f }, offset },
+    { { min.x, max.y, 0.f }, { 0.f, 1.f }, offset },
   });
   render_data->indices.append_range(std::vector<uint16_t>
   {
@@ -434,6 +435,22 @@ void bezier(glm::vec2 p0, glm::vec2 p1, glm::vec2 p2, Color color) noexcept
   }
   else
     add_shape(ShapeProperty::Type::bezier, color, {}, { p0.x, p0.y, p1.x, p1.y, p2.x, p2.y }, get_bounding_rectangle({ p0, p1, p2 }));
+}
+
+void image(std::string_view filename, int x, int y) noexcept
+{
+  check_in_update_callback();
+  check_not_path_draw();
+
+  auto ctx    = UIContext::instance();
+  auto offset = ctx->window_render_pos();
+  x += offset.x;
+  y += offset.y;
+
+  if (!g_external_image_loader.contains(filename))
+    g_external_image_loader.load(filename);
+	auto const& image = g_external_image_loader[filename];
+  add_shape(ShapeProperty::Type::image, {}, {}, { std::bit_cast<float>(image.index()) }, { { x, y }, { x + image.width(), y + image.height() }});
 }
 
 ////////////////////////////////////////////////////////////////////////////////

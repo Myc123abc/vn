@@ -3,3 +3,5 @@ out
 vendor
 __*
 .*
+assets/*.jpg
+assets/*.png

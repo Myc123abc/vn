@@ -16,8 +16,7 @@ enum class CursorType
   up_down,
   left_rigtht,
   diagonal,
-  anti_diagonal,
-  Number
+  anti_diagonal
 };
 
 enum class MouseState

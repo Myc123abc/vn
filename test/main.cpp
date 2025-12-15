@@ -17,6 +17,8 @@ void render_window_2() noexcept
 {
   set_background_color(0x282C34FF);
 
+  ui::image("assets/test.jpg", 0, 0);
+
   auto [width, height] = content_extent();
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
 
@@ -61,9 +63,9 @@ int main()
   vn::init();
 
   auto screen_size = ui::get_screen_size();
-  ui::create_window("first window", 0, 0, screen_size.x, screen_size.y, render_window_1, false);
+  // ui::create_window("first window", 0, 0, screen_size.x, screen_size.y, render_window_1, false);
   ui::create_window("second window", 200, 200, 200, 100, render_window_2);
-  timer.add_single_event(3000, [&] { ui::create_window("third window", 300, 300, 100, 100, render_window_3); });
+  // timer.add_single_event(3000, [&] { ui::create_window("third window", 300, 300, 100, 100, render_window_3); });
 
   auto fps_count = uint32_t{};
   timer.add_repeat_event(1000, [&]
