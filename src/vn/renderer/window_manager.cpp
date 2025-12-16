@@ -308,6 +308,7 @@ auto WindowManager::create_window(std::string_view name, int x, int y, uint32_t 
   window.handle = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP, Window_Class, nullptr, WS_POPUP | WS_MINIMIZEBOX,
     window.real_x(), window.real_y(), window.real_width(), window.real_height(), 0, 0, GetModuleHandleW(nullptr), 0);
   err_if(!window.handle,  "failed to create window");
+  ShowWindow(window.handle, SW_SHOW); // TODO: show after first frame render finish and also include some images uploaded finish
 
   _windows.emplace(window.handle, window);
 

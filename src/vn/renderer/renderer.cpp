@@ -146,9 +146,6 @@ void Renderer::load_cursor_images() noexcept
   upload_buffer.upload(core->cmd());
   std::ranges::for_each(_cursors | std::views::values, [&](auto& cursor)
     { g_image_pool[cursor.handle].set_state(core->cmd(), ImageState::pixel_shader_resource); });
-  
-  g_external_image_loader.load("assets/test.jpg");
-  g_external_image_loader.upload(core->cmd());
 
   // TODO: move to global and upload heap should be global too
   // wait gpu resources prepare complete
@@ -177,6 +174,15 @@ void Renderer::message_process() noexcept
     (*it)() ? it = _current_frame_render_finish_procs.erase(it) : ++it;
 
   MessageQueue::instance()->process_messages();
+
+  // upload images
+  if (g_external_image_loader.have_unuploaded_images())
+  {
+    auto core = Core::instance();
+    core->reset_cmd();
+    g_external_image_loader.upload(core->cmd());
+    core->submit(core->cmd());
+  }
 }
 
 void Renderer::render(HWND handle, ui::WindowRenderData const& data) noexcept

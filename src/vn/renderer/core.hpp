@@ -39,6 +39,7 @@ public:
   auto cmd()           const noexcept { return _cmd.Get();           }
   auto fence()         const noexcept { return _fence.Get();         }
   auto fence_event()   const noexcept { return _fence_event;         }
+	auto fence_value()   const noexcept { return _fence_value;         }
 
 private:
   Microsoft::WRL::ComPtr<IDXGIFactory6>              _factory;

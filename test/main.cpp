@@ -5,13 +5,19 @@
 using namespace vn;
 using namespace vn::ui;
 
-Timer timer;
-
 void render_window_1() noexcept
 {
   set_background_color(0x0000000f);
   circle({100,100}, 100, 0x0000ffff, 1);
 }
+
+/*
+TODO:
+1. use copy queue process copy in async
+2. process image circle display sync in right time duration
+3. process image render finish then show window
+4. process remove image right
+*/
 
 void render_window_2() noexcept
 {
@@ -19,24 +25,21 @@ void render_window_2() noexcept
 
   ui::image("assets/test.jpg", 0, 0);
 
-  auto [width, height] = content_extent();
+  timer_repeate_event(2000, [](auto dur)
+  {
+    if (dur > 0.5)
+    {
+      ui::image("assets/test.png", 300, 400);
+      ui::circle({ 40, 40 }, 100, 0xff0000ff, 5);
+    }
+  });
+
   ui::rectangle({ 10, 10 }, { 30, 30 }, 0x0ff000ff, 1);
 
-  static auto draw_circle = false;
-  static auto& timer = [&] -> Timer&
-  {
-    static auto timer = Timer{};
-    timer.add_repeat_event(1000, []
-    {
-      draw_circle = !draw_circle;
-    });
-    return timer;
-  }();
+  ui::button(10, 10, 50, 50, 0xffffffff, 0x00ff00ff);
+  ui::button(35, 35, 50, 50, 0xffffffff, 0x0000ffff);
 
-  if (draw_circle) ui::circle({ 40, 40 }, 20, 0x00ff00ff, 1);
-
-  timer.process_events();
-
+  auto [width, height] = content_extent();
   ui::triangle({}, { width, height / 2 }, { 0, height }, 0x00ff00ff, 1);
 }
 
@@ -64,9 +67,10 @@ int main()
 
   auto screen_size = ui::get_screen_size();
   // ui::create_window("first window", 0, 0, screen_size.x, screen_size.y, render_window_1, false);
-  ui::create_window("second window", 200, 200, 200, 100, render_window_2);
+  ui::create_window("second window", 0, 0, screen_size.x, screen_size.y, render_window_2);
   // timer.add_single_event(3000, [&] { ui::create_window("third window", 300, 300, 100, 100, render_window_3); });
 
+  Timer timer;
   auto fps_count = uint32_t{};
   timer.add_repeat_event(1000, [&]
   {

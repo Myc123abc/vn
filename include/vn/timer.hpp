@@ -132,6 +132,13 @@ public:
     }
   }
 
+  void process_event(uint32_t id) noexcept
+  {
+    err_if(!_events.contains(id), "time event {} is not exist!", id);
+    if (_events.at(id).process())
+			_events.erase(id);
+  }
+
   auto get_progress(uint32_t id) const noexcept
   {
     err_if(!_events.contains(id), "time event {} is not exist!", id);

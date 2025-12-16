@@ -309,17 +309,26 @@ public:
 
   auto have_unuploaded_images() const noexcept
   {
-    return std::ranges::any_of(_datas | std::views::values, [](auto const& data) { return !data.is_uploaded; });
+    return std::ranges::any_of(_datas | std::views::values, [](auto const& data) { return data.state == State::unuploaded; });
   }
 
   void upload_finish(std::string_view filename) noexcept;
 
+  auto is_uploaded(std::string_view filename) const noexcept -> bool;
+
 private:
+  enum class State
+  {
+    unuploaded,
+    uploading,
+		uploaded,
+  };
   struct Data
   {
     ImageHandle handle;
     Bitmap      bitmap;
-    bool        is_uploaded{};
+    State       state;
+    size_t      last_fence_value{};
 
     void init(std::string_view filename) noexcept;
   };

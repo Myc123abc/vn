@@ -4,6 +4,7 @@
 #include "../renderer/window.hpp"
 #include "lerp_animation.hpp"
 #include "../hash.hpp"
+#include "timer.hpp"
 
 #include <string_view>
 #include <functional>
@@ -48,12 +49,14 @@ struct WindowRenderData
 
 struct Window
 {
-  std::function<void()> update;
-  glm::vec2             render_pos{};
-  uint32_t              widget_count{};
-  bool                  draw_title_bar{};
-  WindowRenderData      render_data{};
-  bool                  need_clear{};
+  std::function<void()>                update;
+  glm::vec2                            render_pos{};
+  uint32_t                             widget_count{};
+  bool                                 draw_title_bar{};
+  WindowRenderData                     render_data{};
+  bool                                 need_clear{};
+  Timer                                timer;
+  std::unordered_map<size_t, uint32_t> timer_events;
 };
 
 class UIContext

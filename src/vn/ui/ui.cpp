@@ -239,6 +239,24 @@ void set_background_color(Color color) noexcept
   ui::rectangle({}, { width, height }, color, 0);
 }
 
+void timer_repeate_event(uint32_t duration, std::function<void(float)> func, std::source_location location) noexcept
+{
+  check_in_update_callback();
+  auto ctx = UIContext::instance();
+  
+  // generic unique id for this call by source location
+  auto id = generic_hash(location.file_name(), location.line(), location.column());
+
+	auto& window = ctx->windows.at(ctx->window.handle);
+
+  // first call, create timer event
+  if (!window.timer_events.contains(id))
+    window.timer_events[id] = window.timer.add_repeat_event(duration, [] {}, func);
+
+  // process timer event
+  window.timer.process_event(window.timer_events[id]);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator
 ////////////////////////////////////////////////////////////////////////////////
@@ -449,8 +467,11 @@ void image(std::string_view filename, int x, int y) noexcept
 
   if (!g_external_image_loader.contains(filename))
     g_external_image_loader.load(filename);
-	auto const& image = g_external_image_loader[filename];
-  add_shape(ShapeProperty::Type::image, {}, {}, { std::bit_cast<float>(image.index()) }, { { x, y }, { x + image.width(), y + image.height() }});
+  if (g_external_image_loader.is_uploaded(filename))
+  {
+	  auto const& image = g_external_image_loader[filename];
+    add_shape(ShapeProperty::Type::image, {}, {}, { std::bit_cast<float>(image.index()) }, { { x, y }, { x + image.width(), y + image.height() }});
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

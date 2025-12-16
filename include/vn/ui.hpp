@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include <string_view>
+#include <source_location>
 #include <functional>
 
 namespace vn { namespace ui {
@@ -135,6 +136,14 @@ void restore_window() noexcept;
  * @param color
  */
 void set_background_color(Color color) noexcept;
+
+/**
+ * process a repeate event
+ * @duration
+ * @func func which called all the time
+ * @location source location use for timer event unique distinguish
+ */
+void timer_repeate_event(uint32_t duration, std::function<void(float)> func, std::source_location location = std::source_location::current()) noexcept;
 
 ////////////////////////////////////////////////////////////////////////////////
 ///                            Shape Operator

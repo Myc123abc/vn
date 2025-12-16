@@ -145,9 +145,6 @@ void WindowResource::init(Window const& window, bool transparent) noexcept
   err_if(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, frame_resources[0].cmd_alloc.Get(), nullptr, IID_PPV_ARGS(&cmd)),
           "failed to create command list");
   err_if(cmd->Close(), "failed to close command list");
-
-  // first frame rendered then display
-  Renderer::instance()->add_current_frame_render_finish_proc([handle = window.handle] { ShowWindow(handle, SW_SHOW); });
 }
 
 void WindowResource::destroy() noexcept

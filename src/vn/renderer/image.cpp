@@ -102,8 +102,9 @@ void Win32Bitmap::destroy() const noexcept
 void Bitmap::init(std::string_view filename) noexcept
 {
   _use_stb = true;
-  _view.data = stbi_load(filename.data(), reinterpret_cast<int*>(&_view.width), reinterpret_cast<int*>(&_view.height), reinterpret_cast<int*>(&_view.channel), 0);
+  _view.data = stbi_load(filename.data(), reinterpret_cast<int*>(&_view.width), reinterpret_cast<int*>(&_view.height), reinterpret_cast<int*>(&_view.channel), 4);
   err_if(!_view.data, "failed to load image {}", filename);
+  _view.channel = 4;
   _view.init(_view.width, _view.height, _view.channel);
 }
 
@@ -436,15 +437,15 @@ void UploadBuffer::upload(ID3D12GraphicsCommandList1* cmd) noexcept
 
 void ExternalImageLoader::load(std::string_view filename) noexcept
 {
-  err_if(_datas.contains(filename.data()), "Failed to load {}. It's already loaded");
+  err_if(_datas.contains(filename.data()), "Failed to load {}. It's already loaded", filename);
   _datas[filename.data()].init(filename);
 }
 
 void ExternalImageLoader::remove(std::string_view filename) noexcept
 {
-  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist");
+  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist", filename);
   auto& data = _datas[filename.data()];
-  if (!data.is_uploaded) data.bitmap.destroy();
+  if (data.state == State::unuploaded) data.bitmap.destroy();
   g_renderer.add_current_frame_render_finish_proc([handle = data.handle] mutable { g_image_pool.free(handle); });
   _datas.erase(filename.data());
 }
@@ -460,7 +461,7 @@ void ExternalImageLoader::upload(ID3D12GraphicsCommandList1* cmd) noexcept
 {
   auto unuploaded_datas = _datas
     | std::views::values
-    | std::views::filter([](auto const& data) { return !data.is_uploaded; });
+    | std::views::filter([](auto const& data) { return data.state == State::unuploaded; });
   auto handles = unuploaded_datas
     | std::views::transform([](auto const& data) { return data.handle; })
     | std::ranges::to<std::vector<ImageHandle>>();
@@ -471,12 +472,8 @@ void ExternalImageLoader::upload(ID3D12GraphicsCommandList1* cmd) noexcept
   _upload_buffer.add_images(handles, views);
   _upload_buffer.upload(cmd);
   
-  std::ranges::for_each(unuploaded_datas, [](auto& data)
-  {
-    data.bitmap.destroy();
-  });
   auto unuploaded_data_filenames = _datas
-    | std::views::filter([](auto const& pair) { return !pair.second.is_uploaded; })
+    | std::views::filter([](auto const& pair) { return pair.second.state == State::unuploaded; })
     | std::views::keys
     | std::ranges::to<std::vector<std::string>>();
   g_renderer.add_current_frame_render_finish_proc([unuploaded_data_filenames]
@@ -486,13 +483,19 @@ void ExternalImageLoader::upload(ID3D12GraphicsCommandList1* cmd) noexcept
       g_external_image_loader.upload_finish(filename);
     });
   });
+
+  std::ranges::for_each(unuploaded_datas, [](auto& data)
+  {
+    data.bitmap.destroy();
+    data.state = State::uploading;
+  });
 }
 
 void ExternalImageLoader::destroy() noexcept
 {
   std::ranges::for_each(_datas | std::views::values, [](auto& data)
   {
-    if (!data.is_uploaded) data.bitmap.destroy();
+    if (data.state == State::unuploaded) data.bitmap.destroy();
     g_image_pool.free(data.handle);
   });
   _datas.clear();
@@ -500,27 +503,21 @@ void ExternalImageLoader::destroy() noexcept
 
 auto ExternalImageLoader::operator[](std::string_view filename) noexcept -> Image&
 {
-  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist");
+  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist", filename);
+	_datas[filename.data()].last_fence_value = Core::instance()->fence_value();
   return g_image_pool[_datas[filename.data()].handle];
 }
 
 void ExternalImageLoader::upload_finish(std::string_view filename) noexcept
 {
-  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist");
-  _datas[filename.data()].is_uploaded = true;
+  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist", filename);
+  _datas[filename.data()].state = State::uploaded;
 }
 
-/*
-
-TODO:
-image has three states
-  unuploaded
-  uploading
-  uploaded
-
-maybe i can use another queue to transform the image to  gpu
-and in remove or destroy or using, i can only process only when the queue finish
-
-*/
+auto ExternalImageLoader::is_uploaded(std::string_view filename) const noexcept -> bool
+{
+  err_if(!_datas.contains(filename.data()), "Failed to remove {}. It's not exist", filename);
+  return _datas.at(filename.data()).state == State::uploaded;
+}
 
 }}
